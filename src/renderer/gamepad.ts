@@ -5,7 +5,17 @@ export type PadAction = "up" | "down" | "left" | "right" | "confirm" | "back" | 
 
 const REPEAT_DELAY_MS = 380;
 const REPEAT_RATE_MS = 110;
-const STICK_DEADZONE = 0.5;
+const DEFAULT_DEADZONE = 0.5;
+
+export interface PadSnapshot {
+  index: number;
+  id: string;
+  name: string;
+  type: ControllerType;
+  buttons: number;
+  axes: number;
+  vibration: boolean;
+}
 
 // Standard Xbox-layout mapping (also matches ROG Xbox Ally's controls).
 const BUTTON_A = 0;
@@ -39,6 +49,50 @@ export function controllerTypeOf(id: string): ControllerType {
 }
 
 export class GamepadNav {
+  private deadZone = DEFAULT_DEADZONE;
+  private swapConfirm = false;
+  private vibration = true;
+
+  setDeadZone(value: number): void {
+    this.deadZone = Math.min(0.9, Math.max(0.1, value));
+  }
+
+  /** Nintendo-style: the right-hand button confirms and the bottom one backs out. */
+  setSwapConfirm(on: boolean): void {
+    this.swapConfirm = on;
+  }
+
+  setVibration(on: boolean): void {
+    this.vibration = on;
+  }
+
+  /** A short rumble on every pad that can, if vibration is on. */
+  rumble(ms = 200): void {
+    if (!this.vibration) return;
+    for (const pad of navigator.getGamepads?.() ?? []) {
+      const actuator = (pad as (Gamepad & { vibrationActuator?: { playEffect: (type: string, params: object) => Promise<string> } }) | null)?.vibrationActuator;
+      actuator?.playEffect("dual-rumble", { startDelay: 0, duration: ms, weakMagnitude: 0.6, strongMagnitude: 0.8 }).catch(() => {});
+    }
+  }
+
+  /** What's connected right now, for the Controller settings view. */
+  snapshot(): PadSnapshot[] {
+    const out: PadSnapshot[] = [];
+    for (const pad of navigator.getGamepads?.() ?? []) {
+      if (!pad) continue;
+      out.push({
+        index: pad.index,
+        id: pad.id,
+        name: pad.id.replace(/\s*\(.*$/, "").trim() || pad.id,
+        type: controllerTypeOf(pad.id),
+        buttons: pad.buttons.length,
+        axes: pad.axes.length,
+        vibration: !!(pad as Gamepad & { vibrationActuator?: unknown }).vibrationActuator,
+      });
+    }
+    return out;
+  }
+
   private lastType: ControllerType | null = null;
   private onType: ((type: ControllerType) => void) | null = null;
 
@@ -68,18 +122,20 @@ export class GamepadNav {
       const prev = this.prevButtons.get(pad.index) ?? [];
       const cur = pad.buttons.map((b) => b.pressed);
 
-      if (cur[BUTTON_A] && !prev[BUTTON_A]) this.onAction("confirm");
-      if (cur[BUTTON_B] && !prev[BUTTON_B]) this.onAction("back");
+      const confirmBtn = this.swapConfirm ? BUTTON_B : BUTTON_A;
+      const backBtn = this.swapConfirm ? BUTTON_A : BUTTON_B;
+      if (cur[confirmBtn] && !prev[confirmBtn]) this.onAction("confirm");
+      if (cur[backBtn] && !prev[backBtn]) this.onAction("back");
       if (cur[BUTTON_Y] && !prev[BUTTON_Y]) this.onAction("context");
       if (cur[BUTTON_GUIDE] && !prev[BUTTON_GUIDE]) this.onAction("guide");
 
       const axisX = pad.axes[0] ?? 0;
       const axisY = pad.axes[1] ?? 0;
 
-      const wantUp = cur[BUTTON_DPAD_UP] || axisY < -STICK_DEADZONE;
-      const wantDown = cur[BUTTON_DPAD_DOWN] || axisY > STICK_DEADZONE;
-      const wantLeft = cur[BUTTON_DPAD_LEFT] || axisX < -STICK_DEADZONE;
-      const wantRight = cur[BUTTON_DPAD_RIGHT] || axisX > STICK_DEADZONE;
+      const wantUp = cur[BUTTON_DPAD_UP] || axisY < -this.deadZone;
+      const wantDown = cur[BUTTON_DPAD_DOWN] || axisY > this.deadZone;
+      const wantLeft = cur[BUTTON_DPAD_LEFT] || axisX < -this.deadZone;
+      const wantRight = cur[BUTTON_DPAD_RIGHT] || axisX > this.deadZone;
 
       this.handleDirection("up", wantUp, now);
       this.handleDirection("down", wantDown, now);

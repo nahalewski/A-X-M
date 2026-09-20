@@ -24,6 +24,8 @@ export interface SteamLibraryEntry {
   appid: number;
   name: string;
   state: SteamInstallState;
+  /** 0..1 while downloading, from the manifest's byte counters. */
+  progress?: number;
   lastPlayed: number;
   coverUrl: string;
 }
@@ -86,8 +88,11 @@ function ownedAppIds(steamPath: string, accountId: string): Map<number, number> 
   return owned;
 }
 
+const progressByApp = new Map<number, number>();
+
 function installStates(steamPath: string): Map<number, SteamInstallState> {
   const states = new Map<number, SteamInstallState>();
+  progressByApp.clear();
   for (const lib of getLibraryFolders(steamPath)) {
     const dir = path.join(lib, "steamapps");
     let files: string[] = [];
@@ -104,6 +109,9 @@ function installStates(steamPath: string): Map<number, SteamInstallState> {
         // A manifest exists from the moment a download starts, so its presence alone
         // isn't "installed". Only the clean flag value is.
         states.set(appid, flags === STATE_FULLY_INSTALLED ? "installed" : "installing");
+        const toDownload = Number(app["BytesToDownload"] ?? 0);
+        const downloaded = Number(app["BytesDownloaded"] ?? 0);
+        if (flags !== STATE_FULLY_INSTALLED && toDownload > 0) progressByApp.set(appid, Math.min(1, downloaded / toDownload));
       } catch {
         // skip malformed
       }
@@ -134,6 +142,7 @@ export function getSteamLibrary(): SteamLibrary {
       appid,
       name: meta.name,
       state: states.get(appid) ?? "not-installed",
+      progress: progressByApp.get(appid),
       lastPlayed,
       coverUrl: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appid}/library_600x900_2x.jpg`,
     });

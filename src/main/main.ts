@@ -10,7 +10,7 @@ import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
 import { resolveArt, isGameArtConfigured } from "./gameArt";
 import { browseMusic, MusicListing } from "./musicLibrary";
 import { scanSaves, SaveEntry } from "./saveScanner";
-import { browseMedia, BrowseKind, BrowseListing, listMediaDrives, MediaDrive } from "./mediaBrowser";
+import { browseMedia, BrowseKind, BrowseListing, listMediaDrives, createMediaFolder, MediaDrive } from "./mediaBrowser";
 import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary";
 import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
 import { mediaRoot } from "./mediaBrowser";
@@ -20,7 +20,7 @@ import { OverlayHotkey } from "./overlayHotkey";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
-import { getWifiStatus, getBluetoothStatus, getHardwareInfo, WifiStatus, BluetoothStatus, HardwareInfo } from "./systemStatus";
+import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
@@ -408,6 +408,7 @@ ipcMain.handle(
 ipcMain.handle("axm:getAnkerStatus", (): Promise<AnkerStatus> => readAnkerStatus());
 ipcMain.handle("axm:getMediaDrives", (): MediaDrive[] => listMediaDrives());
 ipcMain.handle("axm:getVolumes", (): Promise<VolumeInfo[]> => listVolumes());
+ipcMain.handle("axm:createMediaFolder", (_e, parentDir: string, name: string): string => createMediaFolder(parentDir, name));
 ipcMain.handle("axm:getSongInfo", (_e, filePath: string): Promise<SongInfo | null> => getSongInfo(filePath));
 ipcMain.handle("axm:getScreenInfo", (_e, title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null> =>
   getScreenInfo(title, year, kind, tmdbId)
@@ -421,6 +422,7 @@ ipcMain.handle(
 ipcMain.handle("axm:getWifiStatus", (): Promise<WifiStatus> => getWifiStatus());
 ipcMain.handle("axm:getBluetoothStatus", (): Promise<BluetoothStatus> => getBluetoothStatus());
 ipcMain.handle("axm:getHardwareInfo", (): Promise<HardwareInfo> => getHardwareInfo());
+ipcMain.handle("axm:getControllerDevices", (): Promise<ControllerDevice[]> => getControllerDevices());
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 
@@ -462,6 +464,7 @@ ipcMain.handle("axm:openFolder", (_e, dirPath: string): void => {
  */
 const LAUNCHERS: { id: string; name: string; exe?: string; url?: string }[] = [
   { id: "battlenet", name: "Battle.net", exe: "C:\\Program Files (x86)\\Battle.net\\Battle.net Launcher.exe" },
+  { id: "epic", name: "Epic Games", exe: "C:\\Program Files (x86)\\Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe" },
   {
     id: "geforcenow",
     name: "GeForce NOW",

@@ -9,7 +9,18 @@ export class MusicPlayer {
   private el = new Audio();
   private queue: MusicEntry[] = [];
   private index = -1;
+  private shuffle = false;
+  /** Queue positions already played this round, so shuffle visits each track once. */
+  private played = new Set<number>();
   private onChange: () => void = () => {};
+
+  setShuffle(on: boolean): void {
+    this.shuffle = on;
+  }
+
+  isShuffle(): boolean {
+    return this.shuffle;
+  }
 
   constructor(private audio: AudioManager) {
     this.el.addEventListener("ended", () => this.next());
@@ -61,6 +72,7 @@ export class MusicPlayer {
       this.queue = [track];
       this.index = 0;
     }
+    this.played = new Set([this.index]);
     this.audio.fadeOutAmbient(600);
     this.setVolume(volume);
     this.start();
@@ -83,11 +95,23 @@ export class MusicPlayer {
 
   next(): void {
     if (this.index < 0) return;
+    if (this.shuffle) {
+      const left = this.queue.map((_, i) => i).filter((i) => !this.played.has(i));
+      if (left.length === 0) {
+        this.stop();
+        return;
+      }
+      this.index = left[Math.floor(Math.random() * left.length)];
+      this.played.add(this.index);
+      this.start();
+      return;
+    }
     if (this.index >= this.queue.length - 1) {
       this.stop();
       return;
     }
     this.index++;
+    this.played.add(this.index);
     this.start();
   }
 

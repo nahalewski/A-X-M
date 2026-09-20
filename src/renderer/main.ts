@@ -5,7 +5,7 @@ import { GamepadNav } from "./gamepad";
 import { Xmb, Category, MenuItem, sourceGlyph, btn } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
 import { MusicVisualizer, VISUALIZER_STYLES, VISUALIZER_STYLE_IDS, VisualizerStyle } from "./visualizer";
-import { spriteEl, spriteHtml } from "./sprites";
+import { spriteEl, spriteHtml, progressRing } from "./sprites";
 import { playIntroSparkle } from "./intro";
 import { OptionsPopup, InfoCard, PopupOption } from "./popups";
 import { MediaViewer } from "./mediaViewer";
@@ -47,6 +47,8 @@ import {
   TransferProgress,
   JellyfinItem as JfItem,
   HardwareInfo,
+  MusicEntry,
+  ControllerDevice,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -105,10 +107,27 @@ async function main(): Promise<void> {
   let games: GameEntry[] = await window.axm.getGames();
   // Drives with PHOTO / VIDEO / GAME folders at the root; re-read on each rescan.
   let mediaDrives: MediaDrive[] = await window.axm.getMediaDrives();
-  const driveRows = (kind: "photo" | "video" | "game", open: (folder: string) => void): MenuItem[] =>
-    mediaDrives
+  // Every drive with media folders is remembered, so one that's unplugged still
+  // has its row - greyed, "Not connected" - the way the PS3 kept a removed disc's
+  // row until you pressed triangle to forget it.
+  const rememberDrives = async () => {
+    const known = [...settings.knownDrives];
+    let changed = false;
+    for (const d of mediaDrives) {
+      const flags = { drive: d.drive, photo: !!d.photo, video: !!d.video, game: !!d.game, music: !!d.music };
+      const i = known.findIndex((k) => k.drive === d.drive);
+      if (i < 0) known.push(flags);
+      else if (JSON.stringify(known[i]) !== JSON.stringify(flags)) known[i] = flags;
+      else continue;
+      changed = true;
+    }
+    if (changed) settings = await window.axm.setSettings({ knownDrives: known });
+  };
+  void rememberDrives();
+  const driveRows = (kind: "photo" | "video" | "game" | "music", open: (folder: string) => void): MenuItem[] => {
+    const present = mediaDrives
       .filter((d) => d[kind])
-      .map((d) => ({
+      .map((d): MenuItem => ({
         id: `drive-${kind}-${d.drive}`,
         title: `${d.drive} Drive`,
         subtitle: `${kind.toUpperCase()} folder`,
@@ -116,6 +135,48 @@ async function main(): Promise<void> {
         iconClass: `hdd hdd-${kind}`,
         onConfirm: () => open(d[kind]!),
       }));
+    const absent = settings.knownDrives
+      .filter((k) => k[kind] && !mediaDrives.some((d) => d.drive === k.drive))
+      .map((k): MenuItem => ({
+        id: `drive-${kind}-${k.drive}-off`,
+        title: `${k.drive} Drive`,
+        subtitle: "Not connected",
+        iconUrl: "assets/icons/hdd-off.webp",
+        iconClass: "hdd hdd-off",
+        contextHint: "forget drive",
+        onContext: () => {
+          void window.axm.setSettings({ knownDrives: settings.knownDrives.filter((x) => x.drive !== k.drive) }).then((next) => {
+            settings = next;
+            xmb.refresh();
+          });
+          return true;
+        },
+      }));
+    return [...present, ...absent];
+  };
+  /** "New Folder…" for listings inside a drive's PHOTO / VIDEO / MUSIC tree. */
+  const insideDriveMedia = (dir: string | null | undefined): boolean => {
+    if (!dir) return false;
+    const d = dir.toLowerCase();
+    return mediaDrives.some((m) => [m.photo, m.video, m.music].some((root) => root && (d === root.toLowerCase() || d.startsWith(root.toLowerCase() + "\\"))));
+  };
+  const newFolderRow = (dir: string, after: () => void): MenuItem => ({
+    id: `new-folder-${dir}`,
+    title: "New Folder…",
+    subtitle: "Inside this drive folder",
+    iconUrl: "assets/icons/folder.png",
+    onConfirm: async () => {
+      const values = await askText("New Folder", [{ label: "Folder name" }]);
+      if (!values?.[0]) return;
+      try {
+        await window.axm.createMediaFolder(dir, values[0]);
+        audio.playConfirm();
+        after();
+      } catch (err) {
+        console.error("[A-X-M] new folder:", err);
+      }
+    },
+  });
   const emptyListing = (kind: "photo" | "video"): BrowseListing => ({
     kind,
     path: "",
@@ -134,6 +195,7 @@ async function main(): Promise<void> {
     Array.from(new Set(games.filter((g) => g.source === "steam").map((g) => g.drive))).sort();
 
   const musicPlayer = new MusicPlayer(audio);
+  musicPlayer.setShuffle(settings.musicShuffle);
   const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
   visualizer.setStyle(settings.visualizerStyle as VisualizerStyle);
   const cycleVisualizerStyle = async (direction: 1 | -1, announce: boolean) => {
@@ -239,7 +301,7 @@ async function main(): Promise<void> {
       .map((p) => {
         const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
         const text = p.error ? `${p.name} — ${p.error}` : `${p.id.startsWith("dl-") ? "Downloading" : "Copying"} ${p.name} → ${p.destination} · ${pct}%`;
-        return `<div class="transfer${p.error ? " error" : ""}"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div>`;
+        return `<div class="transfer${p.error ? " error" : ""}"><span class="ring" style="background-position:${(Math.round((pct / 100) * 19) * 100) / 19}% 0"></span><div class="transfer-text"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div></div>`;
       })
       .join("");
   };
@@ -538,7 +600,7 @@ async function main(): Promise<void> {
       `<span class="browser-bar">` +
       `<span class="viewer-key">◀</span>${spriteHtml("browser", "back", dim(!!nav?.canGoBack))}` +
       `<span class="viewer-key">▶</span>${spriteHtml("browser", "forward", dim(!!nav?.canGoForward))}` +
-      `${btn("y")}${spriteHtml("browser", nav?.loading ? "stop" : "reload")}` +
+      `${btn("y")}${spriteHtml("browser", nav?.loading ? "stop" : "reload")}${nav?.loading ? '<span class="ring spin"></span>' : ""}` +
       `${spriteHtml("browser", "address")}<span class="browser-url">${url || "Loading…"}</span>` +
       `</span>`
     );
@@ -585,10 +647,55 @@ async function main(): Promise<void> {
   }
 
   function musicCategory(): Category {
+    let playlistView = false;
     const openFolder = async (dirPath: string | null) => {
+      playlistView = false;
       musicListing = await window.axm.browseMusic(dirPath);
       xmb.resetSelection("music");
       xmb.refresh();
+    };
+    const inPlaylist = (filePath: string) => settings.playlist.some((t) => t.filePath === filePath);
+    const togglePlaylist = async (entry: MusicEntry) => {
+      const next = inPlaylist(entry.filePath) ? settings.playlist.filter((t) => t.filePath !== entry.filePath) : [...settings.playlist, { kind: "track" as const, name: entry.name, filePath: entry.filePath, url: entry.url ?? "" }];
+      settings = await window.axm.setSettings({ playlist: next });
+      audio.playConfirm();
+      xmb.refresh();
+    };
+    const shuffleOption = (): PopupOption => ({
+      label: settings.musicShuffle ? "Shuffle: On" : "Shuffle: Off",
+      hint: "next track at random",
+      run: async () => {
+        settings = await window.axm.setSettings({ musicShuffle: !settings.musicShuffle });
+        musicPlayer.setShuffle(settings.musicShuffle);
+        xmb.refresh();
+      },
+    });
+    const playlistItems = (): MenuItem[] => {
+      const tracks: MusicEntry[] = settings.playlist.map((t) => ({ kind: "track", name: t.name, filePath: t.filePath, url: t.url }));
+      if (tracks.length === 0) return [{ id: "playlist-empty", title: "Playlist is empty", subtitle: "Y on a song · Add to Playlist", iconUrl: "assets/icons/music.png" }];
+      return tracks.map((entry, i): MenuItem => {
+        const playing = musicPlayer.current()?.filePath === entry.filePath;
+        return {
+          id: `pl-${entry.filePath}`,
+          title: entry.name,
+          subtitle: `${i + 1} of ${tracks.length}`,
+          iconUrl: "assets/icons/music.png",
+          badge: playing ? (musicPlayer.isPlaying() ? "PLAYING" : "PAUSED") : undefined,
+          onConfirm: () => {
+            musicPlayer.play(entry, tracks, settings.musicVolume);
+            xmb.refresh();
+          },
+          contextHint: "options",
+          onContext: () => {
+            showOptions(entry.name, [
+              { label: "Remove from Playlist", run: () => togglePlaylist(entry) },
+              shuffleOption(),
+              ...(settings.visualizerEnabled ? [{ label: "Visualizer", run: () => { if (!playing) musicPlayer.play(entry, tracks, settings.musicVolume); enterStage(); } }] : []),
+            ]);
+            return true;
+          },
+        };
+      });
     };
 
     return {
@@ -596,8 +703,14 @@ async function main(): Promise<void> {
       label: "Music",
       iconUrl: "assets/icons/music.png",
       onBack: () => {
-        if (!musicListing.parent) return false;
-        void openFolder(musicListing.parent);
+        if (playlistView) {
+          playlistView = false;
+          xmb.resetSelection("music");
+          xmb.refresh();
+          return true;
+        }
+        if (musicListing.parent === null) return false;
+        void openFolder(musicListing.parent || null);
         return true;
       },
       onContext: () => {
@@ -605,8 +718,25 @@ async function main(): Promise<void> {
         musicPlayer.togglePause();
         return true;
       },
-      footerHint: () => (musicListing.path ? musicListing.title : undefined),
+      footerHint: () => (playlistView ? `Playlist · ${settings.playlist.length} songs${settings.musicShuffle ? " · shuffle" : ""}` : musicListing.path ? musicListing.title : undefined),
       getItems: () => {
+        if (playlistView) return playlistItems();
+        const top: MenuItem[] = [];
+        if (!musicListing.path) {
+          top.push({
+            id: "playlist",
+            title: "Playlist",
+            subtitle: settings.playlist.length ? `${settings.playlist.length} songs` : "Empty · add songs with Y",
+            iconUrl: "assets/icons/music.png",
+            onConfirm: () => {
+              playlistView = true;
+              xmb.resetSelection("music");
+              xmb.refresh();
+            },
+          });
+        }
+        if (insideDriveMedia(musicListing.path)) top.push(newFolderRow(musicListing.path!, () => void openFolder(musicListing.path)));
+        if (musicListing.entries.length === 0 && top.length > 0) return top;
         if (musicListing.entries.length === 0) {
           return [
             {
@@ -617,7 +747,7 @@ async function main(): Promise<void> {
             },
           ];
         }
-        return musicListing.entries.map((entry): MenuItem => {
+        return [...top, ...musicListing.entries.map((entry): MenuItem => {
           if (entry.kind === "folder") {
             return {
               id: entry.filePath,
@@ -626,7 +756,24 @@ async function main(): Promise<void> {
               onConfirm: () => openFolder(entry.filePath),
               contextHint: "options",
               onContext: () => {
-                void refreshVolumes().then(() => showOptions(entry.name, copyTargets("music", entry.filePath)));
+                void refreshVolumes().then(() =>
+                  showOptions(entry.name, [
+                    {
+                      label: "Shuffle Play",
+                      hint: "every song in this folder",
+                      run: async () => {
+                        const listing = await window.axm.browseMusic(entry.filePath);
+                        const tracks = listing.entries.filter((t) => t.kind === "track");
+                        if (tracks.length === 0) return;
+                        settings = await window.axm.setSettings({ musicShuffle: true });
+                        musicPlayer.setShuffle(true);
+                        musicPlayer.play(tracks[Math.floor(Math.random() * tracks.length)], tracks, settings.musicVolume);
+                        xmb.refresh();
+                      },
+                    },
+                    ...copyTargets("music", entry.filePath),
+                  ])
+                );
                 return true;
               },
             };
@@ -669,13 +816,15 @@ async function main(): Promise<void> {
                         },
                       ]
                     : []),
+                  { label: inPlaylist(entry.filePath) ? "Remove from Playlist" : "Add to Playlist", run: () => togglePlaylist(entry) },
+                  shuffleOption(),
                   ...copyTargets("music", entry.filePath),
                 ])
               );
               return true;
             },
           };
-        });
+        })];
       },
     };
   }
@@ -740,7 +889,7 @@ async function main(): Promise<void> {
         ];
       }
       return steamLibrary.games.map((g): MenuItem => {
-        const badge = g.state === "installed" ? "INSTALLED" : g.state === "installing" ? "INSTALLING…" : undefined;
+        const badge = g.state === "installed" ? "INSTALLED" : g.state === "installing" ? (g.progress !== undefined ? `INSTALLING · ${Math.round(g.progress * 100)}%` : "INSTALLING…") : undefined;
         return {
           id: `steam-lib-${g.appid}`,
           title: g.name,
@@ -748,6 +897,7 @@ async function main(): Promise<void> {
           iconUrl: g.coverUrl,
           iconGlyph: "S",
           badge,
+          meter: g.state === "installing" ? (g.progress ?? 0) : undefined,
           onConfirm: async () => {
             if (g.state === "installed") {
               window.axm.launchSteamApp(g.appid);
@@ -821,7 +971,7 @@ async function main(): Promise<void> {
         .map((l) => ({
           id: `launcher-${l.id}`,
           title: l.name,
-          iconUrl: `assets/icons/${l.id}.png`,
+          iconUrl: l.id === "epic" ? "assets/icons/epic.svg" : `assets/icons/${l.id}.png`,
           onConfirm: () => window.axm.openLauncher(l.id),
         })),
       ...driveRows("game", (folder) => {
@@ -961,7 +1111,7 @@ async function main(): Promise<void> {
         if (mode?.active()) return mode.items();
         const listing = getListing();
         const lead = leading((p) => void openFolder(p));
-        if (listing.entries.length === 0 && lead.length === 0) {
+        if (listing.entries.length === 0 && lead.length === 0 && !insideDriveMedia(listing.path)) {
           return [
             {
               id: `${kind}-empty`,
@@ -973,6 +1123,7 @@ async function main(): Promise<void> {
         }
         return [
           ...(listing.parent ? [] : lead),
+          ...(insideDriveMedia(listing.path) ? [newFolderRow(listing.path, () => void openFolder(listing.path))] : []),
           ...listing.entries.map((entry): MenuItem =>
             entry.kind === "folder"
               ? {
@@ -996,6 +1147,12 @@ async function main(): Promise<void> {
                   onContext: () => {
                     void refreshVolumes().then(() =>
                       showOptions(entry.name, [
+                        ...(kind === "photo"
+                          ? [
+                              { label: "Set as Wallpaper", hint: "this picture", run: () => setWallpaper({ url: entry.url!, filePath: entry.filePath, mode: "single" as const, folder: listing.path }) },
+                              { label: "Shuffle Folder as Wallpaper", hint: "changes every few minutes", run: () => setWallpaper({ url: entry.url!, filePath: entry.filePath, mode: "shuffle" as const, folder: listing.path }) },
+                            ]
+                          : []),
                         ...(kind === "video"
                           ? [
                               {
@@ -1292,7 +1449,7 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | { month: number };
 
   function settingsCategory(): Category {
     let view: SettingsView = "root";
@@ -1503,12 +1660,47 @@ async function main(): Promise<void> {
         },
       },
       {
+        id: "controller",
+        title: "Controller",
+        subtitle: "Profiles, dead zone, vibration, battery, players",
+        iconUrl: "assets/icons/games.svg",
+        onConfirm: async () => {
+          controllerDevices = await window.axm.getControllerDevices().catch(() => []);
+          go("controller");
+        },
+      },
+      {
         id: "steamHandsOff",
         title: "Steam Hands-off Install",
         subtitle: settings.steamHandsOffInstall ? "On · confirms Steam's dialog and returns here" : "Off · Steam's install window stays up",
         iconUrl: "assets/icons/steam.svg",
         onConfirm: async () => {
           settings = await window.axm.setSettings({ steamHandsOffInstall: !settings.steamHandsOffInstall });
+          xmb.refresh();
+        },
+      },
+      {
+        id: "wallpaper",
+        title: "Wallpaper",
+        subtitle: settings.wallpaper
+          ? `${settings.wallpaper.mode === "shuffle" ? "Shuffling" : "Picture"} · ${settings.wallpaper.filePath.split("\\").pop()}`
+          : "Off · pick one in Photo with Y",
+        iconUrl: "assets/icons/photo.png",
+        onConfirm: async () => {
+          if (!settings.wallpaper) return;
+          // Cycle: single -> shuffle -> off
+          const w = settings.wallpaper;
+          await setWallpaper(w.mode === "single" ? { ...w, mode: "shuffle" } : null);
+        },
+      },
+      {
+        id: "musicShuffle",
+        title: "Music Shuffle",
+        subtitle: settings.musicShuffle ? "On · next track at random" : "Off · folder order",
+        iconUrl: "assets/icons/music.png",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ musicShuffle: !settings.musicShuffle });
+          musicPlayer.setShuffle(settings.musicShuffle);
           xmb.refresh();
         },
       },
@@ -1624,6 +1816,13 @@ async function main(): Promise<void> {
         },
       },
       {
+        id: "about",
+        title: "About A-X-M",
+        subtitle: "A passion project · developed with Naha0",
+        iconGlyph: "ⓘ",
+        onConfirm: () => go("about"),
+      },
+      {
         id: "exit",
         title: "Exit to Desktop",
         subtitle: "Close A-X-M",
@@ -1735,6 +1934,95 @@ async function main(): Promise<void> {
       return items;
     };
 
+    // Controller: what the Gamepad API knows about each pad, plus what Windows
+    // knows about the Bluetooth ones (battery, wired or wireless), and the few
+    // things the menu itself can change: dead zone, vibration, the A/B swap.
+    let controllerDevices: ControllerDevice[] = [];
+    const controllerItems = (): MenuItem[] => {
+      const rows: MenuItem[] = [];
+      const pads = gamepad.snapshot();
+      if (pads.length === 0) rows.push({ id: "pad-none", title: "No controller connected", subtitle: "Press a button on the pad to wake it", iconUrl: "assets/icons/games.svg" });
+      pads.forEach((p) => {
+        const family = p.type === "ps" ? "PlayStation" : p.type === "switch" ? "Nintendo Switch" : p.type === "kishi" ? "Razer Kishi" : "Xbox";
+        const dev = controllerDevices.find((d) => d.kind === (p.type === "ps" ? "ps" : p.type === "xbox" ? "xbox" : "other")) ?? controllerDevices[p.index];
+        const link = dev ? (dev.wireless ? "Wireless · Bluetooth" : "Wired · USB") : p.id.includes("Vendor") ? "USB" : "";
+        const battery = dev?.battery !== null && dev?.battery !== undefined ? `${dev.battery}%` : dev?.wireless ? "Battery unknown" : "";
+        rows.push({
+          id: `pad-${p.index}`,
+          title: `Player ${p.index + 1} · ${family}`,
+          subtitle: [p.name, link, battery].filter(Boolean).join(" · "),
+          iconUrl: "assets/icons/games.svg",
+          badge: `${p.buttons} buttons · ${p.axes} axes${p.vibration ? " · rumble" : ""}`,
+          meter: dev?.battery !== null && dev?.battery !== undefined ? dev.battery / 100 : undefined,
+        });
+      });
+      rows.push(
+        {
+          id: "pad-profile",
+          title: "Profile",
+          subtitle: settings.gamepadProfile === "swapped" ? "Swapped · B confirms, A backs out (Nintendo style)" : "Standard · A confirms, B backs out",
+          iconGlyph: "⇄",
+          onConfirm: async () => {
+            settings = await window.axm.setSettings({ gamepadProfile: settings.gamepadProfile === "swapped" ? "standard" : "swapped" });
+            gamepad.setSwapConfirm(settings.gamepadProfile === "swapped");
+            xmb.refresh();
+          },
+        },
+        {
+          id: "pad-deadzone",
+          title: "Stick Dead Zone",
+          subtitle: `${Math.round(settings.gamepadDeadZone * 100)}% · how far the stick moves before the menu scrolls`,
+          iconGlyph: "◎",
+          meter: settings.gamepadDeadZone,
+          onConfirm: async () => {
+            const steps = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+            const next = steps[(steps.indexOf(settings.gamepadDeadZone) + 1) % steps.length];
+            settings = await window.axm.setSettings({ gamepadDeadZone: next });
+            gamepad.setDeadZone(next);
+            xmb.refresh();
+          },
+        },
+        {
+          id: "pad-vibration",
+          title: "Vibration",
+          subtitle: settings.gamepadVibration ? "On · A to test" : "Off",
+          iconGlyph: "≋",
+          onConfirm: async () => {
+            if (settings.gamepadVibration) gamepad.rumble(300);
+            settings = await window.axm.setSettings({ gamepadVibration: !settings.gamepadVibration });
+            gamepad.setVibration(settings.gamepadVibration);
+            xmb.refresh();
+          },
+          contextHint: "test rumble",
+          onContext: () => {
+            gamepad.rumble(400);
+            return true;
+          },
+        },
+        {
+          id: "pad-gyro",
+          title: "Gyro / Motion",
+          subtitle: "Not exposed to apps by Windows' controller API · use Armoury Crate or DS4Windows",
+          iconGlyph: "↻",
+        },
+        {
+          id: "pad-remap",
+          title: "Remap Buttons",
+          subtitle: "Menu buttons are fixed: A select, B back, Y options, Guide overlay · remap the pad in Armoury Crate",
+          iconGlyph: "⌨",
+        }
+      );
+      return rows;
+    };
+
+    const aboutItems = (): MenuItem[] => [
+      { id: "about-1", title: "A-X-M · Ally XMB Menu", subtitle: "Version 0.1.0 · a PS3-style hub for the ROG Xbox Ally", iconUrl: "assets/icons/boot-logo.png" },
+      { id: "about-2", title: "This app was developed using AI.", subtitle: "It's a passion project I've always wanted since the PS3 and PSP, then seeing handhelds.", iconGlyph: "✦" },
+      { id: "about-3", title: "I don't care about negative AI comments - move along.", subtitle: "Otherwise, let's bring our dreams to fruition by any means possible.", iconGlyph: "✧" },
+      { id: "about-4", title: "User developed with Naha0", subtitle: "github.com/nahalewski/A-X-M", iconUrl: "assets/icons/user.png" },
+      { id: "about-5", title: "Thanks to", subtitle: "SteamGridDB · TMDB · MusicBrainz · Cover Art Archive · Jellyfin · the PS3 XMB", iconGlyph: "♥" },
+    ];
+
     // System Information: the PS3's version had the system, then storage. Ours:
     // the device row, then every drive with how full it is.
     let sysHardware: HardwareInfo | null = null;
@@ -1794,7 +2082,7 @@ async function main(): Promise<void> {
       iconUrl: "assets/icons/settings.png",
       onBack: () => {
         if (view === "root") return false;
-        if (view === "theme" || view === "system") go("root");
+        if (view === "theme" || view === "system" || view === "controller" || view === "about") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -1804,6 +2092,8 @@ async function main(): Promise<void> {
         if (view === "theme") return "Settings › Theme";
         if (view === "months") return "Settings › Theme › Months";
         if (view === "system") return "Settings › System Information";
+        if (view === "controller") return "Settings › Controller";
+        if (view === "about") return "Settings › About A-X-M";
         return `Settings › Theme › ${MONTH_NAMES[view.month]}`;
       },
       getItems: () => {
@@ -1811,6 +2101,8 @@ async function main(): Promise<void> {
         if (view === "theme") return themeItems();
         if (view === "months") return monthsItems();
         if (view === "system") return systemItems();
+        if (view === "controller") return controllerItems();
+        if (view === "about") return aboutItems();
         return monthEditorItems(view.month);
       },
     };
@@ -1835,6 +2127,43 @@ async function main(): Promise<void> {
     browserCategory(),
   ];
   const gameBackground = new GameBackground(document.getElementById("game-bg")!);
+
+  // ---- Wallpaper -----------------------------------------------------------------
+  //
+  // A picture behind the ribbons, in place of the plain month colour; the game hero
+  // still takes over when a game is focused. Shuffle mode draws another picture
+  // from the same folder every few minutes.
+  const wallpaperEl = document.getElementById("wallpaper")!;
+  let wallpaperTimer = 0;
+  const applyWallpaper = async () => {
+    clearInterval(wallpaperTimer);
+    wallpaperTimer = 0;
+    const w = settings.wallpaper;
+    if (!w) {
+      wallpaperEl.classList.remove("visible");
+      return;
+    }
+    const show = (url: string) => {
+      wallpaperEl.style.backgroundImage = `url(${JSON.stringify(url)})`;
+      wallpaperEl.classList.add("visible");
+    };
+    show(w.url);
+    if (w.mode === "shuffle") {
+      const pick = async () => {
+        const listing = await window.axm.browseMedia("photo", w.folder);
+        const files = listing.entries.filter((e) => e.kind === "file" && e.url);
+        if (files.length > 0) show(files[Math.floor(Math.random() * files.length)].url!);
+      };
+      wallpaperTimer = window.setInterval(() => void pick(), 3 * 60_000);
+    }
+  };
+  const setWallpaper = async (w: Settings["wallpaper"]) => {
+    settings = await window.axm.setSettings({ wallpaper: w });
+    await applyWallpaper();
+    audio.playConfirm();
+    xmb.refresh();
+  };
+  void applyWallpaper();
   const xmb = new Xmb(categories, audio);
   xmb.setOnSelectionChange((item) => gameBackground.show(item?.backgroundUrl));
 
@@ -1946,6 +2275,9 @@ async function main(): Promise<void> {
     }
     xmb.handleAction(action);
   });
+  gamepad.setDeadZone(settings.gamepadDeadZone);
+  gamepad.setSwapConfirm(settings.gamepadProfile === "swapped");
+  gamepad.setVibration(settings.gamepadVibration);
   gamepad.setOnControllerType((type) => {
     for (const t of ["ps", "switch", "kishi"]) document.body.classList.toggle(`pad-${t}`, type === t);
   });

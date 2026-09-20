@@ -37,3 +37,36 @@ export function spriteEl(sheet: SpriteSheet, name: string, extraClass = ""): HTM
   el.setFrame(name);
   return el;
 }
+
+
+/**
+ * The 20-frame progress ring from the supplied sheet: frame 0 is one segment lit,
+ * frame 19 the full ring. Drawn as an image (its lit and unlit segments are part of
+ * the art), positioned by background-position so a change of frame is one style.
+ */
+export const PROGRESS_FRAMES = 20;
+
+export function progressRing(extraClass = ""): HTMLElement & { setProgress: (fraction: number) => void; spin: (on: boolean) => void } {
+  const el = document.createElement("span") as HTMLElement & { setProgress: (fraction: number) => void; spin: (on: boolean) => void };
+  el.className = `ring ${extraClass}`.trim();
+  let timer = 0;
+  let frame = 0;
+  const show = (f: number) => {
+    frame = Math.max(0, Math.min(PROGRESS_FRAMES - 1, Math.round(f)));
+    el.style.backgroundPosition = `${(frame * 100) / (PROGRESS_FRAMES - 1)}% 0`;
+  };
+  el.setProgress = (fraction: number) => {
+    el.spin(false);
+    show(fraction * (PROGRESS_FRAMES - 1));
+  };
+  // Indeterminate: the ring keeps filling round, for "loading" with no known total.
+  el.spin = (on: boolean) => {
+    if (on && !timer) timer = window.setInterval(() => show((frame + 1) % PROGRESS_FRAMES), 70);
+    else if (!on && timer) {
+      clearInterval(timer);
+      timer = 0;
+    }
+  };
+  show(0);
+  return el;
+}

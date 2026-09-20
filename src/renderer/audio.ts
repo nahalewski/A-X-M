@@ -8,6 +8,9 @@ import { AmbientTrackId } from "./types";
 export const AMBIENT_TRACKS: Record<AmbientTrackId, { label: string; src: string }> = {
   xmb: { label: "XMB Ambience", src: "assets/sounds/ambient.ogg" },
   luminous: { label: "Luminous Ambience", src: "assets/sounds/luminous.mp3" },
+  moonlit: { label: "Moonlit Piano", src: "assets/sounds/moonlit.ogg" },
+  dreamy: { label: "Dreamy E-Piano", src: "assets/sounds/dreamy.ogg" },
+  midtown: { label: "Midtown Keys", src: "assets/sounds/midtown.ogg" },
 };
 
 /** One blip for every direction, as the XMB uses - supplied for this project. */

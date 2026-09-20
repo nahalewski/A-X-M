@@ -1,7 +1,7 @@
 export type GameSource = "steam" | "epic" | "xbox" | "generic";
 
 /** Which loop plays behind the menu. Keys of AMBIENT_TRACKS in audio.ts. */
-export type AmbientTrackId = "xmb" | "luminous";
+export type AmbientTrackId = "xmb" | "luminous" | "moonlit" | "dreamy" | "midtown";
 
 /** Ribbon background quality. "auto" starts high and steps down if frames suffer. */
 export type BackgroundQuality = "auto" | "low" | "medium" | "high";
@@ -111,6 +111,7 @@ export interface SteamLibraryEntry {
   appid: number;
   name: string;
   state: SteamInstallState;
+  progress?: number;
   lastPlayed: number;
   coverUrl: string;
 }
@@ -240,6 +241,14 @@ export interface MediaDrive {
   photo: string | null;
   video: string | null;
   game: string | null;
+  music: string | null;
+}
+
+export interface ControllerDevice {
+  name: string;
+  kind: "ps" | "xbox" | "other";
+  wireless: boolean;
+  battery: number | null;
 }
 
 export interface HardwareInfo {
@@ -302,6 +311,13 @@ export interface Settings {
   introSparkleEnabled: boolean;
   tmdbApiKey: string;
   steamHandsOffInstall: boolean;
+  musicShuffle: boolean;
+  gamepadDeadZone: number;
+  gamepadProfile: "standard" | "swapped";
+  gamepadVibration: boolean;
+  playlist: MusicEntry[];
+  wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
+  knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
   profile: UserProfile | null;
   jellyfinLogins: Record<string, JellyfinLogin>;
   ankerDeviceName: string;
@@ -354,6 +370,8 @@ export interface AxmApi {
   getHardwareInfo(): Promise<HardwareInfo>;
   getMediaDrives(): Promise<MediaDrive[]>;
   getVolumes(): Promise<VolumeInfo[]>;
+  getControllerDevices(): Promise<ControllerDevice[]>;
+  createMediaFolder(parentDir: string, name: string): Promise<string>;
   getSongInfo(filePath: string): Promise<SongInfo | null>;
   getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;
   copyMedia(kind: "music" | "photo" | "video", source: string, target: string): Promise<string>;

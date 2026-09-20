@@ -1,3 +1,4 @@
+import { progressRing } from "./sprites";
 import { GameEntry, Settings } from "./types";
 import { AudioManager } from "./audio";
 
@@ -435,6 +436,29 @@ export class Xmb {
     if (item.iconUrl) {
       const img = document.createElement("img");
       img.className = "item-icon" + (item.iconClass ? " " + item.iconClass : "");
+      // Artwork fetched over the network (Jellyfin posters, SteamGridDB) shows the
+      // progress ring until it lands; bundled icons are instant and skip it.
+      const remote = /^https?:/i.test(item.iconUrl);
+      if (remote && !img.complete) {
+        const wrap = document.createElement("div");
+        wrap.className = "item-icon icon-loading";
+        const ring = progressRing("icon-ring");
+        ring.spin(true);
+        wrap.appendChild(ring);
+        img.addEventListener("load", () => {
+          ring.spin(false);
+          wrap.replaceWith(img);
+        });
+        img.addEventListener("error", () => {
+          ring.spin(false);
+          const fallback = document.createElement("div");
+          fallback.className = "item-icon";
+          fallback.textContent = item.iconGlyph ?? "?";
+          wrap.replaceWith(fallback);
+        });
+        img.src = item.iconUrl;
+        return wrap;
+      }
       img.src = item.iconUrl;
       img.addEventListener("error", () => {
         const fallback = document.createElement("div");

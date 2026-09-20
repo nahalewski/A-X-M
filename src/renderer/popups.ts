@@ -87,6 +87,7 @@ export class OptionsPopup {
       row.className = "popup-option" + (i === this.index ? " selected" : "");
       row.innerHTML = `<span class="popup-option-label">${o.label}</span>${o.hint ? `<span class="popup-option-hint">${o.hint}</span>` : ""}`;
       this.listEl.appendChild(row);
+      if (i === this.index) row.scrollIntoView({ block: "nearest" });
     });
   }
 }

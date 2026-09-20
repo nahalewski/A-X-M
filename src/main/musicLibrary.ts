@@ -42,11 +42,20 @@ function listDrives(): string[] {
 /** Configured roots if set, otherwise the usual Windows music locations. */
 export function getMusicRoots(): string[] {
   const configured = loadSettings().musicFolders;
-  if (configured.length > 0) return configured.filter((p) => fs.existsSync(p));
-
-  const roots = [path.join(os.homedir(), "Music")];
-  for (const drive of listDrives()) roots.push(path.join(drive, "Music"), path.join(drive, "MUSIC"));
-  return roots.filter((p) => fs.existsSync(p));
+  const roots = configured.length > 0 ? [...configured] : [path.join(os.homedir(), "Music")];
+  // A drive's MUSIC folder is always a root, so a stick with music on it just shows
+  // up - and so a folder made or copied there is browsable straight away.
+  for (const drive of listDrives()) {
+    for (const name of ["MUSIC", "Music"]) {
+      const candidate = path.join(drive, name);
+      if (roots.some((r) => path.resolve(r).toLowerCase() === path.resolve(candidate).toLowerCase())) continue;
+      if (fs.existsSync(candidate)) {
+        roots.push(candidate);
+        break;
+      }
+    }
+  }
+  return roots.filter((p, i) => fs.existsSync(p) && roots.findIndex((q) => q.toLowerCase() === p.toLowerCase()) === i);
 }
 
 /** Natural sort so "2 - x" comes before "10 - y". */
@@ -74,7 +83,8 @@ export function browseMusic(dirPath?: string | null): MusicListing {
       title: "Music",
       entries: roots.map((root) => ({
         kind: "folder" as const,
-        name: path.basename(root) || root,
+        // "MUSIC (N:)" rather than three folders all called MUSIC.
+        name: `${path.basename(root) || root} (${root.slice(0, 2).toUpperCase()})`,
         filePath: root,
       })),
     };
@@ -110,7 +120,8 @@ export function browseMusic(dirPath?: string | null): MusicListing {
   tracks.sort((a, b) => compareNatural(a.name, b.name));
 
   const isRoot = roots.some((r) => path.resolve(r).toLowerCase() === path.resolve(dirPath).toLowerCase());
-  const parent = isRoot ? (roots.length > 1 ? null : null) : path.dirname(dirPath);
+  // At a root with several roots, "" means "back to the list of roots".
+  const parent = isRoot ? (roots.length > 1 ? "" : null) : path.dirname(dirPath);
 
   return {
     path: dirPath,

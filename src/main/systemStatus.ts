@@ -141,3 +141,51 @@ function friendlyModel(model: string, family: string): string {
   if (!model || /system product name|to be filled|default string|o\.e\.m/i.test(model)) return "";
   return model;
 }
+
+
+/** A game controller Windows knows about: battery for Bluetooth pads, and how it's linked. */
+export interface ControllerDevice {
+  name: string;
+  kind: "ps" | "xbox" | "other";
+  wireless: boolean;
+  /** 0..100 for Bluetooth pads that report it; null otherwise. */
+  battery: number | null;
+}
+
+export function getControllerDevices(): Promise<ControllerDevice[]> {
+  const script = `
+$ErrorActionPreference = 'SilentlyContinue'
+$pads = Get-PnpDevice -PresentOnly | Where-Object { ($_.Class -in 'Bluetooth','BluetoothLE','HIDClass','XboxComposite','XnaComposite') -and ($_.FriendlyName -match 'controller|dualsense|dualshock|gamepad|xbox') -and ($_.FriendlyName -notmatch 'hub|receiver|enumerator|service') }
+$out = foreach ($d in $pads) {
+  $bat = (Get-PnpDeviceProperty -InstanceId $d.InstanceId -KeyName '{104EA319-6EE2-4701-BD47-8DDBF425BBE5} 2').Data
+  [PSCustomObject]@{ Name = $d.FriendlyName; Id = $d.InstanceId; Battery = $bat }
+}
+@($out) | ConvertTo-Json -Compress
+`;
+  return new Promise((resolve) => {
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf-8", timeout: 15_000, windowsHide: true }, (err, stdout) => {
+      if (err || !stdout.trim()) return resolve([]);
+      try {
+        const raw = JSON.parse(stdout) as { Name: string; Id: string; Battery: number | null } | { Name: string; Id: string; Battery: number | null }[];
+        const rows = (Array.isArray(raw) ? raw : [raw]).filter((r) => r && r.Name);
+        const seen = new Set<string>();
+        const out: ControllerDevice[] = [];
+        for (const r of rows) {
+          const key = r.Name.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const id = (r.Id ?? "").toUpperCase();
+          out.push({
+            name: r.Name,
+            kind: /dualsense|dualshock|wireless controller|sony/i.test(r.Name) ? "ps" : /xbox/i.test(r.Name) ? "xbox" : "other",
+            wireless: id.startsWith("BTH"),
+            battery: typeof r.Battery === "number" ? r.Battery : null,
+          });
+        }
+        resolve(out);
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}

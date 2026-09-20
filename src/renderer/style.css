@@ -1213,14 +1213,29 @@ body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
   transition: opacity 0.18s ease;
 }
+/* The triangle menu sits on the right edge, a tall panel beside the list, as on
+   the PS3 - not a box over the middle of the screen. */
 #options-popup {
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  min-width: 380px;
-  max-width: 560px;
-  padding: 18px 22px 14px;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(440px, 34vw);
+  padding: 90px 30px 30px 34px;
+  border-radius: 0;
+  border-width: 0 0 0 1px;
+  background: linear-gradient(90deg, rgba(6, 9, 20, 0.55), rgba(6, 9, 20, 0.94) 30%);
+  box-shadow: -30px 0 60px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  transform: translateX(0);
+  transition: opacity 0.18s ease, transform 0.22s ease;
 }
+#options-popup.hidden { transform: translateX(30px); }
+#options-popup .popup-list { overflow-y: auto; max-height: calc(100vh - 200px); scrollbar-width: none; }
+#options-popup .popup-option { flex-direction: column; align-items: flex-start; gap: 2px; padding: 11px 16px; border-left: 2px solid transparent; border-radius: 6px; }
+#options-popup .popup-option.selected { border-left-color: #fff; background: rgba(255, 255, 255, 0.1); }
 #options-popup.hidden, #info-card.hidden, #transfer-toast.hidden { opacity: 0; pointer-events: none; }
 .popup-title { font-size: 17px; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
 .popup-list { display: flex; flex-direction: column; gap: 4px; }
@@ -1284,3 +1299,41 @@ body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
 .transfer-bar div { height: 100%; background: #9ad8ff; }
 .transfer.error { border-color: rgba(255, 120, 100, 0.6); }
 .transfer.error .transfer-bar { display: none; }
+
+
+/* The progress ring sprite: 20 frames across. */
+.ring {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  vertical-align: -6px;
+  background-image: url("assets/icons/progress-sprite.webp");
+  background-size: 2000% 100%;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+}
+.ring.spin { animation: ring-spin 1.4s steps(20) infinite; }
+@keyframes ring-spin { from { background-position: 0 0; } to { background-position: 105.263% 0; } }
+.icon-loading { display: flex; align-items: center; justify-content: center; }
+.icon-ring { width: 48px; height: 48px; }
+.transfer { display: flex; align-items: center; gap: 12px; }
+.transfer .ring { width: 34px; height: 34px; flex: none; }
+.transfer-text { flex: 1; min-width: 0; }
+
+/* Wallpaper: behind the ribbons, above the month colour. */
+#wallpaper {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 0.8s ease, background-image 0.8s ease;
+  pointer-events: none;
+}
+#wallpaper.visible { opacity: 0.55; }
+#wallpaper::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0, 0, 0, 0.25), rgba(0, 0, 0, 0.55)); }
+
+/* Unplugged drive rows. */
+.item-icon.hdd-off { filter: grayscale(1) brightness(0.8); opacity: 0.55; }

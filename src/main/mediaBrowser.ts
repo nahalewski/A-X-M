@@ -52,9 +52,10 @@ export interface MediaDrive {
   photo: string | null;
   video: string | null;
   game: string | null;
+  music: string | null;
 }
 
-const DRIVE_FOLDERS = { photo: ["PHOTO", "PHOTOS"], video: ["VIDEO", "VIDEOS"], game: ["GAME", "GAMES"] } as const;
+const DRIVE_FOLDERS = { photo: ["PHOTO", "PHOTOS"], video: ["VIDEO", "VIDEOS"], game: ["GAME", "GAMES"], music: ["MUSIC"] } as const;
 
 export function listMediaDrives(): MediaDrive[] {
   const system = (process.env.SystemDrive ?? "C:").toUpperCase();
@@ -79,10 +80,31 @@ export function listMediaDrives(): MediaDrive[] {
         return null;
       }
     };
-    const entry = { drive, photo: found("photo"), video: found("video"), game: found("game") };
-    if (entry.photo || entry.video || entry.game) drives.push(entry);
+    const entry = { drive, photo: found("photo"), video: found("video"), game: found("game"), music: found("music") };
+    if (entry.photo || entry.video || entry.game || entry.music) drives.push(entry);
   }
   return drives;
+}
+
+/**
+ * Makes a folder, but only inside a drive's PHOTO / VIDEO / MUSIC tree - the one
+ * place the menu is allowed to reshape. Returns the new path.
+ */
+export function createMediaFolder(parentDir: string, name: string): string {
+  const clean = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "").trim();
+  if (!clean || clean === "." || clean === "..") throw new Error("That name can't be used");
+  const resolved = path.resolve(parentDir).toLowerCase();
+  const allowed = listMediaDrives().some((d) =>
+    [d.photo, d.video, d.music].some((root) => {
+      if (!root) return false;
+      const r = path.resolve(root).toLowerCase();
+      return resolved === r || resolved.startsWith(r + path.sep);
+    })
+  );
+  if (!allowed) throw new Error("Folders can only be made inside a drive's PHOTO, VIDEO or MUSIC folder");
+  const full = path.join(parentDir, clean);
+  fs.mkdirSync(full, { recursive: true });
+  return full;
 }
 
 /** The drive folder (if any) that a path sits under, for the given column. */

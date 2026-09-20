@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- A plain badge for the Epic Games Launcher row: white on transparent like the rest of the set. -->
+  <path d="M14 6h36a4 4 0 0 1 4 4v34c0 2.2-1.2 4.2-3.1 5.3L32 59 13.1 49.3A6 6 0 0 1 10 44V10a4 4 0 0 1 4-4z" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/>
+  <text x="32" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#fff" letter-spacing="1">EPIC</text>
+  <text x="32" y="44" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#fff" letter-spacing="1.5">GAMES</text>
+</svg>

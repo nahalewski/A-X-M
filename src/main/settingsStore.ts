@@ -25,7 +25,7 @@ export interface JellyfinLogin {
 }
 
 /** Which loop plays behind the menu. Values match AMBIENT_TRACKS in the renderer. */
-export type AmbientTrackId = "xmb" | "luminous";
+export type AmbientTrackId = "xmb" | "luminous" | "moonlit" | "dreamy" | "midtown";
 
 /** Ribbon background quality. "auto" starts high and steps down if frames suffer. */
 export type BackgroundQuality = "auto" | "low" | "medium" | "high";
@@ -111,6 +111,18 @@ export interface Settings {
   tmdbApiKey: string;
   /** Confirm Steam's install dialog automatically and bring the menu back. */
   steamHandsOffInstall: boolean;
+  /** Music: pick the next track at random rather than in folder order. */
+  musicShuffle: boolean;
+  /** Controller: how far a stick moves before it counts, whether B/A are swapped, rumble. */
+  gamepadDeadZone: number;
+  gamepadProfile: "standard" | "swapped";
+  gamepadVibration: boolean;
+  /** The user's playlist: tracks in play order. */
+  playlist: { name: string; filePath: string; url: string }[];
+  /** Menu wallpaper: one picture, or a folder shuffled every few minutes. */
+  wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
+  /** Drives seen with media folders, so an unplugged one still shows (greyed). */
+  knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
   /** Null until first-boot setup has run. */
   profile: UserProfile | null;
   /** Saved Jellyfin logins, keyed by server URL. */
@@ -155,6 +167,13 @@ const DEFAULTS: Settings = {
   introSparkleEnabled: true,
   tmdbApiKey: "",
   steamHandsOffInstall: true,
+  musicShuffle: false,
+  gamepadDeadZone: 0.5,
+  gamepadProfile: "standard",
+  gamepadVibration: true,
+  playlist: [],
+  wallpaper: null,
+  knownDrives: [],
   profile: null,
   jellyfinLogins: {},
   ankerDeviceName: "Anker",

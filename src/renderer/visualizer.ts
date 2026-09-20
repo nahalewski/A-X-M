@@ -706,18 +706,20 @@ export class MusicVisualizer {
     const alpha = background ? 0.5 : 1;
     const cx = width / 2;
     const cy = background ? height * 0.62 : height * 0.55;
-    const spawn = Math.floor(6 + this.energy * 30 + this.bass * 36);
-    for (let s = 0; s < spawn && this.particles.length < MAX_PARTICLES; s++) {
+    // Bursts come from anywhere across the middle band of the screen, and fly far
+    // enough to reach its edges, so the whole display sparkles rather than a spot.
+    const spawn = Math.floor(8 + this.energy * 40 + this.bass * 48);
+    for (let s = 0; s < spawn && this.particles.length < MAX_PARTICLES * 2; s++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = (40 + Math.random() * 160) * (0.5 + this.energy) * (background ? 0.6 : 1);
+      const speed = (120 + Math.random() * 420) * (0.5 + this.energy) * (background ? 0.6 : 1);
       this.particles.push({
-        x: cx + (Math.random() - 0.5) * width * 0.15,
-        y: cy + (Math.random() - 0.5) * height * 0.08,
+        x: cx + (Math.random() - 0.5) * width * 0.7,
+        y: cy + (Math.random() - 0.5) * height * 0.5,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 30,
         life: 0,
-        max: 0.9 + Math.random() * 1.4,
-        size: 1.5 + Math.random() * 3.5 + this.highs * 3,
+        max: 1.2 + Math.random() * 1.8,
+        size: 2 + Math.random() * 5 + this.highs * 4,
         hue: Math.random(),
       });
     }

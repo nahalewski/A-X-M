@@ -84,3 +84,10 @@ SOFTWARE.
 - [TMDB](https://www.themoviedb.org) supplies film and series details and posters. This
   product uses the TMDB API but is not endorsed or certified by TMDB. The API key is
   the user's own and lives only in the settings file.
+- `sounds/boot.ogg` - the boot sound, from the supplied `boot sound.wav`.
+- `sounds/moonlit.ogg`, `sounds/dreamy.ogg`, `sounds/midtown.ogg` - three optional menu
+  loops, from the supplied f-r-a-g-i-l-e AIFF loops (Freesound ids 862467, 720895,
+  720896). Check the Freesound licence of each before redistributing.
+- `icons/progress-sprite.webp` - the 20-frame progress ring, re-tiled from the supplied
+  sheet. `icons/hdd-off.webp` - the grey ROG drive, for an unplugged drive's row.
+- `icons/epic.svg` - a plain badge drawn for the Epic Games Launcher row.
