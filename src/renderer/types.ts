@@ -175,6 +175,16 @@ export interface BluetoothStatus {
   connectedCount: number;
 }
 
+export interface ResolutionState {
+  /** Target height actually in use (after auto and clamping). */
+  target: number;
+  /** The display's physical height in pixels. */
+  nativeHeight: number;
+  nativeWidth: number;
+  /** Chosen by auto rather than by hand. */
+  auto: boolean;
+}
+
 export interface VolumeInfo {
   drive: string;
   label: string;
@@ -315,6 +325,7 @@ export interface Settings {
   gamepadDeadZone: number;
   gamepadProfile: "standard" | "swapped";
   gamepadVibration: boolean;
+  renderResolution: number;
   playlist: MusicEntry[];
   wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
   knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
@@ -377,6 +388,9 @@ export interface AxmApi {
   copyMedia(kind: "music" | "photo" | "video", source: string, target: string): Promise<string>;
   jellyfinDownload(login: JellyfinLogin, itemId: string, name: string, kind: "music" | "video", target: string, container: string): Promise<string>;
   onTransfer(callback: (progress: TransferProgress) => void): void;
+  /** The resolution the menu is being drawn at, sent on boot and on change. */
+  onResolution(callback: (state: ResolutionState) => void): void;
+  getResolution(): Promise<ResolutionState>;
   browserOpen(url: string): Promise<void>;
   browserClose(): Promise<void>;
   browserInput(action: string): Promise<boolean>;

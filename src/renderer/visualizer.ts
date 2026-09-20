@@ -94,7 +94,14 @@ export class MusicVisualizer {
   private time = 0;
   private styleLabelTimer = 0;
 
+  private renderScale = 1;
   private globe: Float32Array | null = null;
+
+  /** Fraction of the physical resolution to draw at (1 = native). */
+  setRenderScale(scale: number): void {
+    this.renderScale = Math.min(1, Math.max(0.25, scale));
+    this.resize();
+  }
   private particles: Particle[] = [];
 
   constructor(root: HTMLElement) {
@@ -221,7 +228,7 @@ export class MusicVisualizer {
   }
 
   private resize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2) * this.renderScale;
     const width = this.root.clientWidth || window.innerWidth;
     const height = this.root.clientHeight || window.innerHeight;
     this.canvas.width = Math.floor(width * dpr);

@@ -49,6 +49,7 @@ import {
   HardwareInfo,
   MusicEntry,
   ControllerDevice,
+  ResolutionState,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
   });
   // 0 means "whatever the display does"; otherwise the ribbon skips frames to the cap.
   ribbon.setMaxFps(settings.targetHz);
+  let resolution: ResolutionState = { target: 0, nativeHeight: 0, nativeWidth: 0, auto: true };
 
   let games: GameEntry[] = await window.axm.getGames();
   // Drives with PHOTO / VIDEO / GAME folders at the root; re-read on each rescan.
@@ -1716,6 +1718,23 @@ async function main(): Promise<void> {
         },
       },
       {
+        id: "renderResolution",
+        title: "Menu Resolution",
+        subtitle: (() => {
+          const label = (h: number) => (h === 2160 ? "4K (2160p)" : `${h}p`);
+          const native = resolution.nativeHeight ? ` · display ${resolution.nativeWidth}×${resolution.nativeHeight}` : "";
+          return settings.renderResolution ? `${label(settings.renderResolution)}${native}` : `Auto · ${resolution.target ? label(resolution.target) : "native"}${native}`;
+        })(),
+        iconGlyph: "▭",
+        onConfirm: async () => {
+          // Auto -> 720p -> 800p -> ... up to the display's own height -> Auto.
+          const steps = [0, 720, 800, 900, 1080, 1200, 1440, 1600, 2160].filter((h) => h === 0 || !resolution.nativeHeight || h <= resolution.nativeHeight);
+          const next = steps[(steps.indexOf(settings.renderResolution) + 1) % steps.length];
+          settings = await window.axm.setSettings({ renderResolution: next });
+          xmb.refresh();
+        },
+      },
+      {
         id: "targetHz",
         title: "Menu Refresh Rate",
         subtitle: settings.targetHz ? `${settings.targetHz} fps` : "Match display",
@@ -2016,7 +2035,7 @@ async function main(): Promise<void> {
     };
 
     const aboutItems = (): MenuItem[] => [
-      { id: "about-1", title: "A-X-M · Ally XMB Menu", subtitle: "Version 0.1.0 · a PS3-style hub for the ROG Xbox Ally", iconUrl: "assets/icons/boot-logo.png" },
+      { id: "about-1", title: "A-X-M · Ally XMB Menu", subtitle: "Version 0.1.0 Beta 1 · a PS3-style hub for the ROG Xbox Ally", iconUrl: "assets/icons/boot-logo.png" },
       { id: "about-2", title: "This app was developed using AI.", subtitle: "It's a passion project I've always wanted since the PS3 and PSP, then seeing handhelds.", iconGlyph: "✦" },
       { id: "about-3", title: "I don't care about negative AI comments - move along.", subtitle: "Otherwise, let's bring our dreams to fruition by any means possible.", iconGlyph: "✧" },
       { id: "about-4", title: "User developed with Naha0", subtitle: "github.com/nahalewski/A-X-M", iconUrl: "assets/icons/user.png" },
@@ -2166,6 +2185,19 @@ async function main(): Promise<void> {
   void applyWallpaper();
   const xmb = new Xmb(categories, audio);
   xmb.setOnSelectionChange((item) => gameBackground.show(item?.backgroundUrl));
+
+  // Menu resolution: the main process sets the page zoom so the layout is `target`
+  // rows tall; here the frame buffers are scaled to match, so 720p really is 720p.
+  const applyResolutionState = (state: ResolutionState) => {
+    resolution = state;
+    const physical = Math.round(window.innerHeight * (window.devicePixelRatio || 1));
+    const scale = state.target && physical ? state.target / physical : 1;
+    ribbon.setRenderScale(scale);
+    visualizer.setRenderScale(scale);
+    xmb.refresh();
+  };
+  window.axm.onResolution((state) => applyResolutionState(state));
+  void window.axm.getResolution().then(applyResolutionState);
 
   // Y on a game -> Options -> Change Artwork: every grid SteamGridDB has for it.
   xmb.setGameActions([

@@ -37,6 +37,7 @@ interface RendererLike {
   readonly domElement: HTMLCanvasElement;
   render(deltaSeconds: number, speed: number): void;
   resize(width: number, height: number): void;
+  setRenderScale?(scale: number): void;
   setColor(color: string): void;
   setOpacity(opacity: number): void;
   setWaveStrength(strength: number): void;
@@ -313,6 +314,12 @@ export class RibbonBackground {
     if (level === this.level) return;
     this.level = level;
     this.renderer.setQuality(level);
+  }
+
+  /** Fraction of the physical resolution to draw at (1 = native). */
+  setRenderScale(scale: number): void {
+    this.renderer.setRenderScale?.(Math.min(1, Math.max(0.25, scale)));
+    this.resize();
   }
 
   /** The preset actually in use, which differs from `quality` once auto steps down. */

@@ -52,6 +52,10 @@ const api = {
   onTransfer: (callback: (progress: unknown) => void) => {
     ipcRenderer.on("axm:transfer", (_e, progress) => callback(progress));
   },
+  onResolution: (callback: (state: unknown) => void) => {
+    ipcRenderer.on("axm:resolution", (_e, state) => callback(state));
+  },
+  getResolution: () => ipcRenderer.invoke("axm:getResolution"),
   browserOpen: (url: string) => ipcRenderer.invoke("axm:browserOpen", url),
   browserClose: () => ipcRenderer.invoke("axm:browserClose"),
   browserInput: (action: string) => ipcRenderer.invoke("axm:browserInput", action),

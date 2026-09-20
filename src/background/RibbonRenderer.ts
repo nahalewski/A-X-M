@@ -268,11 +268,17 @@ export class RibbonRenderer {
 
   // ------------------------------------------------------------------ setters --
 
+  private renderScale = 1;
+
+  setRenderScale(scale: number): void {
+    this.renderScale = scale;
+  }
+
   resize(width: number, height: number): void {
     this.width = Math.max(1, width);
     this.height = Math.max(1, height);
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio) * this.renderScale);
     this.renderer.setSize(this.width, this.height, false);
 
     this.camera.aspect = this.width / this.height;

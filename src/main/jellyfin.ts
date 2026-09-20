@@ -13,7 +13,7 @@ const DISCOVERY_PORT = 7359;
 const DISCOVERY_MESSAGE = "who is JellyfinServer?";
 const DISCOVERY_WINDOW_MS = 2200;
 const CLIENT_NAME = "A-X-M";
-const CLIENT_VERSION = "0.1.0";
+const CLIENT_VERSION = "0.1.0-beta.1";
 
 export interface JellyfinServer {
   name: string;

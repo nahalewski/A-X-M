@@ -69,6 +69,7 @@ function createWindow(): void {
   // creation is honoured, so the window really does cover the whole display.
   if (!settings.windowed) mainWindow.setBounds(display.bounds);
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+  mainWindow.webContents.on("did-finish-load", () => applyResolution());
 
   if (process.argv.includes("--dev")) {
     mainWindow.webContents.openDevTools({ mode: "detach" });
@@ -81,6 +82,48 @@ function createWindow(): void {
   });
 }
 
+// ---- Menu resolution -----------------------------------------------------------
+//
+// The window always covers the display's physical pixels; the resolution setting
+// picks the height the menu is laid out and rendered at. 720p on a 1080p screen
+// means the layout is 720 CSS px tall (page zoom 1.5) and the ribbon and
+// visualizer draw their frame buffers at 720 rows, then the compositor scales up.
+// Auto picks the native height unless the GPU looks too small for it.
+
+export const RESOLUTIONS = [720, 800, 900, 1080, 1200, 1440, 1600, 2160];
+
+function chooseResolution(): { target: number; nativeHeight: number; nativeWidth: number; auto: boolean } {
+  const display = screen.getPrimaryDisplay();
+  const nativeHeight = Math.round(display.size.height * display.scaleFactor);
+  const nativeWidth = Math.round(display.size.width * display.scaleFactor);
+  const wanted = loadSettings().renderResolution;
+  if (wanted > 0) return { target: Math.min(wanted, nativeHeight), nativeHeight, nativeWidth, auto: false };
+  // Auto: native, stepped down on small GPUs at very high resolutions.
+  let target = nativeHeight;
+  const gpuGb = cachedGpuGb;
+  if (nativeHeight > 1440 && gpuGb !== null && gpuGb < 6) target = 1440;
+  if (nativeHeight > 1080 && gpuGb !== null && gpuGb < 3) target = 1080;
+  return { target, nativeHeight, nativeWidth, auto: true };
+}
+
+let cachedGpuGb: number | null = null;
+void getHardwareInfo().then((h) => {
+  cachedGpuGb = h.gpuGb || null;
+  applyResolution();
+}).catch(() => {});
+
+function applyResolution(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const state = chooseResolution();
+  const display = screen.getPrimaryDisplay();
+  // Windowed mode keeps the page at 1:1; the setting is for the full-screen menu.
+  const zoom = loadSettings().windowed ? 1 : display.size.height / state.target;
+  mainWindow.webContents.setZoomFactor(zoom);
+  mainWindow.webContents.send("axm:resolution", state);
+}
+
+ipcMain.handle("axm:getResolution", () => chooseResolution());
+
 function applyWindowMode(windowed: boolean): void {
   if (!mainWindow) return;
   const display = screen.getPrimaryDisplay();
@@ -91,6 +134,7 @@ function applyWindowMode(windowed: boolean): void {
   } else {
     mainWindow.setBounds(display.bounds);
   }
+  applyResolution();
 }
 
 // ---- In-game overlay ---------------------------------------------------------------
@@ -148,6 +192,7 @@ ipcMain.handle("axm:getSettings", (): Settings => loadSettings());
 ipcMain.handle("axm:setSettings", (_e, partial: Partial<Settings>): Settings => {
   const updated = saveSettings(partial);
   if (partial.windowed !== undefined) applyWindowMode(partial.windowed);
+  if (partial.renderResolution !== undefined) applyResolution();
   if (partial.overlayHotkey !== undefined) overlayHotkey?.setShortcut(partial.overlayHotkey);
   return updated;
 });

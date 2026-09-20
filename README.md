@@ -1,73 +1,155 @@
-# A-X-M (Ally XMB Menu)
+# A-X-M · Ally XMB Menu
 
-PS3-XMB-style game hub launcher for the ROG Xbox Ally, built with Electron + TypeScript.
+A PS3-XMB-style hub for the **ROG Xbox Ally** (and any Windows handheld or PC), built with
+Electron + TypeScript. Games, music, photos, video, Jellyfin, a browser and settings in
+the cross-media bar you remember, driven from the controller, with the waves and the
+sounds.
 
-## Run it
+> **Beta.** First public build. Expect rough edges; issues and ideas are welcome.
+> Possible **PSP** and **Android** development coming soon.
+
+![Games column with Hollow Knight focused](docs/screenshots/01-games.jpg)
+
+## Download
+
+Grab the latest installer from the [Releases](https://github.com/nahalewski/A-X-M/releases)
+page (`A-X-M-Setup-<version>.exe`, NSIS, per-user install, no admin needed). Or build it
+yourself - see *Build the installer* below.
+
+## Demo
+
+[▶ Watch the 84-second demo (MP4, 5.5 MB)](docs/A-X-M-demo.mp4) - profile creation, an
+avatar, music with the visualizer, a photo, a video, a scroll through the games, and
+changing a game's artwork.
+
+## Features
+
+### The menu
+- The XMB, in the PS3's running order: **Users · Settings · Photo · Music · Video · Game · Browser**, with
+  the sliding category bar, PS3-style icons, the boot sound, the ambient loop (five loops to
+  choose from, or off) and the navigation sounds.
+- Animated ribbon background over the XMB's own month colours (January grey through
+  December red), or a **wallpaper** from your own pictures (one, or a folder shuffled).
+- **Controller first**: Xbox pads, the Ally's own controls, PlayStation, Nintendo Switch and
+  Razer Kishi pads - the footer hints draw the face button as *your* pad draws it.
+- **In-game overlay**: the Guide / PS button (or M1 mapped to a shortcut) brings the menu up
+  translucent over whatever's running, and drops it again.
+- Runs at the display's refresh rate (60 / 120 / 144 or match display) and at the
+  **resolution you pick**: 720p, 800p, 900p, 1080p, 1200p, 1440p, 1600p, 4K, or *Auto*, which
+  reads the screen and the GPU. Optional FPS counter and hardware readout.
+- First-boot profile with three avatar sources (bundled avatars, SteamGridDB, your game
+  icons) and a PS5-style welcome sparkle.
+- Wi-Fi, Bluetooth, the Ally's battery and an Anker power bank in the status bar.
+
+### Game
+- Scans every drive: Steam, Epic, Xbox / Game Pass, GOG-style folders and any folder you add.
+  Only real games show - launchers, redistributables and tools are filtered out.
+- Cover art and hero backgrounds from Steam and SteamGridDB; **Change Artwork…** picks any
+  cover SteamGridDB has for the game.
+- Y on a game: Lossless Scaling profile (1–3), open its folder, change artwork.
+- Your Steam library with install state and progress; installs run in the background and
+  Steam's dialog is confirmed for you (hands-off, optional).
+- Saved Data Utility and Game Data Utility, like the PS3's.
+- Launcher rows for Steam, Epic Games, Battle.net, GeForce NOW and Xbox Cloud Gaming.
+
+### Music
+- Browses your music folder-by-folder, plus any drive's `MUSIC` folder.
+- **Playlist**, **shuffle**, play/pause from anywhere, now-playing bar.
+- **Song Information** (Y): the file's tags and cover, MusicBrainz artist details, Cover Art
+  Archive covers.
+- **Eleven visualizers**: the PS3's Spectrum Analyzer, Earth, Line and Waveform; the PSP's
+  Rain, Circle and Sparkle; and Tunnel, Terrain, Scope and Pulse - all in one neon palette.
+  ◀ ▶ switches on the stage; the one you pick stays behind the menu while music plays.
+
+### Photo and Video
+- In-app viewers: photos zoom, rotate and slideshow; MP4 video with seek. Controls drawn from
+  PS-style button sheets.
+- **Jellyfin**: finds servers on the LAN (or type an address), signs in once, browses your
+  libraries with posters and backdrops, plays in the menu (direct play when the browser can,
+  HLS transcode when it can't), and **downloads** films and episodes to any drive.
+- **Information** (Y) on a film or show from TMDB (your own API key).
+- **Copy** songs, pictures and videos to any drive's `MUSIC` / `PHOTO` / `VIDEO` folder and
+  back to this PC; make folders inside them from the menu. A drive with those folders gets
+  its own row, and keeps a greyed row when it's unplugged.
+
+### Browser
+- A pop-up browser **inside** the menu (not Edge): D-pad scrolls and moves through history,
+  Y reloads, B closes; Google, YouTube TV, Xbox Cloud Gaming and GeForce NOW one press away.
+
+### Settings
+- Theme (monthly colours, ribbon speed / width / colour, background quality), visualizer
+  style, welcome sparkle, wallpaper, music shuffle, navigation sounds, menu music, battery
+  percentage, Steam install drive, in-game menu button, menu resolution, refresh rate, FPS
+  counter, hardware info.
+- **System Information**: device, CPU, RAM, GPU and every drive's used / free space.
+- **Controller**: players 1–4, family, wired or wireless, battery for Bluetooth pads, A/B
+  profile swap, stick dead zone, vibration with a test.
+- About.
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Y options panel](docs/screenshots/04-options-panel.jpg) | ![Song information](docs/screenshots/05-song-info.jpg) |
+| ![Spectrum Analyzer](docs/screenshots/06-visualizer-bars.jpg) | ![Circle visualizer](docs/screenshots/07-visualizer-circle.jpg) |
+| ![Tunnel visualizer](docs/screenshots/08-visualizer-tunnel.jpg) | ![Settings](docs/screenshots/09-settings.jpg) |
+| ![Menu at 720p](docs/screenshots/10-720p.jpg) | ![System Information](docs/screenshots/11-system-info.jpg) |
+| ![Jellyfin with backdrop](docs/screenshots/13-jellyfin.jpg) | ![Video player](docs/screenshots/14-video-player.jpg) |
+
+## Resolution and performance
+
+The window always covers the display's physical pixels. **Settings › Menu Resolution** picks
+the height the menu is laid out and rendered at: at *720p* on a 1080p screen the layout is
+720 rows tall and the ribbon and visualizer draw their frame buffers at 720 rows, then the
+compositor scales up - so a weaker GPU does less work and the UI reads larger. *Auto* uses the
+native height, stepping down to 1440p or 1080p when the GPU reports little memory. Anything
+between 720p and 4K is offered up to the display's own height, which covers the Ally (1080p),
+Steam Deck-class 800p panels and 1440p / 4K docks.
+
+**Menu Refresh Rate** caps the ribbon at 60 / 120 / 144 fps or follows the display. The menu
+itself is vsync-locked to the panel.
+
+## Run from source
 
 ```bash
 npm install
 npm start
 ```
 
-`npm start` builds everything and launches the app. Use `npm run dev` to also open DevTools.
+`npm start` builds everything and launches the app; `npm run dev` also opens DevTools.
 
-## Build a portable .exe
+## Build the installer
 
 ```bash
 npm run package
 ```
 
-Output goes to `release/`.
+Output goes to `release/` (an NSIS installer). The packaged app never contains your API keys:
+SteamGridDB and TMDB keys live only in `%APPDATA%\A-X-M\axm-settings.json`.
 
-## What's implemented
+## Keys and accounts
 
-- Fullscreen by default, toggle to windowed from Settings (persisted to disk).
-- WebGL animated wave background cycling through 8 colors (Settings > Wave Color Speed).
-- XMB-style category bar (Games / Settings / Power) with vertical item lists, keyboard
-  (arrows/WASD, Enter, Esc, Y) and Xbox-controller (D-pad/stick, A/B/Y) navigation.
-- Game scanning across every drive letter: Steam (via `libraryfolders.vdf` + manifests,
-  launched through `steam://rungameid/<id>`), Epic Games (via its manifest JSON files,
-  launched through the Epic protocol), Xbox/Game Pass UWP titles (via `Get-AppxPackage`
-  + manifest lookup, launched through `shell:AppsFolder\...`), and a generic scan of
-  `Games`/`GOG Games`/etc. folders on each drive plus any folders you add yourself.
-- Y button on a focused game opens a profile picker (None/1/2/3) for Lossless Scaling;
-  the choice is remembered per game. See `src/main/losslessScaling.ts` for why this
-  intentionally does NOT write Lossless Scaling's own config file yet.
-- Boot chime -> ambient menu loop with fade in/out (`src/renderer/audio.ts`) - silently
-  no-ops until real audio files are dropped in `assets/sounds/` (see below).
-- Runs uncapped by Chromium's internal frame limiter so it tracks the display's native
-  refresh rate (120Hz on the Ally) through normal vsync - no tearing hacks.
+- **SteamGridDB** (game art): `gameArtApiKey` in the settings file, or the
+  `AXM_STEAMGRIDDB_KEY` environment variable.
+- **TMDB** (film / show information): `tmdbApiKey` in the settings file.
+- **Jellyfin**: sign in from the Video column; only the access token is kept, never the password.
+- MusicBrainz and the Cover Art Archive need no key.
 
-## Music
+## Controls
 
-The Music category browses the library folder-by-folder, mirroring however it's laid
-out on disk (e.g. `Artist / Album / tracks`) rather than flattening everything into one
-list. A descends into a folder or plays a track, B goes back up a level, and Y toggles
-play/pause. Playing a track queues the rest of its folder so it advances automatically,
-and the ambient menu loop fades out while music plays and returns when it stops.
+| | Xbox | PlayStation | Keyboard |
+| --- | --- | --- | --- |
+| Move | D-pad / left stick | D-pad / left stick | Arrows / WASD |
+| Select | A | ✕ | Enter |
+| Back | B | ○ | Esc / Backspace |
+| Options | Y | △ | Y |
+| In-game menu | Guide | PS | Alt+Home (configurable; map M1 to it in Armoury Crate) |
 
-Roots come from `musicFolders` in settings (add one via Settings > Add Music Folder),
-falling back to the usual Windows music locations. FLAC, MP3, WAV, OGG, M4A, AAC, WMA
-and Opus all play natively.
+## Credits
 
-## Boot logo
-
-The boot splash loads `assets/icons/boot-logo.png` and falls back to plain "A-X-M" text
-if that file isn't present.
-
-## Box art
-
-Steam titles pull their art from Steam's CDN. Everything else (Epic, loose exes,
-Xbox titles with no package logo) is looked up on [SteamGridDB](https://www.steamgriddb.com),
-which needs a free API key. The key is **not** stored in this repo - put it in either:
-
-- the `AXM_STEAMGRIDDB_KEY` environment variable, or
-- `gameArtApiKey` in `%APPDATA%\A-X-M\axm-settings.json`
-
-Art is fetched in the background after a scan and cached under
-`%APPDATA%\A-X-M\art-cache`, so it only downloads once and works offline after that.
-Misses are cached too, so unmatched names aren't retried on every launch. Without a
-key the grid just falls back to source letter badges.
+Developed with AI as a passion project - see *Settings › About*. Icons, sounds and sprite
+sheets are credited in `assets/THIRD_PARTY_LICENSES.md`. Not affiliated with Sony, ASUS,
+Microsoft, Valve, Epic, Jellyfin or TMDB.
 
 ## Ribbon background
 

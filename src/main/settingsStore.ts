@@ -117,6 +117,8 @@ export interface Settings {
   gamepadDeadZone: number;
   gamepadProfile: "standard" | "swapped";
   gamepadVibration: boolean;
+  /** Menu resolution as a target height (720, 1080, 2160 ...) or 0 for auto. */
+  renderResolution: number;
   /** The user's playlist: tracks in play order. */
   playlist: { name: string; filePath: string; url: string }[];
   /** Menu wallpaper: one picture, or a folder shuffled every few minutes. */
@@ -171,6 +173,7 @@ const DEFAULTS: Settings = {
   gamepadDeadZone: 0.5,
   gamepadProfile: "standard",
   gamepadVibration: true,
+  renderResolution: 0,
   playlist: [],
   wallpaper: null,
   knownDrives: [],

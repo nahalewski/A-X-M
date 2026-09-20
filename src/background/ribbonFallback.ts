@@ -40,6 +40,11 @@ export class RibbonFallbackRenderer {
   private width = 1;
   private height = 1;
   private pixelRatio = 1;
+  private renderScale = 1;
+
+  setRenderScale(scale: number): void {
+    this.renderScale = scale;
+  }
 
   private ribbonTime = 0;
   private backdropTime = 0;
@@ -161,7 +166,7 @@ export class RibbonFallbackRenderer {
   resize(width: number, height: number): void {
     this.width = Math.max(1, width);
     this.height = Math.max(1, height);
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio) * this.renderScale;
     this.domElement.width = Math.floor(this.width * this.pixelRatio);
     this.domElement.height = Math.floor(this.height * this.pixelRatio);
     this.domElement.style.width = `${this.width}px`;
