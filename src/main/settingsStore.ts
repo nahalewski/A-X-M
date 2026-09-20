@@ -107,6 +107,8 @@ export interface Settings {
   profile: UserProfile | null;
   /** Saved Jellyfin logins, keyed by server URL. */
   jellyfinLogins: Record<string, JellyfinLogin>;
+  /** Regex matched against paired Bluetooth device names to find the power bank. */
+  ankerDeviceName: string;
 }
 
 const DEFAULTS: Settings = {
@@ -129,6 +131,7 @@ const DEFAULTS: Settings = {
   visualizerEnabled: true,
   profile: null,
   jellyfinLogins: {},
+  ankerDeviceName: "Anker",
 };
 
 let cache: Settings | null = null;

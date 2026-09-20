@@ -8,6 +8,7 @@ import { MusicVisualizer } from "./visualizer";
 import { MediaViewer } from "./mediaViewer";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
+import { BatteryIndicators } from "./battery";
 import { GameBackground } from "./background";
 import {
   ThemeManager,
@@ -244,6 +245,8 @@ async function main(): Promise<void> {
   };
   updateClock();
   setInterval(updateClock, 15_000);
+
+  void new BatteryIndicators(document.getElementById("batteries")!).start();
 
   // ---- Visualizer lifecycle -------------------------------------------------------
   //

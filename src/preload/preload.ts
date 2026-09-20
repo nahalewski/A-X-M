@@ -36,6 +36,7 @@ const api = {
   jellyfinForget: (serverUrl: string) => ipcRenderer.invoke("axm:jellyfinForget", serverUrl),
   jellyfinLibraries: (login: unknown) => ipcRenderer.invoke("axm:jellyfinLibraries", login),
   jellyfinItems: (login: unknown, parentId: string) => ipcRenderer.invoke("axm:jellyfinItems", login, parentId),
+  getAnkerStatus: () => ipcRenderer.invoke("axm:getAnkerStatus"),
   getSteamLibrary: () => ipcRenderer.invoke("axm:getSteamLibrary"),
   installSteamGame: (appid: number) => ipcRenderer.invoke("axm:installSteamGame", appid),
   launchSteamApp: (appid: number) => ipcRenderer.invoke("axm:launchSteamApp", appid),

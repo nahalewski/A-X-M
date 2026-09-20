@@ -15,6 +15,7 @@ import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary"
 import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
 import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
+import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
@@ -327,6 +328,8 @@ ipcMain.handle(
   (_e, login: JellyfinLogin, parentId: string): Promise<jellyfin.JellyfinItem[] | null> =>
     jellyfin.getItems(login, parentId)
 );
+
+ipcMain.handle("axm:getAnkerStatus", (): AnkerStatus => readAnkerStatus());
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 

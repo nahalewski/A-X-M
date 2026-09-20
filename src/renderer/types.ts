@@ -145,6 +145,13 @@ export interface ArtChoice {
   thumb: string;
 }
 
+export interface AnkerStatus {
+  connected: boolean;
+  level: number | null;
+  depleting: boolean;
+  deviceName: string | null;
+}
+
 export interface SaveEntry {
   id: string;
   name: string;
@@ -186,6 +193,7 @@ export interface Settings {
   visualizerEnabled: boolean;
   profile: UserProfile | null;
   jellyfinLogins: Record<string, JellyfinLogin>;
+  ankerDeviceName: string;
 }
 
 /** Artwork that landed after the initial scan. Either field may be absent. */
@@ -222,6 +230,7 @@ export interface AxmApi {
   jellyfinForget(serverUrl: string): Promise<Settings>;
   jellyfinLibraries(login: JellyfinLogin): Promise<JellyfinItem[] | null>;
   jellyfinItems(login: JellyfinLogin, parentId: string): Promise<JellyfinItem[] | null>;
+  getAnkerStatus(): Promise<AnkerStatus>;
   getSteamLibrary(): Promise<SteamLibrary>;
   installSteamGame(appid: number): Promise<void>;
   launchSteamApp(appid: number): Promise<void>;
