@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "hls.js": "^1.7.3",
+    "music-metadata": "^7.14.0",
     "three": "^0.171.0"
   },
   "author": "nahalewski"

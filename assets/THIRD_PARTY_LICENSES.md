@@ -72,3 +72,15 @@ SOFTWARE.
 - [hls.js](https://github.com/video-dev/hls.js) - Apache License 2.0, Copyright (c)
   2017 Dailymotion. Used to play Jellyfin's HLS transcodes in the built-in viewer.
   Full text: `node_modules/hls.js/LICENSE`.
+- [music-metadata](https://github.com/Borewit/music-metadata) - MIT License, Copyright (c)
+  2015 Borewit. Reads a track's tags and embedded cover for the Song Information card.
+  Full text: `node_modules/music-metadata/LICENSE.txt`.
+
+## Online services
+
+- [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org)
+  supply artist details and covers for songs (CC0 / CC BY-NC-SA data; one request a
+  second, as their terms ask).
+- [TMDB](https://www.themoviedb.org) supplies film and series details and posters. This
+  product uses the TMDB API but is not endorsed or certified by TMDB. The API key is
+  the user's own and lives only in the settings file.

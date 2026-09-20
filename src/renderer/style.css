@@ -1133,3 +1133,154 @@ body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
 .hw-row { display: flex; gap: 10px; }
 .hw-label { width: 46px; opacity: 0.6; letter-spacing: 0.5px; text-transform: uppercase; font-size: 10px; line-height: 15px; }
 .hw-value { white-space: nowrap; }
+
+
+/* Glyphs from the browser / gallery / player sheets: white masks, tinted like the rest. */
+.spr {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  vertical-align: -6px;
+  background-color: #f4f7ff;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5));
+}
+.spr.big { width: 30px; height: 30px; vertical-align: -9px; }
+.spr.dim { opacity: 0.3; }
+.np-spr { width: 26px; height: 26px; vertical-align: middle; }
+
+/* Viewer control strips. */
+.viewer-bar {
+  position: absolute;
+  left: 42px;
+  bottom: 24px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(8, 12, 24, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+}
+#media-viewer.photo .photo-bar { display: flex; }
+#media-viewer.video .video-bar { display: flex; right: auto; left: auto; }
+#media-viewer.video .video-bar { left: 42px; bottom: 70px; }
+#media-viewer.video .viewer-time { left: auto; right: 42px; bottom: 80px; }
+.viewer-bar .btn { margin-right: 0; }
+.viewer-key { opacity: 0.75; font-size: 12px; letter-spacing: 1px; }
+.viewer-sep { width: 1px; height: 18px; background: rgba(255, 255, 255, 0.2); margin: 0 4px; }
+.viewer-image { transition: transform 0.25s ease; }
+
+/* Browser toolbar in the footer. */
+.browser-bar { display: inline-flex; align-items: center; gap: 6px; }
+.browser-url { opacity: 0.85; max-width: 46vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Visualizer style name, flashed up when ◀ ▶ switches it on the stage. */
+.visualizer-style {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.85;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.visualizer-style.hidden { display: block; opacity: 0; }
+#visualizer.background .visualizer-style { display: none; }
+
+/* Welcome sparkle canvas, above everything but the splash. */
+#intro-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+
+/* Y-button popups: options list and the information card. */
+#options-popup, #info-card {
+  position: fixed;
+  z-index: 25;
+  background: rgba(6, 9, 20, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.18s ease;
+}
+#options-popup {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 380px;
+  max-width: 560px;
+  padding: 18px 22px 14px;
+}
+#options-popup.hidden, #info-card.hidden, #transfer-toast.hidden { opacity: 0; pointer-events: none; }
+.popup-title { font-size: 17px; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; }
+.popup-list { display: flex; flex-direction: column; gap: 4px; }
+.popup-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 15px;
+  opacity: 0.7;
+}
+.popup-option.selected { background: rgba(255, 255, 255, 0.14); opacity: 1; }
+.popup-option-hint { font-size: 12px; opacity: 0.6; white-space: nowrap; }
+.popup-hint { margin-top: 12px; font-size: 12px; opacity: 0.55; }
+
+#info-card {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(860px, 80vw);
+  padding: 24px;
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+.info-art { width: 220px; max-height: 330px; object-fit: cover; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); flex: none; }
+.info-art.hidden { display: none; }
+.info-body { flex: 1; min-width: 0; }
+.info-title { font-size: 24px; font-weight: 300; margin-bottom: 4px; }
+.info-sub { font-size: 15px; opacity: 0.75; margin-bottom: 14px; }
+.info-grid { display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; font-size: 14px; margin-bottom: 12px; }
+.info-k { opacity: 0.55; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; line-height: 20px; }
+.info-v { opacity: 0.95; }
+.info-overview { font-size: 14px; line-height: 1.5; opacity: 0.85; max-height: 9em; overflow: hidden; }
+.info-source { margin-top: 10px; font-size: 11px; opacity: 0.45; letter-spacing: 0.5px; }
+.info-line.dim, .dim { opacity: 0.5; }
+
+/* Drive usage bar on System Information rows. */
+.item-meter { margin-top: 6px; width: 260px; height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); overflow: hidden; }
+.item-meter-fill { height: 100%; background: rgba(255, 255, 255, 0.85); border-radius: 999px; }
+.item-meter-fill.full { background: #ff7a6b; }
+
+/* Copy / download progress, bottom centre. */
+#transfer-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 70px;
+  transform: translateX(-50%);
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 420px;
+  max-width: 60vw;
+  transition: opacity 0.2s ease;
+}
+.transfer { padding: 10px 14px; border-radius: 10px; background: rgba(8, 12, 24, 0.85); border: 1px solid rgba(255, 255, 255, 0.14); font-size: 13px; }
+.transfer span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 6px; }
+.transfer-bar { height: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.15); overflow: hidden; }
+.transfer-bar div { height: 100%; background: #9ad8ff; }
+.transfer.error { border-color: rgba(255, 120, 100, 0.6); }
+.transfer.error .transfer-bar { display: none; }

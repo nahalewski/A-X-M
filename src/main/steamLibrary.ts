@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { execFile } from "node:child_process";
 import * as path from "node:path";
 import { shell } from "electron";
 import { parseVdf, VdfNode } from "./vdf";
@@ -142,8 +143,43 @@ export function getSteamLibrary(): SteamLibrary {
   return { account: account?.name ?? null, games };
 }
 
-/** Asks the Steam client to install an app; it downloads in the background from there. */
-export function installSteamGame(appid: number): void {
+/**
+ * Asks the Steam client to install an app; it downloads in the background from there.
+ *
+ * Steam has no silent-install command for the desktop client, so the install
+ * dialog always appears. With `handsOff` on, the dialog is confirmed for the
+ * user: the window titled "Install - <game>" is found once it appears, Enter is
+ * sent to accept its defaults (Steam's own default library, which is the drive
+ * chosen in Steam's settings), and the menu is brought back to the front. The
+ * space check is Steam's - it refuses an install that doesn't fit, and the dialog
+ * is then left open for the user to see. Best effort: if the dialog never shows,
+ * nothing is pressed.
+ */
+export function installSteamGame(appid: number, handsOff: boolean, onDone?: () => void): void {
   if (!Number.isInteger(appid) || appid <= 0) return;
   shell.openExternal(`steam://install/${appid}`);
+  if (!handsOff) return;
+  const script = `
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public class W { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string t); }
+"@
+Add-Type -AssemblyName System.Windows.Forms
+$deadline = (Get-Date).AddSeconds(25); $dlg = $null
+while ((Get-Date) -lt $deadline) {
+  $dlg = Get-Process steamwebhelper,steam -ErrorAction SilentlyContinue | ForEach-Object { $_.MainWindowTitle } | Where-Object { $_ -like 'Install - *' } | Select-Object -First 1
+  if ($dlg) { break }
+  Start-Sleep -Milliseconds 500
+}
+if ($dlg) {
+  $h = [W]::FindWindow($null, $dlg)
+  if ($h -ne [IntPtr]::Zero) {
+    [W]::SetForegroundWindow($h) | Out-Null; Start-Sleep -Milliseconds 400
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}'); Start-Sleep -Milliseconds 900
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}'); Start-Sleep -Milliseconds 600
+  }
+}
+$axm = [W]::FindWindow($null, 'A-X-M'); if ($axm -ne [IntPtr]::Zero) { [W]::SetForegroundWindow($axm) | Out-Null }
+"`;
+  execFile("powershell", ["-NoProfile", "-NonInteractive", "-STA", "-Command", script], { windowsHide: true, timeout: 40_000 }, () => onDone?.());
 }

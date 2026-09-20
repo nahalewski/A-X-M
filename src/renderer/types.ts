@@ -32,19 +32,26 @@ export interface MonthTheme {
  * greens through spring, deep blues in high summer, ambers and reds in autumn.
  * January is index 0.
  */
+/**
+ * The XMB's month colours (the PS3's own "color filter" values: Jan CBCBCB, Feb
+ * D8BF1A, Mar 6DB217, Apr E17E9A, May 178816, Jun 9A61C8, Jul 02CDC7, Aug 0C76C0,
+ * Sep B444C0, Oct E5A708, Nov 875B1E, Dec E3412A). The backdrop is that colour at
+ * full saturation but deepened so white text still reads; the ribbon is a pale tint
+ * of it, which is what makes each month read as vividly its own.
+ */
 export const DEFAULT_MONTH_THEMES: MonthTheme[] = [
-  { ribbonColor: "#dCEBFF", backgroundColor: "#12325f", ribbonSpeed: 0.18, ribbonWidth: 1.05 },
-  { ribbonColor: "#ffd9ec", backgroundColor: "#3d1b52", ribbonSpeed: 0.20, ribbonWidth: 1.00 },
-  { ribbonColor: "#e6ffe9", backgroundColor: "#13503c", ribbonSpeed: 0.24, ribbonWidth: 0.95 },
-  { ribbonColor: "#ffe6f2", backgroundColor: "#5a2350", ribbonSpeed: 0.26, ribbonWidth: 0.95 },
-  { ribbonColor: "#eaffd6", backgroundColor: "#255c1d", ribbonSpeed: 0.28, ribbonWidth: 0.90 },
-  { ribbonColor: "#d8f2ff", backgroundColor: "#123f6d", ribbonSpeed: 0.30, ribbonWidth: 0.90 },
-  { ribbonColor: "#d4fbff", backgroundColor: "#0b4f5e", ribbonSpeed: 0.32, ribbonWidth: 0.85 },
-  { ribbonColor: "#cfe4ff", backgroundColor: "#0d2a6b", ribbonSpeed: 0.30, ribbonWidth: 0.90 },
-  { ribbonColor: "#ffe9c9", backgroundColor: "#6b3a0c", ribbonSpeed: 0.24, ribbonWidth: 1.00 },
-  { ribbonColor: "#ffdcae", backgroundColor: "#5e2a08", ribbonSpeed: 0.22, ribbonWidth: 1.05 },
-  { ribbonColor: "#ffd2cc", backgroundColor: "#54121c", ribbonSpeed: 0.20, ribbonWidth: 1.10 },
-  { ribbonColor: "#ffffff", backgroundColor: "#16386e", ribbonSpeed: 0.16, ribbonWidth: 1.15 },
+  { ribbonColor: "#f2f2f2", backgroundColor: "#5c5c5c", ribbonSpeed: 0.18, ribbonWidth: 1.05 }, // January  CBCBCB
+  { ribbonColor: "#fff3a6", backgroundColor: "#8a7a0c", ribbonSpeed: 0.20, ribbonWidth: 1.00 }, // February D8BF1A
+  { ribbonColor: "#dcffb3", backgroundColor: "#3f7a09", ribbonSpeed: 0.24, ribbonWidth: 0.95 }, // March    6DB217
+  { ribbonColor: "#ffd6e6", backgroundColor: "#9c3f5d", ribbonSpeed: 0.26, ribbonWidth: 0.95 }, // April    E17E9A
+  { ribbonColor: "#c8ffcf", backgroundColor: "#0f6a12", ribbonSpeed: 0.28, ribbonWidth: 0.90 }, // May      178816
+  { ribbonColor: "#ead6ff", backgroundColor: "#5f3a85", ribbonSpeed: 0.30, ribbonWidth: 0.90 }, // June     9A61C8
+  { ribbonColor: "#c9fffd", backgroundColor: "#03847f", ribbonSpeed: 0.32, ribbonWidth: 0.85 }, // July     02CDC7
+  { ribbonColor: "#cfe7ff", backgroundColor: "#0a5088", ribbonSpeed: 0.30, ribbonWidth: 0.90 }, // August   0C76C0
+  { ribbonColor: "#f1d3ff", backgroundColor: "#7a2c85", ribbonSpeed: 0.24, ribbonWidth: 1.00 }, // September B444C0
+  { ribbonColor: "#ffe6b3", backgroundColor: "#9a6f05", ribbonSpeed: 0.22, ribbonWidth: 1.05 }, // October  E5A708
+  { ribbonColor: "#f5dcc2", backgroundColor: "#5e3f15", ribbonSpeed: 0.20, ribbonWidth: 1.10 }, // November 875B1E
+  { ribbonColor: "#ffd5cf", backgroundColor: "#9a2b1c", ribbonSpeed: 0.16, ribbonWidth: 1.15 }, // December E3412A
 ];
 
 export const MONTH_NAMES = [
@@ -138,6 +145,12 @@ export interface JellyfinItem {
   type: string;
   isFolder: boolean;
   imageUrl?: string;
+  backdropUrl?: string;
+  year?: string;
+  overview?: string;
+  tmdbId?: string;
+  container?: string;
+  seriesName?: string;
   streamUrl?: string;
   hls?: boolean;
 }
@@ -159,6 +172,66 @@ export interface BluetoothStatus {
   present: boolean;
   enabled: boolean;
   connectedCount: number;
+}
+
+export interface VolumeInfo {
+  drive: string;
+  label: string;
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+  kind: "fixed" | "removable" | "network" | "other";
+  system: boolean;
+}
+
+export interface TransferProgress {
+  id: string;
+  name: string;
+  destination: string;
+  done: number;
+  total: number;
+  finished: boolean;
+  error?: string;
+}
+
+export interface SongInfo {
+  title: string;
+  artist: string;
+  album: string;
+  year: string;
+  genre: string;
+  durationSec: number;
+  bitrateKbps: number;
+  coverUrl: string | null;
+  artistInfo: { type?: string; area?: string; began?: string; ended?: string; tags: string[]; disambiguation?: string } | null;
+  source: string;
+}
+
+export interface ScreenInfo {
+  title: string;
+  year: string;
+  kind: "movie" | "tv";
+  overview: string;
+  rating: number | null;
+  votes: number;
+  genres: string[];
+  runtimeMin: number | null;
+  posterUrl: string | null;
+  backdropUrl: string | null;
+  tagline: string;
+  seasons?: number;
+  episodes?: number;
+  status?: string;
+  source: string;
+}
+
+/** Where the in-menu browser is, for the footer toolbar. */
+export interface BrowserNavState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
 }
 
 /** A drive with PHOTO / VIDEO / GAME folders at its root. */
@@ -225,6 +298,10 @@ export interface Settings {
   customImageUrl: string;
   ribbonEnabled: boolean;
   visualizerEnabled: boolean;
+  visualizerStyle: string;
+  introSparkleEnabled: boolean;
+  tmdbApiKey: string;
+  steamHandsOffInstall: boolean;
   profile: UserProfile | null;
   jellyfinLogins: Record<string, JellyfinLogin>;
   ankerDeviceName: string;
@@ -276,10 +353,17 @@ export interface AxmApi {
   getBluetoothStatus(): Promise<BluetoothStatus>;
   getHardwareInfo(): Promise<HardwareInfo>;
   getMediaDrives(): Promise<MediaDrive[]>;
+  getVolumes(): Promise<VolumeInfo[]>;
+  getSongInfo(filePath: string): Promise<SongInfo | null>;
+  getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;
+  copyMedia(kind: "music" | "photo" | "video", source: string, target: string): Promise<string>;
+  jellyfinDownload(login: JellyfinLogin, itemId: string, name: string, kind: "music" | "video", target: string, container: string): Promise<string>;
+  onTransfer(callback: (progress: TransferProgress) => void): void;
   browserOpen(url: string): Promise<void>;
   browserClose(): Promise<void>;
   browserInput(action: string): Promise<boolean>;
   onBrowserClosed(callback: () => void): void;
+  onBrowserNav(callback: (state: BrowserNavState) => void): void;
   overlayClose(): Promise<void>;
   overlayToggle(): Promise<void>;
   overlayState(): Promise<{ active: boolean }>;

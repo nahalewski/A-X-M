@@ -17,6 +17,8 @@ import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
+import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
+import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, WifiStatus, BluetoothStatus, HardwareInfo } from "./systemStatus";
 import { UserProfile, JellyfinLogin } from "./settingsStore";
@@ -72,7 +74,9 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 
+
   mainWindow.on("closed", () => {
+    console.log("[A-X-M] main window closed");
     mainWindow = null;
   });
 }
@@ -131,6 +135,7 @@ app.whenReady().then(() => {
 });
 
 app.on("will-quit", () => overlayHotkey?.stop());
+app.on("before-quit", () => console.log("[A-X-M] quitting"));
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -152,6 +157,9 @@ const browser = new InMenuBrowser(
   () => mainWindow,
   () => {
     if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:browserClosed");
+  },
+  (state) => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:browserNav", state);
   }
 );
 
@@ -250,6 +258,7 @@ ipcMain.handle("axm:losslessScalingStatus", (): { configPresent: boolean } => ({
 }));
 
 ipcMain.handle("axm:quit", (): void => {
+  console.log("[A-X-M] quit requested from the menu");
   app.quit();
 });
 
@@ -398,13 +407,32 @@ ipcMain.handle(
 
 ipcMain.handle("axm:getAnkerStatus", (): Promise<AnkerStatus> => readAnkerStatus());
 ipcMain.handle("axm:getMediaDrives", (): MediaDrive[] => listMediaDrives());
+ipcMain.handle("axm:getVolumes", (): Promise<VolumeInfo[]> => listVolumes());
+ipcMain.handle("axm:getSongInfo", (_e, filePath: string): Promise<SongInfo | null> => getSongInfo(filePath));
+ipcMain.handle("axm:getScreenInfo", (_e, title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null> =>
+  getScreenInfo(title, year, kind, tmdbId)
+);
+ipcMain.handle("axm:copyMedia", (_e, kind: TransferKind, source: string, target: string): Promise<string> => copyMedia(kind, source, target));
+ipcMain.handle(
+  "axm:jellyfinDownload",
+  (_e, login: JellyfinLogin, itemId: string, name: string, kind: TransferKind, target: string, container: string): Promise<string> =>
+    downloadJellyfin(login, itemId, name, kind, target, container)
+);
 ipcMain.handle("axm:getWifiStatus", (): Promise<WifiStatus> => getWifiStatus());
 ipcMain.handle("axm:getBluetoothStatus", (): Promise<BluetoothStatus> => getBluetoothStatus());
 ipcMain.handle("axm:getHardwareInfo", (): Promise<HardwareInfo> => getHardwareInfo());
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 
-ipcMain.handle("axm:installSteamGame", (_e, appid: number): void => installSteamGame(appid));
+ipcMain.handle("axm:installSteamGame", (_e, appid: number): void =>
+  installSteamGame(appid, loadSettings().steamHandsOffInstall, () => {
+    // Whatever the dialog did, the menu is where the user was.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  })
+);
 
 ipcMain.handle("axm:launchSteamApp", (_e, appid: number): void => {
   if (Number.isInteger(appid) && appid > 0) shell.openExternal(`steam://rungameid/${appid}`);

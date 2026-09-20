@@ -16,7 +16,23 @@ const SCROLL_STEP = 160;
 export class InMenuBrowser {
   private view: WebContentsView | null = null;
 
-  constructor(private getWindow: () => BrowserWindow | null, private onClosed: () => void) {}
+  constructor(
+    private getWindow: () => BrowserWindow | null,
+    private onClosed: () => void,
+    private onNav: (state: { url: string; title: string; canGoBack: boolean; canGoForward: boolean; loading: boolean }) => void
+  ) {}
+
+  private report(): void {
+    const wc = this.view?.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    this.onNav({
+      url: wc.getURL(),
+      title: wc.getTitle(),
+      canGoBack: wc.navigationHistory.canGoBack(),
+      canGoForward: wc.navigationHistory.canGoForward(),
+      loading: wc.isLoading(),
+    });
+  }
 
   isOpen(): boolean {
     return this.view !== null;
@@ -41,6 +57,10 @@ export class InMenuBrowser {
       });
       // Loads pull focus into the page; give it back so the controller keeps the menu.
       this.view.webContents.on("did-finish-load", () => this.getWindow()?.webContents.focus());
+      // Keep the menu's toolbar honest about where the page is and what B/◀/▶ will do.
+      for (const ev of ["did-start-loading", "did-stop-loading", "did-navigate", "did-navigate-in-page", "page-title-updated"] as const) {
+        this.view.webContents.on(ev as "did-navigate", () => this.report());
+      }
       win.on("resize", () => this.layout());
     }
     this.layout();

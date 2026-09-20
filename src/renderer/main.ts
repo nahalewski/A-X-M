@@ -4,7 +4,10 @@ import { AudioManager, AMBIENT_TRACKS, AMBIENT_TRACK_IDS } from "./audio";
 import { GamepadNav } from "./gamepad";
 import { Xmb, Category, MenuItem, sourceGlyph, btn } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
-import { MusicVisualizer } from "./visualizer";
+import { MusicVisualizer, VISUALIZER_STYLES, VISUALIZER_STYLE_IDS, VisualizerStyle } from "./visualizer";
+import { spriteEl, spriteHtml } from "./sprites";
+import { playIntroSparkle } from "./intro";
+import { OptionsPopup, InfoCard, PopupOption } from "./popups";
 import { MediaViewer } from "./mediaViewer";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
@@ -39,6 +42,11 @@ import {
   SteamLibrary,
   ThemeMode,
   MediaDrive,
+  BrowserNavState,
+  VolumeInfo,
+  TransferProgress,
+  JellyfinItem as JfItem,
+  HardwareInfo,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -127,9 +135,18 @@ async function main(): Promise<void> {
 
   const musicPlayer = new MusicPlayer(audio);
   const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
+  visualizer.setStyle(settings.visualizerStyle as VisualizerStyle);
+  const cycleVisualizerStyle = async (direction: 1 | -1, announce: boolean) => {
+    const i = VISUALIZER_STYLE_IDS.indexOf(visualizer.currentStyle());
+    const next = VISUALIZER_STYLE_IDS[(i + direction + VISUALIZER_STYLE_IDS.length) % VISUALIZER_STYLE_IDS.length];
+    visualizer.setStyle(next, announce);
+    settings = await window.axm.setSettings({ visualizerStyle: next });
+  };
   const mediaViewer = new MediaViewer(document.getElementById("media-viewer")!);
   const gridPicker = new GridPicker(document.getElementById("grid-picker")!);
   const textEntry = new TextEntry(document.getElementById("text-entry")!);
+  const optionsPopup = new OptionsPopup(document.getElementById("options-popup")!);
+  const infoCard = new InfoCard(document.getElementById("info-card")!);
 
   // ---- Overlay stack -------------------------------------------------------------
   //
@@ -145,6 +162,86 @@ async function main(): Promise<void> {
   const popOverlay = () => {
     overlayStack.pop();
     xmb.setExternalHandler(overlayStack[overlayStack.length - 1] ?? null);
+  };
+
+  /** The Y-button menu for a row: a few actions, run after the popup closes. */
+  const showOptions = (title: string, options: PopupOption[]) => {
+    if (options.length === 0) return;
+    optionsPopup.show(title, options, () => popOverlay());
+    pushOverlay((a) => optionsPopup.handle(a as Parameters<OptionsPopup["handle"]>[0]));
+    audio.playConfirm();
+  };
+  const showInfo = (title: string, art: string | undefined, load: () => Promise<void>) => {
+    infoCard.loading(title, art, () => popOverlay());
+    pushOverlay((a) => infoCard.handle(a as Parameters<InfoCard["handle"]>[0]));
+    void load();
+  };
+
+  // ---- Copy / download targets ----------------------------------------------------
+  //
+  // Every mounted drive other than the one the file already sits on, plus "this PC"
+  // for files that live on an external drive. Refreshed each time a menu asks, so a
+  // stick plugged in a moment ago is offered.
+  let volumes: VolumeInfo[] = [];
+  const refreshVolumes = async () => {
+    volumes = await window.axm.getVolumes();
+  };
+  void refreshVolumes();
+  const fmtBytes = (n: number): string => (n >= 1e12 ? `${(n / 1e12).toFixed(2)} TB` : n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${(n / 1e6).toFixed(0)} MB`);
+  const copyTargets = (kind: "music" | "photo" | "video", sourcePath: string | null): PopupOption[] => {
+    const folder = { music: "MUSIC", photo: "PHOTO", video: "VIDEO" }[kind];
+    const onDrive = (sourcePath ?? "").slice(0, 2).toUpperCase();
+    const opts: PopupOption[] = [];
+    if (sourcePath && onDrive !== (volumes.find((v) => v.system)?.drive ?? "C:").toUpperCase()) {
+      opts.push({ label: "Copy to this PC", hint: { music: "Music", photo: "Pictures", video: "Videos" }[kind], run: () => runCopy(kind, sourcePath, "home") });
+    }
+    for (const v of volumes) {
+      if (v.system || v.drive.toUpperCase() === onDrive) continue;
+      opts.push({
+        label: `Copy to ${v.label} (${v.drive})`,
+        hint: `${folder} · ${fmtBytes(v.freeBytes)} free`,
+        run: () => (sourcePath ? runCopy(kind, sourcePath, v.drive) : undefined),
+      });
+    }
+    return opts;
+  };
+  const runCopy = async (kind: "music" | "photo" | "video", source: string, target: string) => {
+    try {
+      await window.axm.copyMedia(kind, source, target);
+      audio.playConfirm();
+      // The drive rows and listings may have gained a folder.
+      mediaDrives = await window.axm.getMediaDrives();
+      xmb.refresh();
+    } catch (err) {
+      console.error("[A-X-M] copy failed:", err);
+    }
+  };
+
+  // Progress toast, bottom centre, one line per transfer in flight.
+  const transferToast = document.getElementById("transfer-toast")!;
+  const transfers = new Map<string, TransferProgress>();
+  window.axm.onTransfer((p) => {
+    if (p.finished) {
+      transfers.delete(p.id);
+      if (p.error) {
+        transfers.set(p.id + "-err", { ...p });
+        setTimeout(() => {
+          transfers.delete(p.id + "-err");
+          renderTransfers();
+        }, 5000);
+      }
+    } else transfers.set(p.id, p);
+    renderTransfers();
+  });
+  const renderTransfers = () => {
+    transferToast.classList.toggle("hidden", transfers.size === 0);
+    transferToast.innerHTML = [...transfers.values()]
+      .map((p) => {
+        const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+        const text = p.error ? `${p.name} — ${p.error}` : `${p.id.startsWith("dl-") ? "Downloading" : "Copying"} ${p.name} → ${p.destination} · ${pct}%`;
+        return `<div class="transfer${p.error ? " error" : ""}"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div>`;
+      })
+      .join("");
   };
 
   const askText = (title: string, fields: Parameters<TextEntry["show"]>[1]): Promise<string[] | null> =>
@@ -236,6 +333,8 @@ async function main(): Promise<void> {
     settings = await window.axm.saveProfile({ name, avatarUrl });
     audio.playConfirm();
     xmb.refresh();
+    // The hand-over to the menu: a sweep of sparkles over the freshly revealed XMB.
+    if (settings.introSparkleEnabled) playIntroSparkle(document.body);
   };
   const themeManager = new ThemeManager(ribbon, backgroundLayer);
 
@@ -314,6 +413,12 @@ async function main(): Promise<void> {
       case "confirm":
       case "context":
         musicPlayer.togglePause();
+        return true;
+      case "left":
+        void cycleVisualizerStyle(-1, true);
+        return true;
+      case "right":
+        void cycleVisualizerStyle(1, true);
         return true;
       default:
         // Swallow navigation so the menu doesn't scroll behind the stage.
@@ -420,6 +525,24 @@ async function main(): Promise<void> {
     void window.axm.browserOpen(url);
     xmb.refresh();
   };
+  let browserNav: BrowserNavState | null = null;
+  window.axm.onBrowserNav((state) => {
+    browserNav = state;
+    if (browserOpen) xmb.refresh();
+  });
+  const browserToolbar = (): string => {
+    const nav = browserNav;
+    const dim = (ok: boolean) => (ok ? "" : "dim");
+    const url = nav ? nav.url.replace(/^https?:\/\//, "").replace(/\/$/, "") : "";
+    return (
+      `<span class="browser-bar">` +
+      `<span class="viewer-key">◀</span>${spriteHtml("browser", "back", dim(!!nav?.canGoBack))}` +
+      `<span class="viewer-key">▶</span>${spriteHtml("browser", "forward", dim(!!nav?.canGoForward))}` +
+      `${btn("y")}${spriteHtml("browser", nav?.loading ? "stop" : "reload")}` +
+      `${spriteHtml("browser", "address")}<span class="browser-url">${url || "Loading…"}</span>` +
+      `</span>`
+    );
+  };
   window.axm.onBrowserClosed(() => {
     if (!browserOpen) return;
     browserOpen = false;
@@ -438,7 +561,7 @@ async function main(): Promise<void> {
       id: "browser",
       label: "Browser",
       iconUrl: "assets/icons/browser.png",
-      footerHint: () => (browserOpen ? `▲ ▼ scroll · ◀ ▶ back / forward · ${btn("y")} reload · ${btn("b")} close` : undefined),
+      footerHint: () => (browserOpen ? browserToolbar() : undefined),
       getItems: () => [
         {
           id: "browser-address",
@@ -501,6 +624,11 @@ async function main(): Promise<void> {
               title: entry.name,
               iconUrl: "assets/icons/folder.png",
               onConfirm: () => openFolder(entry.filePath),
+              contextHint: "options",
+              onContext: () => {
+                void refreshVolumes().then(() => showOptions(entry.name, copyTargets("music", entry.filePath)));
+                return true;
+              },
             };
           }
           const playing = musicPlayer.current()?.filePath === entry.filePath;
@@ -516,11 +644,34 @@ async function main(): Promise<void> {
             // Y opens the visualizer on this track, starting it if it isn't the one
             // playing. When the visualizer is switched off in settings this returns
             // false so Y falls through to the category's plain play/pause.
-            contextHint: settings.visualizerEnabled ? "visualizer" : undefined,
+            contextHint: "options",
             onContext: () => {
-              if (!settings.visualizerEnabled) return false;
-              if (!playing) musicPlayer.play(entry, musicListing.entries, settings.musicVolume);
-              enterStage();
+              void refreshVolumes().then(() =>
+                showOptions(entry.name, [
+                  {
+                    label: "Song Information",
+                    hint: "tags · MusicBrainz",
+                    run: () =>
+                      showInfo(entry.name, undefined, async () => {
+                        const info = await window.axm.getSongInfo(entry.filePath);
+                        infoCard.song(info, entry.name);
+                      }),
+                  },
+                  ...(settings.visualizerEnabled
+                    ? [
+                        {
+                          label: "Visualizer",
+                          hint: playing ? "" : "plays this track",
+                          run: () => {
+                            if (!playing) musicPlayer.play(entry, musicListing.entries, settings.musicVolume);
+                            enterStage();
+                          },
+                        },
+                      ]
+                    : []),
+                  ...copyTargets("music", entry.filePath),
+                ])
+              );
               return true;
             },
           };
@@ -829,6 +980,11 @@ async function main(): Promise<void> {
                   title: entry.name,
                   iconUrl: "assets/icons/folder.png",
                   onConfirm: () => openFolder(entry.filePath),
+                  contextHint: "options",
+                  onContext: () => {
+                    void refreshVolumes().then(() => showOptions(entry.name, copyTargets(kind, entry.filePath)));
+                    return true;
+                  },
                 }
               : {
                   id: entry.filePath,
@@ -836,6 +992,28 @@ async function main(): Promise<void> {
                   // Photos preview as their own thumbnail; the tile crops to square.
                   iconUrl: kind === "photo" ? entry.url : iconUrl,
                   onConfirm: () => openFile(entry),
+                  contextHint: "options",
+                  onContext: () => {
+                    void refreshVolumes().then(() =>
+                      showOptions(entry.name, [
+                        ...(kind === "video"
+                          ? [
+                              {
+                                label: "Information",
+                                hint: "TMDB",
+                                run: () =>
+                                  showInfo(entry.name, undefined, async () => {
+                                    const info = await window.axm.getScreenInfo(entry.name, "", "auto");
+                                    infoCard.screen(info, entry.name);
+                                  }),
+                              },
+                            ]
+                          : []),
+                        ...copyTargets(kind, entry.filePath),
+                      ])
+                    );
+                    return true;
+                  },
                 }
           ),
         ];
@@ -949,7 +1127,13 @@ async function main(): Promise<void> {
       : [];
 
     if (jf.view === "servers") {
-      const rows: MenuItem[] = jf.servers.map((s) => ({
+      // Discovered servers first, then any saved sign-in the broadcast didn't reach
+      // (another subnet, a VPN, or a server off the LAN entirely).
+      const listed = new Set(jf.servers.map((s) => s.url));
+      const saved: JellyfinServer[] = Object.values(settings.jellyfinLogins)
+        .filter((l) => !listed.has(l.serverUrl))
+        .map((l) => ({ name: l.serverName, url: l.serverUrl, id: l.serverUrl }));
+      const rows: MenuItem[] = [...jf.servers, ...saved].map((s) => ({
         id: `jf-server-${s.id}`,
         title: s.name,
         subtitle: settings.jellyfinLogins[s.url]
@@ -973,6 +1157,19 @@ async function main(): Promise<void> {
         title: jf.searching ? "Searching…" : "Search Again",
         iconGlyph: "↻",
         onConfirm: () => (jf.searching ? undefined : jfDiscover()),
+      });
+      rows.push({
+        id: "jf-manual",
+        title: "Enter Server Address…",
+        subtitle: "e.g. 192.168.1.20:8096",
+        iconGlyph: "⌨",
+        onConfirm: async () => {
+          const values = await askText("Jellyfin Server", [{ label: "Address", value: "http://" }]);
+          const typed = values?.[0]?.trim();
+          if (!typed || typed === "http://") return;
+          const url = (/^https?:\/\//i.test(typed) ? typed : "http://" + typed).replace(/\/+$/, "");
+          void jfSignIn({ name: url.replace(/^https?:\/\//, ""), url, id: url });
+        },
       });
       return [...statusRow, ...rows];
     }
@@ -999,12 +1196,55 @@ async function main(): Promise<void> {
       ...level.items.map((item) => ({
         id: `jf-item-${item.id}`,
         title: item.name,
-        subtitle: item.isFolder ? item.type : item.streamUrl ? "Play" : item.type,
+        subtitle: item.isFolder ? (item.year ? `${item.type} · ${item.year}` : item.type) : item.streamUrl ? (item.year ? `Play · ${item.year}` : "Play") : item.type,
         iconUrl: item.imageUrl ?? (item.isFolder ? "assets/icons/folder.png" : "assets/icons/video.png"),
         iconGlyph: item.isFolder ? "▸" : "▶",
+        backgroundUrl: item.backdropUrl,
         onConfirm: () => (item.isFolder ? jfDescend(item) : jfPlay(item)),
+        contextHint: "options",
+        onContext: () => {
+          void refreshVolumes().then(() => showOptions(item.name, jfOptions(item)));
+          return true;
+        },
       })),
     ];
+  };
+
+  /** Information (TMDB) and downloads for a Jellyfin row. */
+  const jfOptions = (item: JfItem): PopupOption[] => {
+    const isShow = ["Series", "Season", "Episode"].includes(item.type);
+    const opts: PopupOption[] = [];
+    if (["Movie", "Series", "Season", "Episode", "Video"].includes(item.type)) {
+      opts.push({
+        label: "Information",
+        hint: "TMDB",
+        run: () =>
+          showInfo(item.name, item.imageUrl, async () => {
+            const title = item.seriesName ?? item.name;
+            const info = await window.axm.getScreenInfo(title, item.year ?? "", isShow ? "tv" : item.type === "Movie" ? "movie" : "auto", item.type === "Movie" || item.type === "Series" ? item.tmdbId : undefined);
+            infoCard.screen(info, item.name);
+          }),
+      });
+    }
+    if (item.streamUrl && jf.login) {
+      const login = jf.login;
+      const kind = item.type === "Audio" ? "music" : "video";
+      const folder = kind === "music" ? "MUSIC" : "VIDEO";
+      opts.push({
+        label: "Download to this PC",
+        hint: kind === "music" ? "Music" : "Videos",
+        run: () => void window.axm.jellyfinDownload(login, item.id, item.name, kind, "home", item.container ?? "mkv").catch((e) => console.error(e)),
+      });
+      for (const v of volumes) {
+        if (v.system) continue;
+        opts.push({
+          label: `Download to ${v.label} (${v.drive})`,
+          hint: `${folder} · ${fmtBytes(v.freeBytes)} free`,
+          run: () => void window.axm.jellyfinDownload(login, item.id, item.name, kind, v.drive, item.container ?? "mkv").catch((e) => console.error(e)),
+        });
+      }
+    }
+    return opts;
   };
 
   /** True if B was consumed by stepping back inside Jellyfin. */
@@ -1052,7 +1292,7 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | { month: number };
 
   function settingsCategory(): Category {
     let view: SettingsView = "root";
@@ -1252,6 +1492,38 @@ async function main(): Promise<void> {
         },
       },
       {
+        id: "system-info",
+        title: "System Information",
+        subtitle: "Device, storage and free space",
+        iconGlyph: "▤",
+        onConfirm: async () => {
+          sysHardware = await window.axm.getHardwareInfo().catch(() => null);
+          await refreshVolumes();
+          go("system");
+        },
+      },
+      {
+        id: "steamHandsOff",
+        title: "Steam Hands-off Install",
+        subtitle: settings.steamHandsOffInstall ? "On · confirms Steam's dialog and returns here" : "Off · Steam's install window stays up",
+        iconUrl: "assets/icons/steam.svg",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ steamHandsOffInstall: !settings.steamHandsOffInstall });
+          xmb.refresh();
+        },
+      },
+      {
+        id: "introSparkle",
+        title: "Welcome Sparkle",
+        subtitle: settings.introSparkleEnabled ? "On · after the splash and a new profile" : "Off",
+        iconGlyph: "✧",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ introSparkleEnabled: !settings.introSparkleEnabled });
+          if (settings.introSparkleEnabled) playIntroSparkle(document.body);
+          xmb.refresh();
+        },
+      },
+      {
         id: "targetHz",
         title: "Menu Refresh Rate",
         subtitle: settings.targetHz ? `${settings.targetHz} fps` : "Match display",
@@ -1434,6 +1706,19 @@ async function main(): Promise<void> {
           },
         },
         {
+          id: "theme-visualizer-style",
+          title: "Visualizer Style",
+          subtitle: (() => {
+            const info = VISUALIZER_STYLES.find((v) => v.id === settings.visualizerStyle) ?? VISUALIZER_STYLES[0];
+            return `${info.label} · ${info.origin}`;
+          })(),
+          iconGlyph: "▥",
+          onConfirm: async () => {
+            await cycleVisualizerStyle(1, visualizer.currentMode() !== "off");
+            xmb.refresh();
+          },
+        },
+        {
           id: "theme-reset",
           title: "Reset Theme to Defaults",
           iconGlyph: "↺",
@@ -1448,6 +1733,33 @@ async function main(): Promise<void> {
         }
       );
       return items;
+    };
+
+    // System Information: the PS3's version had the system, then storage. Ours:
+    // the device row, then every drive with how full it is.
+    let sysHardware: HardwareInfo | null = null;
+    const systemItems = (): MenuItem[] => {
+      const rows: MenuItem[] = [];
+      if (sysHardware) {
+        rows.push(
+          { id: "sys-device", title: sysHardware.model || sysHardware.deviceName, subtitle: `${sysHardware.cpu} · ${sysHardware.ramGb} GB RAM · ${sysHardware.gpu}${sysHardware.gpuGb ? ` ${sysHardware.gpuGb} GB` : ""}`, iconGlyph: "▣" }
+        );
+      }
+      for (const v of volumes) {
+        const used = v.totalBytes ? v.usedBytes / v.totalBytes : 0;
+        rows.push({
+          id: `vol-${v.drive}`,
+          title: `${v.label} (${v.drive})${v.system ? " · System" : ""}`,
+          subtitle: `${fmtBytes(v.freeBytes)} free of ${fmtBytes(v.totalBytes)} · ${fmtBytes(v.usedBytes)} used`,
+          badge: `${Math.round(used * 100)}% FULL`,
+          meter: used,
+          iconUrl: v.kind === "removable" ? "assets/icons/hdd.webp" : undefined,
+          iconClass: v.kind === "removable" ? "hdd hdd-video" : undefined,
+          iconGlyph: v.kind === "network" ? "⇄" : "▬",
+        });
+      }
+      if (rows.length === 0) rows.push({ id: "sys-empty", title: "Reading drives…", iconGlyph: "▬" });
+      return rows;
     };
 
     const monthsItems = (): MenuItem[] =>
@@ -1482,7 +1794,7 @@ async function main(): Promise<void> {
       iconUrl: "assets/icons/settings.png",
       onBack: () => {
         if (view === "root") return false;
-        if (view === "theme") go("root");
+        if (view === "theme" || view === "system") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -1491,12 +1803,14 @@ async function main(): Promise<void> {
         if (view === "root") return undefined;
         if (view === "theme") return "Settings › Theme";
         if (view === "months") return "Settings › Theme › Months";
+        if (view === "system") return "Settings › System Information";
         return `Settings › Theme › ${MONTH_NAMES[view.month]}`;
       },
       getItems: () => {
         if (view === "root") return rootItems();
         if (view === "theme") return themeItems();
         if (view === "months") return monthsItems();
+        if (view === "system") return systemItems();
         return monthEditorItems(view.month);
       },
     };
@@ -1559,6 +1873,8 @@ async function main(): Promise<void> {
   const npTitle = document.getElementById("np-title")!;
   const npFolder = document.getElementById("np-folder")!;
   const npState = document.getElementById("np-state")!;
+  const npIcon = spriteEl("player", "play", "np-spr");
+  document.getElementById("np-icon")!.appendChild(npIcon);
   const npFill = document.getElementById("np-progress-fill")!;
   let lastTrackPath: string | null = null;
 
@@ -1578,6 +1894,7 @@ async function main(): Promise<void> {
     npTitle.textContent = track.name;
     npFolder.textContent = track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-2).join(" - ");
     npState.textContent = musicPlayer.isPlaying() ? "PLAYING" : "PAUSED";
+    npIcon.setFrame(musicPlayer.isPlaying() ? "eq" : "pause");
     npFill.style.width = `${musicPlayer.progress() * 100}%`;
 
     // Only re-render the menu when the track itself changes, not on every tick.
@@ -1643,8 +1960,10 @@ async function main(): Promise<void> {
   const bootSplash = document.getElementById("boot-splash")!;
   setTimeout(() => {
     bootSplash.classList.add("hidden");
-    // First boot: no profile yet, so set one up before the menu is used.
+    // First boot: no profile yet, so set one up before the menu is used. The sparkle
+    // then plays when that finishes; otherwise it plays here, as the menu appears.
     if (!settings.profile) void runProfileSetup(null);
+    else if (settings.introSparkleEnabled) playIntroSparkle(document.body);
   }, 1600);
 
   // Background rescan shortly after boot to pick up anything the first pass missed,

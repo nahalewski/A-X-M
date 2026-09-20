@@ -1,13 +1,19 @@
 import Hls from "hls.js";
 import { BrowseEntry } from "./types";
+import { spriteEl, spriteHtml } from "./sprites";
+import { btn } from "./xmb";
 
 /**
  * Full-screen in-app viewer for the Photo and Video columns, so a file opens over
  * the menu instead of handing off to whatever Windows has associated with it.
  *
- * Photos: ◀ ▶ step through the folder, B closes.
+ * Photos: ◀ ▶ step through the folder, ▲ ▼ zoom, Y rotates, A starts a slideshow,
+ *         B closes.
  * Video:  A play/pause, ◀ ▶ seek ten seconds, B closes. MP4 only, by construction
- *         of the browser that feeds it.
+ *         of the browser that feeds it (Jellyfin adds HLS on top).
+ *
+ * Both draw a control strip along the bottom from the supplied gallery and player
+ * sheets, so what the buttons do is visible without reading the footer.
  *
  * Input arrives through the same external-handler hook the visualizer uses, so the
  * menu never scrolls underneath an open viewer.
@@ -16,12 +22,20 @@ import { BrowseEntry } from "./types";
 export type ViewerAction = "up" | "down" | "left" | "right" | "confirm" | "back" | "context";
 
 const SEEK_SECONDS = 10;
+const SLIDESHOW_SECONDS = 5;
+const ZOOM_STEPS = [1, 1.5, 2, 3];
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds)) return "0:00";
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function btnEl(name: "a" | "b" | "x" | "y"): HTMLElement {
+  const wrap = document.createElement("span");
+  wrap.innerHTML = btn(name);
+  return wrap.firstElementChild as HTMLElement;
 }
 
 export class MediaViewer {
@@ -32,6 +46,14 @@ export class MediaViewer {
   private progressEl: HTMLElement;
   private progressFill: HTMLElement;
   private timeEl: HTMLElement;
+  private photoBar: HTMLElement;
+  private videoBar: HTMLElement;
+  private playIcon: ReturnType<typeof spriteEl>;
+  private slideIcon: ReturnType<typeof spriteEl>;
+
+  private zoom = 0;
+  private rotation = 0;
+  private slideshow = 0;
 
   private items: BrowseEntry[] = [];
   /** Live only while an HLS stream (a Jellyfin transcode) is playing. */
@@ -67,6 +89,29 @@ export class MediaViewer {
     this.timeEl.className = "viewer-time";
     root.appendChild(this.timeEl);
 
+    // Photo controls: prev / next, slideshow, zoom, rotate, close.
+    this.photoBar = document.createElement("div");
+    this.photoBar.className = "viewer-bar photo-bar";
+    this.slideIcon = spriteEl("gallery", "play");
+    this.photoBar.innerHTML = `<span class="viewer-key">◀</span>${spriteHtml("gallery", "prev")}<span class="viewer-key">▶</span>${spriteHtml("gallery", "next")}<span class="viewer-sep"></span>`;
+    this.photoBar.append(btnEl("a"), this.slideIcon);
+    this.photoBar.insertAdjacentHTML("beforeend", `<span class="viewer-sep"></span><span class="viewer-key">▲▼</span>${spriteHtml("gallery", "zoomin")}${spriteHtml("gallery", "zoomout")}<span class="viewer-sep"></span>`);
+    this.photoBar.append(btnEl("y"));
+    this.photoBar.insertAdjacentHTML("beforeend", `${spriteHtml("gallery", "rotcw")}<span class="viewer-sep"></span>`);
+    this.photoBar.append(btnEl("b"));
+    this.photoBar.insertAdjacentHTML("beforeend", spriteHtml("gallery", "collapse"));
+    root.appendChild(this.photoBar);
+
+    // Video controls: the play state as an icon, seek hints, close.
+    this.videoBar = document.createElement("div");
+    this.videoBar.className = "viewer-bar video-bar";
+    this.playIcon = spriteEl("player", "play", "big");
+    this.videoBar.append(btnEl("a"), this.playIcon);
+    this.videoBar.insertAdjacentHTML("beforeend", `<span class="viewer-sep"></span><span class="viewer-key">◀</span>${spriteHtml("player", "rew")}<span class="viewer-key">▶</span>${spriteHtml("player", "ff")}<span class="viewer-sep"></span>`);
+    this.videoBar.append(btnEl("b"));
+    this.videoBar.insertAdjacentHTML("beforeend", spriteHtml("player", "stop"));
+    root.appendChild(this.videoBar);
+
     this.videoEl.addEventListener("timeupdate", () => this.updateVideoChrome());
     this.videoEl.addEventListener("play", () => this.updateVideoChrome());
     this.videoEl.addEventListener("pause", () => this.updateVideoChrome());
@@ -97,7 +142,26 @@ export class MediaViewer {
     this.root.classList.remove("hidden");
     this.root.classList.toggle("photo", kind === "photo");
     this.root.classList.toggle("video", kind === "video");
+    this.zoom = 0;
+    this.rotation = 0;
+    this.stopSlideshow();
     this.show();
+  }
+
+  private applyPhotoTransform(): void {
+    this.imageEl.style.transform = `rotate(${this.rotation}deg) scale(${ZOOM_STEPS[this.zoom]})`;
+  }
+
+  private stopSlideshow(): void {
+    if (this.slideshow) clearInterval(this.slideshow);
+    this.slideshow = 0;
+    this.slideIcon.setFrame("play");
+  }
+
+  private toggleSlideshow(): void {
+    if (this.slideshow) return this.stopSlideshow();
+    this.slideshow = window.setInterval(() => this.step(1), SLIDESHOW_SECONDS * 1000);
+    this.slideIcon.setFrame("pause");
   }
 
   private show(): void {
@@ -108,6 +172,7 @@ export class MediaViewer {
       this.videoEl.pause();
       this.videoEl.removeAttribute("src");
       this.imageEl.src = entry.url;
+      this.applyPhotoTransform();
       this.captionEl.textContent =
         this.items.length > 1 ? `${entry.name}  ·  ${this.index + 1} / ${this.items.length}` : entry.name;
     } else {
@@ -136,7 +201,9 @@ export class MediaViewer {
     const v = this.videoEl;
     const progress = isFinite(v.duration) && v.duration > 0 ? v.currentTime / v.duration : 0;
     this.progressFill.style.width = `${Math.min(100, progress * 100)}%`;
-    this.timeEl.textContent = `${v.paused ? "❚❚" : "▶"}  ${formatTime(v.currentTime)} / ${formatTime(v.duration)}`;
+    this.timeEl.textContent = `${formatTime(v.currentTime)} / ${formatTime(v.duration)}`;
+    // The strip shows what A will do next, like a transport control does.
+    this.playIcon.setFrame(v.paused ? "play" : "pause");
   }
 
   /** Returns true when the action was consumed by the viewer. */
@@ -149,8 +216,18 @@ export class MediaViewer {
     }
 
     if (this.kind === "photo") {
-      if (action === "left" || action === "up") this.step(-1);
-      else if (action === "right" || action === "down") this.step(1);
+      if (action === "left") this.step(-1);
+      else if (action === "right") this.step(1);
+      else if (action === "up") {
+        this.zoom = Math.min(ZOOM_STEPS.length - 1, this.zoom + 1);
+        this.applyPhotoTransform();
+      } else if (action === "down") {
+        this.zoom = Math.max(0, this.zoom - 1);
+        this.applyPhotoTransform();
+      } else if (action === "context") {
+        this.rotation = (this.rotation + 90) % 360;
+        this.applyPhotoTransform();
+      } else if (action === "confirm") this.toggleSlideshow();
       return true;
     }
 
@@ -170,6 +247,9 @@ export class MediaViewer {
   private step(delta: number): void {
     if (this.items.length === 0) return;
     this.index = (this.index + delta + this.items.length) % this.items.length;
+    // A fresh picture starts square and unzoomed, whatever the last one was.
+    this.zoom = 0;
+    this.rotation = 0;
     this.show();
   }
 
@@ -183,6 +263,7 @@ export class MediaViewer {
   close(): void {
     if (!this.kind) return;
     this.kind = null;
+    this.stopSlideshow();
     this.detachHls();
     this.videoEl.pause();
     this.videoEl.removeAttribute("src");

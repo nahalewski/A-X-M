@@ -103,6 +103,14 @@ export interface Settings {
   ribbonEnabled: boolean;
   /** Whether the music visualizer may take over the background. */
   visualizerEnabled: boolean;
+  /** Which visualizer draws: the PS3 spectrum bars by default. */
+  visualizerStyle: string;
+  /** The sparkle sweep when a profile hands over to the menu, and after the splash. */
+  introSparkleEnabled: boolean;
+  /** TMDB v3 key for film / show information. Lives only in the settings file. */
+  tmdbApiKey: string;
+  /** Confirm Steam's install dialog automatically and bring the menu back. */
+  steamHandsOffInstall: boolean;
   /** Null until first-boot setup has run. */
   profile: UserProfile | null;
   /** Saved Jellyfin logins, keyed by server URL. */
@@ -143,6 +151,10 @@ const DEFAULTS: Settings = {
   customImageUrl: "",
   ribbonEnabled: true,
   visualizerEnabled: true,
+  visualizerStyle: "bars",
+  introSparkleEnabled: true,
+  tmdbApiKey: "",
+  steamHandsOffInstall: true,
   profile: null,
   jellyfinLogins: {},
   ankerDeviceName: "Anker",

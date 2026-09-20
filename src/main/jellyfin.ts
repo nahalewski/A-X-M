@@ -27,6 +27,16 @@ export interface JellyfinItem {
   type: string;
   isFolder: boolean;
   imageUrl?: string;
+  /** Wide backdrop for the menu background while the row is focused. */
+  backdropUrl?: string;
+  year?: string;
+  overview?: string;
+  /** TMDB id when the server has matched it, so the info card needn't search. */
+  tmdbId?: string;
+  /** File container (mkv, mp4, ...) - for the download's file name. */
+  container?: string;
+  /** Series name for an episode, so the info card can look up the show. */
+  seriesName?: string;
   streamUrl?: string;
   /** True when streamUrl is an HLS playlist that needs hls.js rather than a plain src. */
   hls?: boolean;
@@ -104,6 +114,9 @@ async function api<T>(server: string, endpoint: string, token?: string, init?: R
       ...init,
       headers: {
         "Content-Type": "application/json",
+        // Jellyfin 10.9+ wants the standard header and 12 rejects the old one on its
+        // own; older servers only know X-Emby-Authorization. Send both.
+        Authorization: authHeader(token),
         "X-Emby-Authorization": authHeader(token),
         ...(init?.headers ?? {}),
       },
@@ -149,8 +162,15 @@ interface RawItem {
   Type: string;
   IsFolder?: boolean;
   ImageTags?: { Primary?: string };
+  BackdropImageTags?: string[];
+  ParentBackdropImageTags?: string[];
+  ParentBackdropItemId?: string;
+  ProductionYear?: number;
+  Overview?: string;
+  ProviderIds?: { Tmdb?: string };
+  SeriesName?: string;
   MediaType?: string;
-  MediaSources?: { Container?: string; MediaStreams?: { Type: string; Codec?: string }[] }[];
+  MediaSources?: { Id?: string; Container?: string; MediaStreams?: { Type: string; Codec?: string }[] }[];
 }
 
 /** Containers and codecs Chromium's <video> plays natively. Anything else is transcoded. */
@@ -171,6 +191,44 @@ function canDirectPlay(raw: RawItem): boolean {
   return true;
 }
 
+function directUrl(login: JellyfinLogin, raw: RawItem): string {
+  const q = new URLSearchParams({ static: "true", api_key: login.accessToken, DeviceId: deviceId() });
+  const sourceId = raw.MediaSources?.[0]?.Id;
+  if (sourceId) q.set("MediaSourceId", sourceId);
+  return `${login.serverUrl}/Videos/${raw.Id}/stream?${q.toString()}`;
+}
+
+/**
+ * The server-side HLS transcode. hls.js fetches the playlist and segments itself,
+ * without the client auth header, so everything the server needs - token, device,
+ * media source, session - has to ride along in the query string. The codec and
+ * bitrate parameters match what the official web client sends for a 1080p H.264
+ * transcode; without a video bitrate the transcoder refuses to start on some builds.
+ */
+function hlsUrl(login: JellyfinLogin, raw: RawItem): string {
+  const q = new URLSearchParams({
+    api_key: login.accessToken,
+    DeviceId: deviceId(),
+    PlaySessionId: `${deviceId()}-${raw.Id}-${Date.now().toString(36)}`,
+    VideoCodec: "h264",
+    AudioCodec: "aac",
+    VideoBitrate: "20000000",
+    AudioBitrate: "192000",
+    MaxAudioChannels: "2",
+    TranscodingMaxAudioChannels: "2",
+    RequireAvc: "true",
+    "h264-profile": "high,main,baseline,constrainedbaseline",
+    "h264-level": "51",
+    SegmentContainer: "ts",
+    MinSegments: "1",
+    BreakOnNonKeyFrames: "True",
+    TranscodeReasons: "ContainerNotSupported",
+  });
+  const sourceId = raw.MediaSources?.[0]?.Id;
+  if (sourceId) q.set("MediaSourceId", sourceId);
+  return `${login.serverUrl}/Videos/${raw.Id}/master.m3u8?${q.toString()}`;
+}
+
 function toItem(login: JellyfinLogin, raw: RawItem): JellyfinItem {
   const playable = raw.MediaType === "Video" && !raw.IsFolder;
   const auth = `api_key=${login.accessToken}`;
@@ -182,15 +240,22 @@ function toItem(login: JellyfinLogin, raw: RawItem): JellyfinItem {
     imageUrl: raw.ImageTags?.Primary
       ? `${login.serverUrl}/Items/${raw.Id}/Images/Primary?maxHeight=400&tag=${raw.ImageTags.Primary}&${auth}`
       : undefined,
+    // The item's own backdrop, or its series' for an episode.
+    backdropUrl: raw.BackdropImageTags?.[0]
+      ? `${login.serverUrl}/Items/${raw.Id}/Images/Backdrop/0?maxWidth=1600&tag=${raw.BackdropImageTags[0]}&${auth}`
+      : raw.ParentBackdropItemId && raw.ParentBackdropImageTags?.[0]
+        ? `${login.serverUrl}/Items/${raw.ParentBackdropItemId}/Images/Backdrop/0?maxWidth=1600&tag=${raw.ParentBackdropImageTags[0]}&${auth}`
+        : undefined,
+    year: raw.ProductionYear ? String(raw.ProductionYear) : undefined,
+    overview: raw.Overview,
+    tmdbId: raw.ProviderIds?.Tmdb,
+    container: (raw.MediaSources?.[0]?.Container ?? "").split(",")[0] || undefined,
+    seriesName: raw.SeriesName,
     // Direct play when the file is something the browser decodes as-is (an MP4 with
     // H.264/AAC, say). An MKV, HEVC, AC3 or DTS file would either fail outright or
     // play with no sound, so those go through the server's HLS transcode instead -
     // decided here from the media source, not discovered after a silent failure.
-    streamUrl: playable
-      ? canDirectPlay(raw)
-        ? `${login.serverUrl}/Videos/${raw.Id}/stream?static=true&${auth}`
-        : `${login.serverUrl}/Videos/${raw.Id}/master.m3u8?VideoCodec=h264&AudioCodec=aac&MaxStreamingBitrate=20000000&TranscodingContainer=ts&TranscodingProtocol=hls&SegmentContainer=ts&${auth}`
-      : undefined,
+    streamUrl: playable ? (canDirectPlay(raw) ? directUrl(login, raw) : hlsUrl(login, raw)) : undefined,
     hls: playable && !canDirectPlay(raw),
   };
 }
@@ -207,7 +272,7 @@ export async function getItems(login: JellyfinLogin, parentId: string): Promise<
     ParentId: parentId,
     SortBy: "SortName",
     SortOrder: "Ascending",
-    Fields: "MediaType,MediaSources",
+    Fields: "MediaType,MediaSources,Overview,ProviderIds,ProductionYear",
     Limit: "500",
   });
   const res = await api<{ Items?: RawItem[] }>(

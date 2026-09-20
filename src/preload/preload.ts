@@ -41,11 +41,23 @@ const api = {
   getBluetoothStatus: () => ipcRenderer.invoke("axm:getBluetoothStatus"),
   getHardwareInfo: () => ipcRenderer.invoke("axm:getHardwareInfo"),
   getMediaDrives: () => ipcRenderer.invoke("axm:getMediaDrives"),
+  getVolumes: () => ipcRenderer.invoke("axm:getVolumes"),
+  getSongInfo: (filePath: string) => ipcRenderer.invoke("axm:getSongInfo", filePath),
+  getScreenInfo: (title: string, year: string, kind: string, tmdbId?: string) => ipcRenderer.invoke("axm:getScreenInfo", title, year, kind, tmdbId),
+  copyMedia: (kind: string, source: string, target: string) => ipcRenderer.invoke("axm:copyMedia", kind, source, target),
+  jellyfinDownload: (login: unknown, itemId: string, name: string, kind: string, target: string, container: string) =>
+    ipcRenderer.invoke("axm:jellyfinDownload", login, itemId, name, kind, target, container),
+  onTransfer: (callback: (progress: unknown) => void) => {
+    ipcRenderer.on("axm:transfer", (_e, progress) => callback(progress));
+  },
   browserOpen: (url: string) => ipcRenderer.invoke("axm:browserOpen", url),
   browserClose: () => ipcRenderer.invoke("axm:browserClose"),
   browserInput: (action: string) => ipcRenderer.invoke("axm:browserInput", action),
   onBrowserClosed: (callback: () => void) => {
     ipcRenderer.on("axm:browserClosed", () => callback());
+  },
+  onBrowserNav: (callback: (state: unknown) => void) => {
+    ipcRenderer.on("axm:browserNav", (_e, state) => callback(state));
   },
   overlayClose: () => ipcRenderer.invoke("axm:overlayClose"),
   overlayToggle: () => ipcRenderer.invoke("axm:overlayToggle"),

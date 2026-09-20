@@ -12,6 +12,8 @@ export interface MenuItem {
   iconClass?: string;
   iconGlyph?: string;
   badge?: string;
+  /** 0..1 fill for a small bar under the subtitle, e.g. drive usage. */
+  meter?: number;
   onConfirm?: () => void | Promise<void>;
   /** Handles Y for this row. Return true if consumed, ahead of the category's. */
   onContext?: () => boolean;
@@ -421,6 +423,7 @@ export class Xmb {
         <div class="item-title">${item.title}</div>
         ${item.subtitle ? `<div class="item-subtitle">${item.subtitle}</div>` : ""}
         ${item.badge ? `<div class="item-badge">${item.badge}</div>` : ""}
+        ${item.meter !== undefined ? `<div class="item-meter"><div class="item-meter-fill${item.meter > 0.9 ? " full" : ""}" style="width:${Math.round(Math.min(1, item.meter) * 100)}%"></div></div>` : ""}
       `;
 
       row.append(slot, text);
