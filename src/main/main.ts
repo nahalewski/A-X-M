@@ -17,6 +17,7 @@ import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
+import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairBluetooth, unpairBluetooth, WifiNetwork, BluetoothDevice } from "./network";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
@@ -468,6 +469,13 @@ ipcMain.handle("axm:getWifiStatus", (): Promise<WifiStatus> => getWifiStatus());
 ipcMain.handle("axm:getBluetoothStatus", (): Promise<BluetoothStatus> => getBluetoothStatus());
 ipcMain.handle("axm:getHardwareInfo", (): Promise<HardwareInfo> => getHardwareInfo());
 ipcMain.handle("axm:getControllerDevices", (): Promise<ControllerDevice[]> => getControllerDevices());
+ipcMain.handle("axm:wifiList", (): Promise<WifiNetwork[]> => listWifi());
+ipcMain.handle("axm:wifiConnect", (_e, ssid: string, password: string | null) => connectWifi(ssid, password));
+ipcMain.handle("axm:wifiDisconnect", (): Promise<void> => disconnectWifi());
+ipcMain.handle("axm:wifiForget", (_e, ssid: string): Promise<void> => forgetWifi(ssid));
+ipcMain.handle("axm:btList", (): Promise<BluetoothDevice[]> => listBluetooth());
+ipcMain.handle("axm:btPair", (_e, id: string) => pairBluetooth(id));
+ipcMain.handle("axm:btUnpair", (_e, id: string) => unpairBluetooth(id));
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 

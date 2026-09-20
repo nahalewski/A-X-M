@@ -119,6 +119,7 @@ export interface Settings {
   gamepadVibration: boolean;
   /** Menu resolution as a target height (720, 1080, 2160 ...) or 0 for auto. */
   renderResolution: number;
+  menuUpscaling: "off" | "sharpen" | "sharpen-strong";
   /** The user's playlist: tracks in play order. */
   playlist: { name: string; filePath: string; url: string }[];
   /** Menu wallpaper: one picture, or a folder shuffled every few minutes. */
@@ -174,6 +175,7 @@ const DEFAULTS: Settings = {
   gamepadProfile: "standard",
   gamepadVibration: true,
   renderResolution: 0,
+  menuUpscaling: "sharpen",
   playlist: [],
   wallpaper: null,
   knownDrives: [],

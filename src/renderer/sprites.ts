@@ -40,11 +40,12 @@ export function spriteEl(sheet: SpriteSheet, name: string, extraClass = ""): HTM
 
 
 /**
- * The 20-frame progress ring from the supplied sheet: frame 0 is one segment lit,
- * frame 19 the full ring. Drawn as an image (its lit and unlit segments are part of
+ * The progress ring from the supplied sheet, rebuilt as 17 clean frames: frame 0 has
+ * no pod lit, frame 16 the full ring (the sheet had duplicates and gaps; every step
+ * is composited from its darkest and lightest cells). Drawn as an image (its lit and unlit segments are part of
  * the art), positioned by background-position so a change of frame is one style.
  */
-export const PROGRESS_FRAMES = 20;
+export const PROGRESS_FRAMES = 17;
 
 export function progressRing(extraClass = ""): HTMLElement & { setProgress: (fraction: number) => void; spin: (on: boolean) => void } {
   const el = document.createElement("span") as HTMLElement & { setProgress: (fraction: number) => void; spin: (on: boolean) => void };

@@ -12,9 +12,17 @@ sounds.
 
 ## Download
 
-Grab the latest installer from the [Releases](https://github.com/nahalewski/A-X-M/releases)
-page (`A-X-M-Setup-<version>.exe`, NSIS, per-user install, no admin needed). Or build it
-yourself - see *Build the installer* below.
+From the [Releases](https://github.com/nahalewski/A-X-M/releases) page:
+
+- `A-X-M-Setup-<version>.exe` - installer (NSIS, per-user, no admin needed)
+- `A-X-M-<version>-portable.exe` - portable, runs from anywhere (a USB stick, a games drive)
+
+**Runs on:** Windows 10 / 11, x64 (AMD Ryzen Z-series, Intel Core / Core Ultra, any 64-bit
+desktop or laptop CPU). ROG Xbox Ally, ROG Ally / Ally X, Legion Go, MSI Claw, Steam Deck on
+Windows, and any PC with a WebGL 2 GPU. No ARM64 build yet (Snapdragon X runs it through
+Windows' x64 emulation). Full list in [docs/ROADMAP.md](docs/ROADMAP.md).
+
+Windows SmartScreen warns on first run because the build isn't code-signed - *More info › Run anyway*.
 
 ## Demo
 
@@ -77,14 +85,20 @@ changing a game's artwork.
   Y reloads, B closes; Google, YouTube TV, Xbox Cloud Gaming and GeForce NOW one press away.
 
 ### Settings
-- Theme (monthly colours, ribbon speed / width / colour, background quality), visualizer
-  style, welcome sparkle, wallpaper, music shuffle, navigation sounds, menu music, battery
-  percentage, Steam install drive, in-game menu button, menu resolution, refresh rate, FPS
-  counter, hardware info.
-- **System Information**: device, CPU, RAM, GPU and every drive's used / free space.
-- **Controller**: players 1–4, family, wired or wireless, battery for Bluetooth pads, A/B
-  profile swap, stick dead zone, vibration with a test.
-- About.
+Grouped like a console's:
+- **Theme** - monthly XMB colours, ribbon speed / width / colour, visualizer style, welcome
+  sparkle, wallpaper.
+- **Display** - fullscreen / windowed, background quality, **menu resolution** (720p–4K, auto),
+  **menu upscaling** (FSR-style sharpening when rendering below native), refresh rate, FPS
+  counter, hardware readout, battery percentage.
+- **Audio** - volumes, menu music (five loops or off), navigation sounds, shuffle, music folders.
+- **Network** - **Wi-Fi** networks in range: join (password on the on-screen keyboard),
+  disconnect, forget; **Bluetooth**: paired devices, pair / remove - all without leaving the
+  menu (discovery is best effort, see the roadmap).
+- **System** - System Information (device, CPU, RAM, GPU, every drive's used / free space),
+  Controller (players 1–4, wired / wireless, battery, A/B profile, dead zone, vibration), Steam
+  hands-off install, Steam install drive, in-game menu button, game folders, rescan.
+- **About**, Exit.
 
 ## Screenshots
 
@@ -108,6 +122,16 @@ Steam Deck-class 800p panels and 1440p / 4K docks.
 
 **Menu Refresh Rate** caps the ribbon at 60 / 120 / 144 fps or follows the display. The menu
 itself is vsync-locked to the panel.
+
+**Menu Upscaling** - *Off*, *Sharpen* (FSR-1-style contrast-adaptive sharpening) or
+*Sharpen+* - is applied to the scaled-up background layers when the menu renders below the
+panel. It's a sharpening pass, honestly labelled: FSR 3.1 and DLSS need a game engine's
+motion vectors and depth buffers (and, for DLSS, NVIDIA's runtime), so they can't be applied to
+an Electron window. Games launched from the menu use whatever upscaler they support.
+
+## Bugs and roadmap
+
+Known limits and what's planned are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Run from source
 
@@ -273,12 +297,6 @@ Moving to another game crossfades; leaving the Game category fades back to the w
 Steam titles use Steam's own `library_hero.jpg`. Everything else is looked up on
 SteamGridDB with the same key as the box art, and cached next to it in
 `%APPDATA%\A-X-M\art-cache`. Games with no hero available simply keep the wave.
-
-## Boot logo
-
-The splash shows `assets/icons/boot-logo.png` if it exists, falling back to
-`.webp`, `.jpg` and `.svg`, and finally to the A-X-M wordmark as text. Replace the
-file and rebuild; nothing else needs changing.
 
 ## Still needed before this is "done"
 

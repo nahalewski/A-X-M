@@ -52,7 +52,7 @@ export interface ScreenInfo {
   source: string;
 }
 
-const USER_AGENT = "A-X-M/0.1.0-beta.1 (https://github.com/nahalewski/A-X-M)";
+const USER_AGENT = "A-X-M/0.2.0-beta.1 (https://github.com/nahalewski/A-X-M)";
 const CACHE_DIR = path.join(app.getPath("userData"), "info-cache");
 const TMDB = "https://api.themoviedb.org/3";
 const TMDB_IMG = "https://image.tmdb.org/t/p";

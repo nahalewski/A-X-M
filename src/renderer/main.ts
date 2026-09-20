@@ -50,6 +50,8 @@ import {
   MusicEntry,
   ControllerDevice,
   ResolutionState,
+  WifiNetwork,
+  BluetoothDevice,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -303,7 +305,7 @@ async function main(): Promise<void> {
       .map((p) => {
         const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
         const text = p.error ? `${p.name} — ${p.error}` : `${p.id.startsWith("dl-") ? "Downloading" : "Copying"} ${p.name} → ${p.destination} · ${pct}%`;
-        return `<div class="transfer${p.error ? " error" : ""}"><span class="ring" style="background-position:${(Math.round((pct / 100) * 19) * 100) / 19}% 0"></span><div class="transfer-text"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div></div>`;
+        return `<div class="transfer${p.error ? " error" : ""}"><span class="ring" style="background-position:${(Math.round((pct / 100) * 16) * 100) / 16}% 0"></span><div class="transfer-text"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div></div>`;
       })
       .join("");
   };
@@ -1451,7 +1453,16 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | { month: number };
+  /** Which group each root row files under; anything unlisted stays at the top level. */
+  const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
+    windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
+    fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
+    musicVolume: "audio", ambientTrack: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
+    "system-info": "sys", controller: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
+    "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
+    wallpaper: "theme", introSparkle: "theme",
+  };
 
   function settingsCategory(): Category {
     let view: SettingsView = "root";
@@ -1556,7 +1567,24 @@ async function main(): Promise<void> {
       return items;
     };
 
-    const rootItems = (): MenuItem[] => [
+    // The root shows the groups; every original row still exists and is filed into
+    // one of them (or stays at the top level, like Theme and About).
+    const groupedRoot = (): MenuItem[] => {
+      const all = allRootItems();
+      const groups: MenuItem[] = [
+        { id: "group-display", title: "Display", subtitle: "Fullscreen, resolution, upscaling, refresh rate, readouts", iconGlyph: "▭", onConfirm: () => go("display") },
+        { id: "group-audio", title: "Audio", subtitle: "Volumes, menu music, sounds, shuffle, music folders", iconUrl: "assets/icons/music.png", onConfirm: () => go("audio") },
+        { id: "group-network", title: "Network", subtitle: "Wi-Fi networks and Bluetooth pairing", iconGlyph: "⌔", onConfirm: () => { void netOpen(); } },
+        { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconGlyph: "▣", onConfirm: () => go("sys") },
+      ];
+      const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
+      // Theme first, then the groups, then whatever else is unfiled (About, Exit).
+      const theme = top.filter((i) => i.id === "theme");
+      const rest = top.filter((i) => i.id !== "theme");
+      return [...theme, ...groups, ...rest];
+    };
+
+    const allRootItems = (): MenuItem[] => [
       {
         id: "theme",
         title: "Theme",
@@ -1731,6 +1759,22 @@ async function main(): Promise<void> {
           const steps = [0, 720, 800, 900, 1080, 1200, 1440, 1600, 2160].filter((h) => h === 0 || !resolution.nativeHeight || h <= resolution.nativeHeight);
           const next = steps[(steps.indexOf(settings.renderResolution) + 1) % steps.length];
           settings = await window.axm.setSettings({ renderResolution: next });
+          xmb.refresh();
+        },
+      },
+      {
+        id: "menuUpscaling",
+        title: "Menu Upscaling",
+        subtitle: (() => {
+          const label = { off: "Off · plain scaling", sharpen: "Sharpen · FSR-style contrast sharpening", "sharpen-strong": "Sharpen+ · stronger" }[settings.menuUpscaling];
+          return `${label}${document.body.classList.contains("upscaled") ? "" : " · idle at native resolution"}`;
+        })(),
+        iconGlyph: "◈",
+        onConfirm: async () => {
+          const order = ["off", "sharpen", "sharpen-strong"] as const;
+          const next = order[(order.indexOf(settings.menuUpscaling) + 1) % order.length];
+          settings = await window.axm.setSettings({ menuUpscaling: next });
+          applyUpscaling();
           xmb.refresh();
         },
       },
@@ -2034,8 +2078,105 @@ async function main(): Promise<void> {
       return rows;
     };
 
+    // ---- Network: Wi-Fi and Bluetooth without leaving the menu ---------------------
+    const net = { wifi: [] as WifiNetwork[], bt: [] as BluetoothDevice[], busy: "", status: "" };
+    const netHint = () => net.busy || net.status || "Settings › Network";
+    const netRefresh = async () => {
+      net.busy = "Scanning…";
+      xmb.refresh();
+      const [wifi, bt] = await Promise.all([window.axm.wifiList().catch(() => []), window.axm.btList().catch(() => [])]);
+      net.wifi = wifi;
+      net.bt = bt;
+      net.busy = "";
+      xmb.refresh();
+    };
+    const netOpen = async () => {
+      go("network");
+      await netRefresh();
+    };
+    const netSay = (message: string) => {
+      net.status = message;
+      xmb.refresh();
+      setTimeout(() => {
+        if (net.status === message) {
+          net.status = "";
+          xmb.refresh();
+        }
+      }, 6000);
+    };
+    const networkItems = (): MenuItem[] => {
+      const rows: MenuItem[] = [];
+      rows.push({ id: "net-scan", title: net.busy ? "Scanning…" : "Scan Again", subtitle: "Wi-Fi networks in range and Bluetooth devices Windows can see", iconGlyph: "↻", onConfirm: () => (net.busy ? undefined : netRefresh()) });
+      rows.push({ id: "net-wifi-h", title: "Wi-Fi", subtitle: net.wifi.length ? `${net.wifi.length} networks` : net.busy ? "" : "No networks found (is Wi-Fi on?)", iconGlyph: "≋" });
+      for (const w of net.wifi) {
+        const bars = w.signal >= 75 ? "▂▄▆█" : w.signal >= 50 ? "▂▄▆" : w.signal >= 25 ? "▂▄" : "▂";
+        rows.push({
+          id: `wifi-${w.ssid}`,
+          title: w.ssid,
+          subtitle: `${bars} ${w.signal}% · ${w.auth || "Open"}${w.connected ? " · Connected" : w.known ? " · Saved" : ""}`,
+          iconGlyph: w.connected ? "✓" : "○",
+          badge: w.connected ? "CONNECTED" : undefined,
+          onConfirm: async () => {
+            if (w.connected) return;
+            let password: string | null = null;
+            if (!w.known && !/open/i.test(w.auth)) {
+              const answers = await askText(`Join ${w.ssid}`, [{ label: "Password", secret: true }]);
+              if (!answers) return;
+              password = answers[0];
+            } else if (!w.known) password = "";
+            net.busy = `Joining ${w.ssid}…`;
+            xmb.refresh();
+            const res = await window.axm.wifiConnect(w.ssid, password);
+            net.busy = "";
+            netSay(res.message);
+            await netRefresh();
+          },
+          contextHint: w.connected ? "disconnect" : w.known ? "forget" : undefined,
+          onContext: () => {
+            if (w.connected) void window.axm.wifiDisconnect().then(() => netRefresh());
+            else if (w.known) void window.axm.wifiForget(w.ssid).then(() => netRefresh());
+            else return false;
+            return true;
+          },
+        });
+      }
+      rows.push({ id: "net-bt-h", title: "Bluetooth", subtitle: net.bt.length ? `${net.bt.length} devices · put a new device in pairing mode, then Scan Again` : net.busy ? "" : "Nothing seen · put the device in pairing mode and Scan Again", iconGlyph: "ᛒ" });
+      for (const d of net.bt) {
+        const glyph = { audio: "♫", controller: "🎮", input: "⌨", other: "•" }[d.kind];
+        rows.push({
+          id: `bt-${d.id}`,
+          title: d.name,
+          subtitle: d.connected ? "Connected" : d.paired ? "Paired" : d.canPair ? "Not paired · A to pair" : "Seen · can't pair from here",
+          iconGlyph: glyph,
+          badge: d.connected ? "CONNECTED" : d.paired ? "PAIRED" : undefined,
+          onConfirm: async () => {
+            if (d.paired || !d.canPair) return;
+            net.busy = `Pairing ${d.name}…`;
+            xmb.refresh();
+            const res = await window.axm.btPair(d.id);
+            net.busy = "";
+            netSay(res.message);
+            await netRefresh();
+          },
+          contextHint: d.paired ? "remove" : undefined,
+          onContext: () => {
+            if (!d.paired) return false;
+            net.busy = `Removing ${d.name}…`;
+            xmb.refresh();
+            void window.axm.btUnpair(d.id).then((res) => {
+              net.busy = "";
+              netSay(res.message);
+              return netRefresh();
+            });
+            return true;
+          },
+        });
+      }
+      return rows;
+    };
+
     const aboutItems = (): MenuItem[] => [
-      { id: "about-1", title: "A-X-M · Ally XMB Menu", subtitle: "Version 0.1.0 Beta 1 · a PS3-style hub for the ROG Xbox Ally", iconUrl: "assets/icons/boot-logo.png" },
+      { id: "about-1", title: "A-X-M · Ally XMB Menu", subtitle: "Version 0.2.0 Beta 1 · a PS3-style hub for the ROG Xbox Ally", iconUrl: "assets/icons/boot-logo.png" },
       { id: "about-2", title: "This app was developed using AI.", subtitle: "It's a passion project I've always wanted since the PS3 and PSP, then seeing handhelds.", iconGlyph: "✦" },
       { id: "about-3", title: "I don't care about negative AI comments - move along.", subtitle: "Otherwise, let's bring our dreams to fruition by any means possible.", iconGlyph: "✧" },
       { id: "about-4", title: "User developed with Naha0", subtitle: "github.com/nahalewski/A-X-M", iconUrl: "assets/icons/user.png" },
@@ -2101,7 +2242,8 @@ async function main(): Promise<void> {
       iconUrl: "assets/icons/settings.png",
       onBack: () => {
         if (view === "root") return false;
-        if (view === "theme" || view === "system" || view === "controller" || view === "about") go("root");
+        if (view === "system" || view === "controller") go("sys");
+        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -2111,17 +2253,26 @@ async function main(): Promise<void> {
         if (view === "theme") return "Settings › Theme";
         if (view === "months") return "Settings › Theme › Months";
         if (view === "system") return "Settings › System Information";
-        if (view === "controller") return "Settings › Controller";
+        if (view === "controller") return "Settings › System › Controller";
         if (view === "about") return "Settings › About A-X-M";
+        if (view === "display") return "Settings › Display";
+        if (view === "audio") return "Settings › Audio";
+        if (view === "sys") return "Settings › System";
+        if (view === "network") return netHint();
         return `Settings › Theme › ${MONTH_NAMES[view.month]}`;
       },
       getItems: () => {
-        if (view === "root") return rootItems();
+        if (view === "root") return groupedRoot();
         if (view === "theme") return themeItems();
         if (view === "months") return monthsItems();
         if (view === "system") return systemItems();
         if (view === "controller") return controllerItems();
         if (view === "about") return aboutItems();
+        if (view === "display" || view === "audio" || view === "sys") {
+          const group = view;
+          return allRootItems().filter((i) => SETTINGS_GROUPS[i.id] === group);
+        }
+        if (view === "network") return networkItems();
         return monthEditorItems(view.month);
       },
     };
@@ -2194,7 +2345,15 @@ async function main(): Promise<void> {
     const scale = state.target && physical ? state.target / physical : 1;
     ribbon.setRenderScale(scale);
     visualizer.setRenderScale(scale);
+    applyUpscaling();
     xmb.refresh();
+  };
+  const applyUpscaling = () => {
+    const physical = Math.round(window.innerHeight * (window.devicePixelRatio || 1));
+    const below = resolution.target > 0 && physical > 0 && resolution.target < physical;
+    document.body.classList.toggle("upscaled", below);
+    document.body.classList.toggle("sharpen", settings.menuUpscaling === "sharpen");
+    document.body.classList.toggle("sharpen-strong", settings.menuUpscaling === "sharpen-strong");
   };
   window.axm.onResolution((state) => applyResolutionState(state));
   void window.axm.getResolution().then(applyResolutionState);
@@ -2266,28 +2425,10 @@ async function main(): Promise<void> {
     }
   });
 
-  // Drop any image named assets/icons/boot-logo.* in and it becomes the splash
-  // wordmark. The element starts hidden and is only revealed once a file actually
-  // decodes, so a missing logo falls back to the A-X-M text instead of a broken
-  // image. Setting src from here (rather than in the HTML) means the request only
-  // fires once these handlers are attached.
+  // The splash wordmark is the bundled logo; it fades in once it has decoded.
   const bootLogoImg = document.getElementById("boot-logo-img") as HTMLImageElement;
-  const logoCandidates = [
-    "assets/icons/boot-logo.png",
-    "assets/icons/boot-logo.webp",
-    "assets/icons/boot-logo.jpg",
-    "assets/icons/boot-logo.svg",
-  ];
-  const tryLogo = (i: number) => {
-    if (i >= logoCandidates.length) {
-      bootLogoImg.remove();
-      return;
-    }
-    bootLogoImg.onload = () => bootLogoImg.classList.add("loaded");
-    bootLogoImg.onerror = () => tryLogo(i + 1);
-    bootLogoImg.src = logoCandidates[i];
-  };
-  tryLogo(0);
+  bootLogoImg.onload = () => bootLogoImg.classList.add("loaded");
+  bootLogoImg.src = "assets/icons/boot-logo.png";
 
   // Box art arrives asynchronously in the background - patch it in as it lands.
   window.axm.onArtUpdated(({ gameId, iconPath, heroPath }) => {

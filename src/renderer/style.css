@@ -1301,20 +1301,20 @@ body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
 .transfer.error .transfer-bar { display: none; }
 
 
-/* The progress ring sprite: 20 frames across. */
+/* The progress ring sprite: 17 frames across. */
 .ring {
   display: inline-block;
   width: 22px;
   height: 22px;
   vertical-align: -6px;
   background-image: url("assets/icons/progress-sprite.webp");
-  background-size: 2000% 100%;
+  background-size: 1700% 100%;
   background-repeat: no-repeat;
   background-position: 0 0;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
 }
-.ring.spin { animation: ring-spin 1.4s steps(20) infinite; }
-@keyframes ring-spin { from { background-position: 0 0; } to { background-position: 105.263% 0; } }
+.ring.spin { animation: ring-spin 1.3s steps(17) infinite; }
+@keyframes ring-spin { from { background-position: 0 0; } to { background-position: 106.25% 0; } }
 .icon-loading { display: flex; align-items: center; justify-content: center; }
 .icon-ring { width: 48px; height: 48px; }
 .transfer { display: flex; align-items: center; gap: 12px; }
@@ -1337,3 +1337,9 @@ body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
 
 /* Unplugged drive rows. */
 .item-icon.hdd-off { filter: grayscale(1) brightness(0.8); opacity: 0.55; }
+
+
+/* Menu upscaling: sharpen the scaled-up background layers. Only applied when the
+   menu renders below native (body.upscaled), otherwise it's wasted work. */
+body.upscaled.sharpen #background-layer, body.upscaled.sharpen #visualizer, body.upscaled.sharpen #game-bg, body.upscaled.sharpen #wallpaper { filter: url(#axm-sharpen); }
+body.upscaled.sharpen-strong #background-layer, body.upscaled.sharpen-strong #visualizer, body.upscaled.sharpen-strong #game-bg, body.upscaled.sharpen-strong #wallpaper { filter: url(#axm-sharpen-strong); }

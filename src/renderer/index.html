@@ -15,6 +15,17 @@
     <div id="options-popup" class="hidden"></div>
     <div id="info-card" class="hidden"></div>
     <div id="transfer-toast" class="hidden"></div>
+    <!-- Contrast-adaptive style sharpening for the background layers when the menu
+         renders below the panel's resolution (the FSR-1 look; there is no FSR/DLSS
+         runtime for an Electron window - see Settings > Display > Menu Upscaling). -->
+    <svg width="0" height="0" style="position:absolute">
+      <filter id="axm-sharpen" color-interpolation-filters="sRGB">
+        <feConvolveMatrix order="3" kernelMatrix="0 -0.35 0 -0.35 2.4 -0.35 0 -0.35 0" preserveAlpha="true" />
+      </filter>
+      <filter id="axm-sharpen-strong" color-interpolation-filters="sRGB">
+        <feConvolveMatrix order="3" kernelMatrix="0 -0.7 0 -0.7 3.8 -0.7 0 -0.7 0" preserveAlpha="true" />
+      </filter>
+    </svg>
     <div id="wallpaper"></div>
     <div id="game-bg"></div>
 
@@ -52,7 +63,6 @@
 
     <div id="boot-splash">
       <img id="boot-logo-img" alt="A-X-M" />
-      <div id="boot-logo">A-X-M</div>
     </div>
 
     <script src="main.js"></script>

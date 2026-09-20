@@ -254,6 +254,23 @@ export interface MediaDrive {
   music: string | null;
 }
 
+export interface WifiNetwork {
+  ssid: string;
+  signal: number;
+  auth: string;
+  connected: boolean;
+  known: boolean;
+}
+
+export interface BluetoothDevice {
+  id: string;
+  name: string;
+  paired: boolean;
+  connected: boolean;
+  canPair: boolean;
+  kind: "audio" | "controller" | "input" | "other";
+}
+
 export interface ControllerDevice {
   name: string;
   kind: "ps" | "xbox" | "other";
@@ -326,6 +343,8 @@ export interface Settings {
   gamepadProfile: "standard" | "swapped";
   gamepadVibration: boolean;
   renderResolution: number;
+  /** Menu upscaling look when rendering below native: off, FSR-style sharpen, strong. */
+  menuUpscaling: "off" | "sharpen" | "sharpen-strong";
   playlist: MusicEntry[];
   wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
   knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
@@ -382,6 +401,13 @@ export interface AxmApi {
   getMediaDrives(): Promise<MediaDrive[]>;
   getVolumes(): Promise<VolumeInfo[]>;
   getControllerDevices(): Promise<ControllerDevice[]>;
+  wifiList(): Promise<WifiNetwork[]>;
+  wifiConnect(ssid: string, password: string | null): Promise<{ ok: boolean; message: string }>;
+  wifiDisconnect(): Promise<void>;
+  wifiForget(ssid: string): Promise<void>;
+  btList(): Promise<BluetoothDevice[]>;
+  btPair(id: string): Promise<{ ok: boolean; message: string }>;
+  btUnpair(id: string): Promise<{ ok: boolean; message: string }>;
   createMediaFolder(parentDir: string, name: string): Promise<string>;
   getSongInfo(filePath: string): Promise<SongInfo | null>;
   getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;
