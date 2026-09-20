@@ -62,6 +62,10 @@ function createWindow(): void {
   });
 
   mainWindow.setMenuBarVisibility(false);
+  // Chromium clamps a non-resizable window to the work area at creation, which
+  // leaves the taskbar showing along the bottom. Setting the bounds again after
+  // creation is honoured, so the window really does cover the whole display.
+  if (!settings.windowed) mainWindow.setBounds(display.bounds);
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
 
   if (process.argv.includes("--dev")) {
