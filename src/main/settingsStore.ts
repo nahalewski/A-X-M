@@ -7,6 +7,9 @@ export interface GameOverride {
   losslessProfile?: 1 | 2 | 3 | null;
 }
 
+/** Which loop plays behind the menu. Values match AMBIENT_TRACKS in the renderer. */
+export type AmbientTrackId = "xmb" | "luminous";
+
 export interface Settings {
   windowed: boolean;
   targetHz: number;
@@ -19,6 +22,8 @@ export interface Settings {
   gameArtApiKey: string;
   /** Music library roots. Empty falls back to the usual Windows music folders. */
   musicFolders: string[];
+  /** Which background loop the menu plays. */
+  ambientTrack: AmbientTrackId;
 }
 
 const DEFAULTS: Settings = {
@@ -31,6 +36,7 @@ const DEFAULTS: Settings = {
   gameOverrides: {},
   gameArtApiKey: "",
   musicFolders: [],
+  ambientTrack: "xmb",
 };
 
 let cache: Settings | null = null;

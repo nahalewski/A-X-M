@@ -2,6 +2,16 @@
 // All clips are original PS3-XMB-inspired assets (see assets/THIRD_PARTY_LICENSES.md) -
 // if a file is ever missing this all no-ops gracefully instead of throwing.
 
+import { AmbientTrackId } from "./types";
+
+/** The loops selectable as menu music. `xmb` is the original A-X-M bed. */
+export const AMBIENT_TRACKS: Record<AmbientTrackId, { label: string; src: string }> = {
+  xmb: { label: "XMB Ambience", src: "assets/sounds/ambient.ogg" },
+  luminous: { label: "Luminous Ambience", src: "assets/sounds/luminous.mp3" },
+};
+
+export const AMBIENT_TRACK_IDS = Object.keys(AMBIENT_TRACKS) as AmbientTrackId[];
+
 /** HTMLMediaElement.volume throws outside [0,1], and rAF timing can overshoot a fade by a hair. */
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -19,8 +29,27 @@ function safePlay(path: string, volume: number): HTMLAudioElement {
 export class AudioManager {
   private ambient: HTMLAudioElement | null = null;
   private ambientFadeRaf = 0;
+  private ambientTrack: AmbientTrackId = "xmb";
   private musicVolume = 0.6;
   private sfxVolume = 0.8;
+
+  /**
+   * Switches the menu loop. If a loop is already playing it's faded out and the new
+   * one faded in, so changing the setting is audible immediately rather than at the
+   * next launch. Before the first play it just records the choice.
+   */
+  setAmbientTrack(track: AmbientTrackId): void {
+    if (!AMBIENT_TRACKS[track] || track === this.ambientTrack) return;
+    this.ambientTrack = track;
+    if (!this.ambient) return;
+
+    const wasPlaying = !this.ambient.paused;
+    void this.fadeOutAmbient(450).then(() => {
+      // Drop the element so the next fade-in builds one on the new source.
+      this.ambient = null;
+      if (wasPlaying) this.fadeInAmbient(900);
+    });
+  }
 
   setVolumes(music: number, sfx: number): void {
     this.musicVolume = clamp01(music);
@@ -56,7 +85,7 @@ export class AudioManager {
 
   fadeInAmbient(durationMs = 2500): void {
     if (!this.ambient) {
-      this.ambient = new Audio("assets/sounds/ambient.ogg");
+      this.ambient = new Audio(AMBIENT_TRACKS[this.ambientTrack].src);
       this.ambient.loop = true;
     }
     const el = this.ambient;

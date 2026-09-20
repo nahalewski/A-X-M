@@ -1,6 +1,6 @@
 import "./types";
 import { WaveBackground } from "./wave";
-import { AudioManager } from "./audio";
+import { AudioManager, AMBIENT_TRACKS, AMBIENT_TRACK_IDS } from "./audio";
 import { GamepadNav } from "./gamepad";
 import { Xmb, Category, sourceGlyph } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
@@ -23,6 +23,7 @@ async function main(): Promise<void> {
 
   wave.setCycleSeconds(settings.waveColorCycleSeconds);
   audio.setVolumes(settings.musicVolume, settings.sfxVolume);
+  audio.setAmbientTrack(settings.ambientTrack);
   wave.start();
 
   const clockEl = document.getElementById("clock")!;
@@ -127,7 +128,7 @@ async function main(): Promise<void> {
     return {
       id: "games",
       label: "Game",
-      iconUrl: "assets/icons/game.svg",
+      iconUrl: "assets/icons/games.svg",
       getItems: () =>
         games
           .filter((g) => !g.hidden)
@@ -226,6 +227,19 @@ async function main(): Promise<void> {
             const next = VOLUME_PRESETS[(musicIdx() + 1) % VOLUME_PRESETS.length];
             settings = await window.axm.setSettings({ musicVolume: next });
             audio.setVolumes(settings.musicVolume, settings.sfxVolume);
+            xmb.refresh();
+          },
+        },
+        {
+          id: "ambientTrack",
+          title: "Menu Music",
+          subtitle: AMBIENT_TRACKS[settings.ambientTrack].label,
+          iconUrl: "assets/icons/music.png",
+          onConfirm: async () => {
+            const i = AMBIENT_TRACK_IDS.indexOf(settings.ambientTrack);
+            const next = AMBIENT_TRACK_IDS[(i + 1) % AMBIENT_TRACK_IDS.length];
+            settings = await window.axm.setSettings({ ambientTrack: next });
+            audio.setAmbientTrack(settings.ambientTrack);
             xmb.refresh();
           },
         },
@@ -330,9 +344,28 @@ async function main(): Promise<void> {
     }
   });
 
+  // Drop any image named assets/icons/boot-logo.* in and it becomes the splash
+  // wordmark. The element starts hidden and is only revealed once a file actually
+  // decodes, so a missing logo falls back to the A-X-M text instead of a broken
+  // image. Setting src from here (rather than in the HTML) means the request only
+  // fires once these handlers are attached.
   const bootLogoImg = document.getElementById("boot-logo-img") as HTMLImageElement;
-  bootLogoImg.addEventListener("load", () => bootLogoImg.classList.add("loaded"));
-  bootLogoImg.addEventListener("error", () => bootLogoImg.remove());
+  const logoCandidates = [
+    "assets/icons/boot-logo.png",
+    "assets/icons/boot-logo.webp",
+    "assets/icons/boot-logo.jpg",
+    "assets/icons/boot-logo.svg",
+  ];
+  const tryLogo = (i: number) => {
+    if (i >= logoCandidates.length) {
+      bootLogoImg.remove();
+      return;
+    }
+    bootLogoImg.onload = () => bootLogoImg.classList.add("loaded");
+    bootLogoImg.onerror = () => tryLogo(i + 1);
+    bootLogoImg.src = logoCandidates[i];
+  };
+  tryLogo(0);
 
   // Box art arrives asynchronously in the background - patch it in as it lands.
   window.axm.onArtUpdated(({ gameId, iconPath }) => {

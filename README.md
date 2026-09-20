@@ -69,11 +69,19 @@ Art is fetched in the background after a scan and cached under
 Misses are cached too, so unmatched names aren't retried on every launch. Without a
 key the grid just falls back to source letter badges.
 
+## Boot logo
+
+The splash shows `assets/icons/boot-logo.png` if it exists, falling back to
+`.webp`, `.jpg` and `.svg`, and finally to the A-X-M wordmark as text. Drop a file
+in at any of those names and rebuild; nothing else needs changing.
+
 ## Still needed before this is "done"
 
 1. **Audio assets** - drop these into `assets/sounds/`:
    - `boot.ogg` - short boot stinger, plays once on launch.
    - `ambient.ogg` - loop-friendly ambient pad, fades in after boot and loops until quit.
+     Settings > Menu Music switches between this ("XMB Ambience") and
+     `luminous.mp3` ("Luminous Ambience"); the change crossfades immediately.
    UI navigation blips (move/confirm/back/context) are synthesized in-code, so the menu
    has sound even without these two files.
 2. **Verified Lossless Scaling automation** - currently A-X-M just launches LS and lets

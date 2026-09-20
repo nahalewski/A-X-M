@@ -1,5 +1,8 @@
 export type GameSource = "steam" | "epic" | "xbox" | "generic";
 
+/** Which loop plays behind the menu. Keys of AMBIENT_TRACKS in audio.ts. */
+export type AmbientTrackId = "xmb" | "luminous";
+
 export interface GameEntry {
   id: string;
   name: string;
@@ -44,6 +47,7 @@ export interface Settings {
   gameOverrides: Record<string, { hidden?: boolean; losslessProfile?: 1 | 2 | 3 | null }>;
   gameArtApiKey: string;
   musicFolders: string[];
+  ambientTrack: AmbientTrackId;
 }
 
 export interface AxmApi {

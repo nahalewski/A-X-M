@@ -14,14 +14,21 @@ built as a RetroArch XMB overlay. A-X-M uses:
 - `sounds/nav-up.ogg`, `sounds/nav-down.ogg` (from `up.ogg`/`down.ogg`) - navigation ticks
 - `sounds/confirm.ogg` (from `ok.ogg`), `sounds/back.ogg` (from `cancel.ogg`)
 - `sounds/context-open.ogg`, `sounds/context-close.ogg` (from `notice.ogg`/`notice_back.ogg`)
-- `icons/settings.png`, `icons/power.png`, `icons/games.png` (from `disc.png`), `icons/folder.png`
-- `icons/video.png` (from `movie.png`), `icons/photo.png` (from `images.png`), `icons/music.png`
-- `icons/user.png` (from `menu_user.png`), `icons/browser.png` (from `wifi.png`)
+The pack's icons are no longer used - see below.
+
+## Supplied by the project owner
+
+- All category icons in `icons/` except `games.svg`: sliced from a single flat
+  white-on-transparent icon sheet provided for this project. Provenance and license
+  of that sheet have not been verified here; confirm before redistributing.
+- `sounds/luminous.mp3` - the "Luminous Ambience" menu loop, from `Luminous_Standby.mp3`.
+  Same caveat: provenance not verified here.
 
 ## Original to this project
 
-- `icons/game.svg` - the gamepad category icon, drawn for A-X-M because the pack
-  above has no controller icon. Matches its flat white-on-transparent style.
+- `icons/games.svg` - a DualShock 3 silhouette drawn for A-X-M, because neither the
+  pack nor the supplied sheet has a PS3-shaped controller. Flat white-on-transparent
+  to match the rest of the set.
 - `fonts/xmb-font.ttf`
 
 ```
