@@ -40,6 +40,14 @@ export class AudioManager {
   private sfxVolume = 0.8;
   private sfxEnabled = true;
   private ambientEnabled = true;
+  private sinkId = "";
+
+  /** Where the menu's own sounds play; "" is the system default. */
+  setOutputDevice(sinkId: string): void {
+    this.sinkId = sinkId;
+    const el = this.ambient as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+    void el?.setSinkId?.(sinkId).catch(() => {});
+  }
 
   /** Menu navigation/confirm/back blips on or off. The ambient loop is separate. */
   setSfxEnabled(enabled: boolean): void {
@@ -117,6 +125,7 @@ export class AudioManager {
     if (!this.ambient) {
       this.ambient = new Audio(AMBIENT_TRACKS[this.ambientTrack].src);
       this.ambient.loop = true;
+      if (this.sinkId) void (this.ambient as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId?.(this.sinkId).catch(() => {});
     }
     const el = this.ambient;
     el.volume = 0;

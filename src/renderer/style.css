@@ -1343,3 +1343,86 @@ body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
    menu renders below native (body.upscaled), otherwise it's wasted work. */
 body.upscaled.sharpen #background-layer, body.upscaled.sharpen #visualizer, body.upscaled.sharpen #game-bg, body.upscaled.sharpen #wallpaper { filter: url(#axm-sharpen); }
 body.upscaled.sharpen-strong #background-layer, body.upscaled.sharpen-strong #visualizer, body.upscaled.sharpen-strong #game-bg, body.upscaled.sharpen-strong #wallpaper { filter: url(#axm-sharpen-strong); }
+
+
+/* PS3 sidebar: nested arrow, current-value tick, colour swatches. */
+.popup-arrow { margin-left: 8px; opacity: 0.6; }
+.popup-option.current .popup-option-label::after { content: " ✓"; opacity: 0.6; }
+.popup-swatch { display: inline-block; width: 18px; height: 18px; border-radius: 3px; margin-right: 10px; vertical-align: -3px; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35); }
+
+/* The Information screen: picture centred at the top, the facts beneath. */
+#info-card {
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  transform: none;
+  border: 0;
+  border-radius: 0;
+  background: rgba(3, 5, 12, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 60px 10vw;
+}
+#info-card .info-art { width: auto; max-width: 30vw; max-height: 32vh; border-radius: 4px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7); }
+#info-card .info-body { flex: none; width: min(760px, 80vw); display: grid; grid-template-columns: 140px 1fr; gap: 10px 22px; font-size: 15px; }
+#info-card .info-k { text-align: right; opacity: 0.6; text-transform: none; font-size: 14px; letter-spacing: 0.3px; line-height: 22px; }
+#info-card .info-v { line-height: 22px; opacity: 0.95; }
+#info-card .info-back { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); margin: 0; }
+
+/* Text panel (About). */
+#text-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: rgba(3, 5, 12, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 14vw;
+  transition: opacity 0.18s ease;
+}
+#text-panel.hidden { opacity: 0; pointer-events: none; }
+.text-panel-title { font-size: 24px; font-weight: 300; margin-bottom: 18px; }
+.text-panel-body { max-height: 56vh; overflow-y: auto; scrollbar-width: none; font-size: 17px; line-height: 1.6; opacity: 0.92; }
+.text-panel-body p { margin: 0 0 16px; }
+
+/* PS3 notification pill, top right. */
+#notify {
+  position: fixed;
+  top: 64px;
+  right: 40px;
+  z-index: 28;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 18px 7px 8px;
+  max-width: 360px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(70, 70, 78, 0.95), rgba(28, 28, 34, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  font-size: 15px;
+  transform: translateX(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#notify.hidden { opacity: 0; transform: translateX(40px); pointer-events: none; }
+.notify-badge { display: grid; grid-template-columns: 1fr 1fr; width: 26px; height: 26px; border-radius: 6px; background: #d9822b; font-size: 9px; line-height: 13px; text-align: center; color: #1a1a1a; font-weight: 700; flex: none; }
+.notify-badge i { font-style: normal; }
+.notify-text { white-space: nowrap; overflow: hidden; max-width: 300px; display: inline-block; }
+.notify-text.ticker { animation: notify-tick 4s linear forwards; }
+@keyframes notify-tick { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(calc(-1 * var(--tick))); } }
+
+/* Predictive text strip above the keys. */
+.entry-suggest { display: flex; gap: 8px; min-height: 30px; }
+.entry-suggest.hidden { visibility: hidden; }
+.entry-suggestion { padding: 5px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.1); font-size: 14px; opacity: 0.8; }
+.entry-suggestion.selected { background: rgba(255, 255, 255, 0.9); color: #0b1020; opacity: 1; }
+
+/* Idle dimming. */
+body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.dimmed #game-bg { filter: brightness(0.35); transition: filter 1.2s ease; }

@@ -120,6 +120,16 @@ export interface Settings {
   /** Menu resolution as a target height (720, 1080, 2160 ...) or 0 for auto. */
   renderResolution: number;
   menuUpscaling: "off" | "sharpen" | "sharpen-strong";
+  /** PS3-style system settings kept by the menu. */
+  systemName: string;
+  clock24h: boolean;
+  dictionaryTerms: string[];
+  learnedWords: string[];
+  notifications: { enabled: boolean; kinds: { general: boolean; transfer: boolean; controller: boolean; battery: boolean; install: boolean } };
+  audioOutputId: string;
+  audioInputId: string;
+  menuDimMinutes: number;
+  playlists: { name: string; tracks: { kind: "track"; name: string; filePath: string; url: string }[] }[];
   /** The user's playlist: tracks in play order. */
   playlist: { name: string; filePath: string; url: string }[];
   /** Menu wallpaper: one picture, or a folder shuffled every few minutes. */
@@ -176,6 +186,15 @@ const DEFAULTS: Settings = {
   gamepadVibration: true,
   renderResolution: 0,
   menuUpscaling: "sharpen",
+  systemName: "",
+  clock24h: false,
+  dictionaryTerms: [],
+  learnedWords: [],
+  notifications: { enabled: true, kinds: { general: true, transfer: true, controller: true, battery: true, install: true } },
+  audioOutputId: "",
+  audioInputId: "",
+  menuDimMinutes: 0,
+  playlists: [],
   playlist: [],
   wallpaper: null,
   knownDrives: [],

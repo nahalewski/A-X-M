@@ -7,7 +7,9 @@ import { MusicPlayer } from "./musicPlayer";
 import { MusicVisualizer, VISUALIZER_STYLES, VISUALIZER_STYLE_IDS, VisualizerStyle } from "./visualizer";
 import { spriteEl, spriteHtml, progressRing } from "./sprites";
 import { playIntroSparkle } from "./intro";
-import { OptionsPopup, InfoCard, PopupOption } from "./popups";
+import { OptionsPopup, InfoCard, TextPanel, PopupOption, InfoRow } from "./popups";
+import { Notifier } from "./notify";
+import { setDictionary } from "./textEntry";
 import { MediaViewer } from "./mediaViewer";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
@@ -52,6 +54,10 @@ import {
   ResolutionState,
   WifiNetwork,
   BluetoothDevice,
+  THEME_COLOURS,
+  ScreenInfo,
+  ClockInfo,
+  PowerSettings,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -213,6 +219,12 @@ async function main(): Promise<void> {
   const textEntry = new TextEntry(document.getElementById("text-entry")!);
   const optionsPopup = new OptionsPopup(document.getElementById("options-popup")!);
   const infoCard = new InfoCard(document.getElementById("info-card")!);
+  const textPanel = new TextPanel(document.getElementById("text-panel")!);
+  const notifier = new Notifier(document.body);
+  notifier.setPrefs(settings.notifications);
+  setDictionary(settings.dictionaryTerms, settings.learnedWords, (words) => {
+    void window.axm.setSettings({ learnedWords: words }).then((next) => (settings = next));
+  });
 
   // ---- Overlay stack -------------------------------------------------------------
   //
@@ -231,16 +243,40 @@ async function main(): Promise<void> {
   };
 
   /** The Y-button menu for a row: a few actions, run after the popup closes. */
-  const showOptions = (title: string, options: PopupOption[]) => {
+  const showOptions = (title: string, options: PopupOption[], onCancel?: () => void) => {
     if (options.length === 0) return;
-    optionsPopup.show(title, options, () => popOverlay());
+    optionsPopup.show(title, options, (cancelled) => {
+      popOverlay();
+      if (cancelled) onCancel?.();
+    });
     pushOverlay((a) => optionsPopup.handle(a as Parameters<OptionsPopup["handle"]>[0]));
     audio.playConfirm();
   };
-  const showInfo = (title: string, art: string | undefined, load: () => Promise<void>) => {
-    infoCard.loading(title, art, () => popOverlay());
+  const fmtBytesInfo = (n: number): string => (n >= 1e9 ? `${(n / 1e9).toFixed(2)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+  const fmtWhen = (iso: string): string => (iso ? new Date(iso).toLocaleString([], { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: !settings.clock24h }) : "");
+  /**
+   * The PS3 Information screen: opens with the file's own facts straight away
+   * (sub-title, updated, size), then `more()` adds what the lookups bring back.
+   */
+  const showInfo = (title: string, art: string | undefined, filePath: string | null, base: InfoRow[], more?: () => Promise<InfoRow[]>) => {
+    infoCard.show(title, art, base, () => popOverlay());
     pushOverlay((a) => infoCard.handle(a as Parameters<InfoCard["handle"]>[0]));
-    void load();
+    void (async () => {
+      let rows = [...base];
+      if (filePath) {
+        const f = await window.axm.fileInfo(filePath).catch(() => null);
+        if (f?.exists) rows = [...rows, { label: "Updated", value: fmtWhen(f.modified) }, { label: "Size", value: fmtBytesInfo(f.sizeBytes) }];
+      }
+      infoCard.rows([{ label: "Title", value: title }, ...rows]);
+      if (more) {
+        const extra = await more();
+        infoCard.rows([{ label: "Title", value: title }, ...rows, ...extra]);
+      }
+    })();
+  };
+  const showText = (title: string, paragraphs: string[]) => {
+    textPanel.show(title, paragraphs, () => popOverlay());
+    pushOverlay((a) => textPanel.handle(a as Parameters<TextPanel["handle"]>[0]));
   };
 
   // ---- Copy / download targets ----------------------------------------------------
@@ -289,6 +325,7 @@ async function main(): Promise<void> {
   window.axm.onTransfer((p) => {
     if (p.finished) {
       transfers.delete(p.id);
+      notifier.push(p.error ? `${p.name}: ${p.error}` : `${p.id.startsWith("dl-") ? "Downloaded" : "Copied"} ${p.name}`, "transfer");
       if (p.error) {
         transfers.set(p.id + "-err", { ...p });
         setTimeout(() => {
@@ -449,7 +486,7 @@ async function main(): Promise<void> {
   const clockEl = document.getElementById("clock")!;
   const updateClock = () => {
     const now = new Date();
-    clockEl.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    clockEl.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: !settings.clock24h });
   };
   updateClock();
   setInterval(updateClock, 15_000);
@@ -459,6 +496,7 @@ async function main(): Promise<void> {
   void batteries.start();
   audio.setSfxEnabled(settings.navSoundsEnabled);
   audio.setAmbientEnabled(settings.menuMusicEnabled);
+  if (settings.audioOutputId) audio.setOutputDevice(settings.audioOutputId);
   const statusIcons = new StatusIcons(document.getElementById("batteries")!);
   statusIcons.start();
   const hud = new Hud(document.body);
@@ -516,6 +554,28 @@ async function main(): Promise<void> {
 
   // ---- Categories ------------------------------------------------------------------
 
+  /** The PS3 kept Turn Off System under Users; so do we, with Restart, Sleep and Exit. */
+  const powerRows = (): MenuItem[] => [
+    { id: "turn-off", title: "Turn Off System", subtitle: "Shut the device down", iconUrl: "assets/icons/power.png", onConfirm: () => confirmPower("Turn Off System", "shutdown") },
+    { id: "restart", title: "Restart System", iconGlyph: "↻", onConfirm: () => confirmPower("Restart System", "restart") },
+    { id: "sleep", title: "Sleep", subtitle: "Rest mode", iconGlyph: "☾", onConfirm: () => confirmPower("Sleep", "sleep") },
+    {
+      id: "exit",
+      title: "Exit to Desktop",
+      subtitle: "Close A-X-M",
+      iconUrl: "assets/icons/power.png",
+      onConfirm: async () => {
+        await audio.fadeOutAmbient(800);
+        window.axm.quit();
+      },
+    },
+  ];
+  const confirmPower = (title: string, action: "shutdown" | "restart" | "sleep") =>
+    showOptions(title, [
+      { label: "Yes", run: async () => { await audio.fadeOutAmbient(500); void window.axm.powerAction(action); } },
+      { label: "No" },
+    ]);
+
   function usersCategory(): Category {
     return {
       id: "users",
@@ -535,6 +595,7 @@ async function main(): Promise<void> {
               iconUrl: "assets/icons/user.png",
               onConfirm: () => runProfileSetup(null),
             },
+            ...powerRows(),
           ];
         }
         return [
@@ -556,6 +617,7 @@ async function main(): Promise<void> {
               xmb.refresh();
             },
           },
+          ...powerRows(),
           {
             id: "change-name",
             title: "Change Name",
@@ -651,19 +713,54 @@ async function main(): Promise<void> {
   }
 
   function musicCategory(): Category {
-    let playlistView = false;
+    // Named playlists, the PS3 way: "Create New Playlist" at the top of Music, each
+    // playlist a row with its track count, Y for Play / Edit / Copy / Delete /
+    // Information. The single list from earlier builds migrates to "Playlist".
+    let playlistView: number | null = null;
+    if (settings.playlist.length && settings.playlists.length === 0) {
+      void window.axm.setSettings({ playlists: [{ name: "Playlist", tracks: settings.playlist }], playlist: [] }).then((next) => {
+        settings = next;
+        xmb.refresh();
+      });
+    }
+    const savePlaylists = async (lists: Settings["playlists"]) => {
+      settings = await window.axm.setSettings({ playlists: lists });
+      xmb.refresh();
+    };
     const openFolder = async (dirPath: string | null) => {
-      playlistView = false;
+      playlistView = null;
       musicListing = await window.axm.browseMusic(dirPath);
       xmb.resetSelection("music");
       xmb.refresh();
     };
-    const inPlaylist = (filePath: string) => settings.playlist.some((t) => t.filePath === filePath);
-    const togglePlaylist = async (entry: MusicEntry) => {
-      const next = inPlaylist(entry.filePath) ? settings.playlist.filter((t) => t.filePath !== entry.filePath) : [...settings.playlist, { kind: "track" as const, name: entry.name, filePath: entry.filePath, url: entry.url ?? "" }];
-      settings = await window.axm.setSettings({ playlist: next });
-      audio.playConfirm();
-      xmb.refresh();
+    const asTrack = (entry: MusicEntry): MusicEntry => ({ kind: "track", name: entry.name, filePath: entry.filePath, url: entry.url ?? "" });
+    /** "Add to Playlist ▸" with one child per playlist, plus a new one. */
+    const addToPlaylistOption = (entry: MusicEntry): PopupOption => ({
+      label: "Add to Playlist",
+      children: [
+        ...settings.playlists.map((pl, i) => ({
+          label: pl.name,
+          hint: pl.tracks.some((t) => t.filePath === entry.filePath) ? "already in it" : `${pl.tracks.length} tracks`,
+          run: async () => {
+            if (pl.tracks.some((t) => t.filePath === entry.filePath)) return;
+            const lists = settings.playlists.map((p, j) => (j === i ? { ...p, tracks: [...p.tracks, asTrack(entry)] } : p));
+            await savePlaylists(lists);
+            notifier.push(`Added to ${pl.name}`);
+          },
+        })),
+        {
+          label: "New Playlist…",
+          run: async () => {
+            const answers = await askText("New Playlist", [{ label: "Name", value: `Playlist ${settings.playlists.length + 1}` }]);
+            if (!answers?.[0]) return;
+            await savePlaylists([...settings.playlists, { name: answers[0], tracks: [asTrack(entry)] }]);
+          },
+        },
+      ],
+    });
+    const removeFromPlaylist = async (index: number, entry: MusicEntry) => {
+      const lists = settings.playlists.map((p, j) => (j === index ? { ...p, tracks: p.tracks.filter((t) => t.filePath !== entry.filePath) } : p));
+      await savePlaylists(lists);
     };
     const shuffleOption = (): PopupOption => ({
       label: settings.musicShuffle ? "Shuffle: On" : "Shuffle: Off",
@@ -675,7 +772,9 @@ async function main(): Promise<void> {
       },
     });
     const playlistItems = (): MenuItem[] => {
-      const tracks: MusicEntry[] = settings.playlist.map((t) => ({ kind: "track", name: t.name, filePath: t.filePath, url: t.url }));
+      const index = playlistView ?? 0;
+      const pl = settings.playlists[index];
+      const tracks: MusicEntry[] = (pl?.tracks ?? []).map((t) => ({ kind: "track", name: t.name, filePath: t.filePath, url: t.url }));
       if (tracks.length === 0) return [{ id: "playlist-empty", title: "Playlist is empty", subtitle: "Y on a song · Add to Playlist", iconUrl: "assets/icons/music.png" }];
       return tracks.map((entry, i): MenuItem => {
         const playing = musicPlayer.current()?.filePath === entry.filePath;
@@ -692,7 +791,7 @@ async function main(): Promise<void> {
           contextHint: "options",
           onContext: () => {
             showOptions(entry.name, [
-              { label: "Remove from Playlist", run: () => togglePlaylist(entry) },
+              { label: "Remove from Playlist", run: () => removeFromPlaylist(index, entry) },
               shuffleOption(),
               ...(settings.visualizerEnabled ? [{ label: "Visualizer", run: () => { if (!playing) musicPlayer.play(entry, tracks, settings.musicVolume); enterStage(); } }] : []),
             ]);
@@ -707,8 +806,8 @@ async function main(): Promise<void> {
       label: "Music",
       iconUrl: "assets/icons/music.png",
       onBack: () => {
-        if (playlistView) {
-          playlistView = false;
+        if (playlistView !== null) {
+          playlistView = null;
           xmb.resetSelection("music");
           xmb.refresh();
           return true;
@@ -722,21 +821,68 @@ async function main(): Promise<void> {
         musicPlayer.togglePause();
         return true;
       },
-      footerHint: () => (playlistView ? `Playlist · ${settings.playlist.length} songs${settings.musicShuffle ? " · shuffle" : ""}` : musicListing.path ? musicListing.title : undefined),
+      footerHint: () => (playlistView !== null ? `${settings.playlists[playlistView]?.name ?? "Playlist"} · ${settings.playlists[playlistView]?.tracks.length ?? 0} tracks${settings.musicShuffle ? " · shuffle" : ""}` : musicListing.path ? musicListing.title : undefined),
       getItems: () => {
-        if (playlistView) return playlistItems();
+        if (playlistView !== null) return playlistItems();
         const top: MenuItem[] = [];
         if (!musicListing.path) {
           top.push({
-            id: "playlist",
-            title: "Playlist",
-            subtitle: settings.playlist.length ? `${settings.playlist.length} songs` : "Empty · add songs with Y",
-            iconUrl: "assets/icons/music.png",
-            onConfirm: () => {
-              playlistView = true;
-              xmb.resetSelection("music");
-              xmb.refresh();
+            id: "playlist-new",
+            title: "Create New Playlist",
+            iconGlyph: "≡+",
+            onConfirm: async () => {
+              const answers = await askText("New Playlist", [{ label: "Name", value: `Playlist ${settings.playlists.length + 1}` }]);
+              if (!answers?.[0]) return;
+              await savePlaylists([...settings.playlists, { name: answers[0], tracks: [] }]);
             },
+          });
+          settings.playlists.forEach((pl, i) => {
+            const tracks: MusicEntry[] = pl.tracks.map((t) => ({ kind: "track", name: t.name, filePath: t.filePath, url: t.url }));
+            const play = () => {
+              if (tracks.length === 0) return;
+              musicPlayer.play(tracks[settings.musicShuffle ? Math.floor(Math.random() * tracks.length) : 0], tracks, settings.musicVolume);
+              xmb.refresh();
+            };
+            top.push({
+              id: `playlist-${i}`,
+              title: pl.name,
+              subtitle: `${pl.tracks.length} Track${pl.tracks.length === 1 ? "" : "s"}`,
+              iconGlyph: "▶≡",
+              onConfirm: () => {
+                playlistView = i;
+                xmb.resetSelection("music");
+                xmb.refresh();
+              },
+              contextHint: "options",
+              onContext: () => {
+                void refreshVolumes().then(() =>
+                  showOptions(pl.name, [
+                    { label: "Play", run: play },
+                    {
+                      label: "Edit",
+                      hint: "rename",
+                      run: async () => {
+                        const answers = await askText("Rename Playlist", [{ label: "Name", value: pl.name }]);
+                        if (!answers?.[0]) return;
+                        await savePlaylists(settings.playlists.map((p, j) => (j === i ? { ...p, name: answers[0] } : p)));
+                      },
+                    },
+                    { label: "Copy", hint: "duplicate", run: () => savePlaylists([...settings.playlists, { name: `${pl.name} (copy)`, tracks: [...pl.tracks] }]) },
+                    { label: "Delete", run: () => showOptions(`Delete ${pl.name}?`, [{ label: "Yes", run: () => savePlaylists(settings.playlists.filter((_, j) => j !== i)) }, { label: "No" }]) },
+                    {
+                      label: "Information",
+                      run: () =>
+                        showInfo(pl.name, undefined, null, [
+                          { label: "Sub-Title", value: "Playlist" },
+                          { label: "Tracks", value: String(pl.tracks.length) },
+                          { label: "Details", value: pl.tracks.slice(0, 12).map((t) => t.name).join("\n") + (pl.tracks.length > 12 ? `\n… and ${pl.tracks.length - 12} more` : "") },
+                        ]),
+                    },
+                  ])
+                );
+                return true;
+              },
+            });
           });
         }
         if (insideDriveMedia(musicListing.path)) top.push(newFolderRow(musicListing.path!, () => void openFolder(musicListing.path)));
@@ -800,12 +946,24 @@ async function main(): Promise<void> {
               void refreshVolumes().then(() =>
                 showOptions(entry.name, [
                   {
-                    label: "Song Information",
-                    hint: "tags · MusicBrainz",
+                    label: "Information",
                     run: () =>
-                      showInfo(entry.name, undefined, async () => {
+                      showInfo(entry.name, undefined, entry.filePath, [{ label: "Sub-Title", value: musicListing.title }], async () => {
                         const info = await window.axm.getSongInfo(entry.filePath);
-                        infoCard.song(info, entry.name);
+                        if (!info) return [];
+                        if (info.coverUrl) infoCard.setArt(info.coverUrl);
+                        const a = info.artistInfo;
+                        const bits = a ? [a.type, a.area, a.began ? `${a.began.slice(0, 4)}${a.ended ? ` – ${a.ended.slice(0, 4)}` : " –"}` : "", a.disambiguation].filter(Boolean).join(" · ") : "";
+                        const len = info.durationSec ? `${Math.floor(info.durationSec / 60)}:${String(info.durationSec % 60).padStart(2, "0")}` : "";
+                        return [
+                          { label: "Artist", value: info.artist },
+                          { label: "Album", value: [info.album, info.year].filter(Boolean).join(" · ") },
+                          { label: "Length", value: len },
+                          { label: "Genre", value: info.genre },
+                          { label: "Format", value: info.bitrateKbps ? `${info.bitrateKbps} kbps` : "" },
+                          { label: "Details", value: [bits, a?.tags.join(", ")].filter(Boolean).join("\n") },
+                          { label: "Source", value: info.source },
+                        ];
                       }),
                   },
                   ...(settings.visualizerEnabled
@@ -820,7 +978,7 @@ async function main(): Promise<void> {
                         },
                       ]
                     : []),
-                  { label: inPlaylist(entry.filePath) ? "Remove from Playlist" : "Add to Playlist", run: () => togglePlaylist(entry) },
+                  addToPlaylistOption(entry),
                   shuffleOption(),
                   ...copyTargets("music", entry.filePath),
                 ])
@@ -872,7 +1030,10 @@ async function main(): Promise<void> {
         steamLibrary = await window.axm.getSteamLibrary();
         const now = steamLibrary.games.filter((g) => g.state === "installing").length;
         // Something finished: refresh the installed games so it appears in the list.
-        if (now < before) games = await window.axm.scanGames();
+        if (now < before) {
+          games = await window.axm.scanGames();
+          notifier.push("A Steam install finished", "install");
+        }
         if (now === 0) {
           window.clearInterval(installPoll);
           installPoll = 0;
@@ -1153,6 +1314,7 @@ async function main(): Promise<void> {
                       showOptions(entry.name, [
                         ...(kind === "photo"
                           ? [
+                              { label: "Information", run: () => showInfo(entry.name, entry.url, entry.filePath, [{ label: "Sub-Title", value: listing.title }]) },
                               { label: "Set as Wallpaper", hint: "this picture", run: () => setWallpaper({ url: entry.url!, filePath: entry.filePath, mode: "single" as const, folder: listing.path }) },
                               { label: "Shuffle Folder as Wallpaper", hint: "changes every few minutes", run: () => setWallpaper({ url: entry.url!, filePath: entry.filePath, mode: "shuffle" as const, folder: listing.path }) },
                             ]
@@ -1161,11 +1323,10 @@ async function main(): Promise<void> {
                           ? [
                               {
                                 label: "Information",
-                                hint: "TMDB",
                                 run: () =>
-                                  showInfo(entry.name, undefined, async () => {
+                                  showInfo(entry.name, undefined, entry.filePath, [{ label: "Sub-Title", value: listing.title }], async () => {
                                     const info = await window.axm.getScreenInfo(entry.name, "", "auto");
-                                    infoCard.screen(info, entry.name);
+                                    return screenRows(info);
                                   }),
                               },
                             ]
@@ -1371,6 +1532,22 @@ async function main(): Promise<void> {
     ];
   };
 
+  /** TMDB facts as Information rows. */
+  const screenRows = (info: ScreenInfo | null): InfoRow[] => {
+    if (!info) return [{ label: "Details", value: "No information found" }];
+    if (info.posterUrl) infoCard.setArt(info.posterUrl);
+    const runtime = info.runtimeMin ? `${Math.floor(info.runtimeMin / 60)}h ${info.runtimeMin % 60}m` : "";
+    return [
+      { label: "Year", value: info.year },
+      { label: "Rating", value: info.rating !== null ? `★ ${info.rating} / 10 · ${info.votes.toLocaleString()} votes` : "" },
+      { label: "Genre", value: info.genres.join(", ") },
+      { label: info.kind === "tv" ? "Episode" : "Runtime", value: runtime },
+      { label: "Seasons", value: info.seasons ? `${info.seasons} · ${info.episodes ?? "?"} episodes` : "" },
+      { label: "Details", value: [info.tagline, info.overview].filter(Boolean).join("\n") },
+      { label: "Source", value: info.source },
+    ];
+  };
+
   /** Information (TMDB) and downloads for a Jellyfin row. */
   const jfOptions = (item: JfItem): PopupOption[] => {
     const isShow = ["Series", "Season", "Episode"].includes(item.type);
@@ -1378,12 +1555,11 @@ async function main(): Promise<void> {
     if (["Movie", "Series", "Season", "Episode", "Video"].includes(item.type)) {
       opts.push({
         label: "Information",
-        hint: "TMDB",
         run: () =>
-          showInfo(item.name, item.imageUrl, async () => {
+          showInfo(item.name, item.imageUrl, null, [{ label: "Sub-Title", value: [item.type, item.year].filter(Boolean).join(" · ") }, { label: "Details", value: item.overview ?? "" }], async () => {
             const title = item.seriesName ?? item.name;
             const info = await window.axm.getScreenInfo(title, item.year ?? "", isShow ? "tv" : item.type === "Movie" ? "movie" : "auto", item.type === "Movie" || item.type === "Series" ? item.tmdbId : undefined);
-            infoCard.screen(info, item.name);
+            return screenRows(info);
           }),
       });
     }
@@ -1453,13 +1629,13 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | { month: number };
   /** Which group each root row files under; anything unlisted stays at the top level. */
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
     fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
     musicVolume: "audio", ambientTrack: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
-    "system-info": "sys", controller: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
+    "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
   };
@@ -1539,33 +1715,53 @@ async function main(): Promise<void> {
             return save(write({ ...theme, ribbonWidth: nextPreset(RIBBON_WIDTH_PRESETS, theme.ribbonWidth) }));
           },
         },
-        {
-          id: `${idPrefix}-color`,
-          title: "Ribbon Color",
-          subtitle: labelForColor(RIBBON_COLOR_PRESETS, target().theme.ribbonColor),
-          iconGlyph: "◐",
-          onConfirm: () => {
-            const { theme, write } = target();
-            return save(write({ ...theme, ribbonColor: nextColor(RIBBON_COLOR_PRESETS, theme.ribbonColor) }));
-          },
-        },
       ];
       if (includeBackground) {
+        // The PS3's Colour picker: a swatch column on the right, the background
+        // fading to each colour as you move over it, "Original" being the month's own.
         items.push({
-          id: `${idPrefix}-bg`,
-          title: "Background Color",
-          subtitle: labelForColor(BACKGROUND_COLOR_PRESETS, target().theme.backgroundColor),
+          id: `${idPrefix}-colour`,
+          title: "Colour",
+          subtitle: (() => {
+            const hex = target().theme.backgroundColor.toUpperCase();
+            const hit = THEME_COLOURS.find((c) => colourFor(c.hex).backgroundColor.toUpperCase() === hex);
+            return `${hit ? hit.name : "Original"} · sets the colour of the background and options menu`;
+          })(),
           iconGlyph: "■",
           onConfirm: () => {
             const { theme, write } = target();
-            return save(
-              write({ ...theme, backgroundColor: nextColor(BACKGROUND_COLOR_PRESETS, theme.backgroundColor) })
+            const before = { ...theme };
+            const preview = (t: MonthTheme) => {
+              ribbon.setColor(t.ribbonColor);
+              ribbon.setBackdrop("static", [t.backgroundColor, darkenHex(t.backgroundColor, 0.72)]);
+            };
+            const monthOriginal = DEFAULT_MONTH_THEMES[settings.themeMode === "monthly" ? currentMonthIndex() : 0];
+            showOptions(
+              "Colour",
+              [
+                { label: "Original", swatch: monthOriginal.backgroundColor, selected: theme.backgroundColor === monthOriginal.backgroundColor, preview: () => preview({ ...theme, ...monthOriginal }), run: () => save(write({ ...theme, ribbonColor: monthOriginal.ribbonColor, backgroundColor: monthOriginal.backgroundColor })) },
+                ...THEME_COLOURS.map((c) => {
+                  const t = { ...theme, ...colourFor(c.hex) };
+                  return { label: c.name, swatch: c.hex, selected: theme.backgroundColor.toUpperCase() === t.backgroundColor.toUpperCase(), preview: () => preview(t), run: () => save(write(t)) };
+                }),
+              ],
+              () => preview(before)
             );
           },
         });
       }
       return items;
     };
+
+    /** A PS3 tint as a theme: bright backdrop, pale ribbon of the same hue. */
+    const colourFor = (hex: string): { ribbonColor: string; backgroundColor: string } => ({ backgroundColor: hex, ribbonColor: lightenHex(hex, 0.78) });
+    const darkenHex = (hex: string, k: number): string => mixHex(hex, "#000000", k);
+    const lightenHex = (hex: string, k: number): string => mixHex(hex, "#ffffff", k);
+    function mixHex(a: string, b: string, k: number): string {
+      const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+      const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+      return "#" + pa.map((v, i) => Math.round(v + (pb[i] - v) * k).toString(16).padStart(2, "0")).join("");
+    }
 
     // The root shows the groups; every original row still exists and is filed into
     // one of them (or stays at the top level, like Theme and About).
@@ -1677,6 +1873,69 @@ async function main(): Promise<void> {
           audio.setSfxEnabled(settings.navSoundsEnabled);
           xmb.refresh();
         },
+      },
+      {
+        id: "system-name",
+        title: "System Name",
+        subtitle: settings.systemName || sysHostName || "—",
+        iconGlyph: "▣",
+        onConfirm: async () => {
+          const answers = await askText("System Name", [{ label: "Name", value: settings.systemName || sysHostName }]);
+          if (!answers?.[0]) return;
+          settings = await window.axm.setSettings({ systemName: answers[0].trim() });
+          notifier.push(`System name is now ${settings.systemName}`);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "system-language",
+        title: "System Language",
+        subtitle: "English · more languages are on the roadmap",
+        iconGlyph: "A",
+      },
+      {
+        id: "datetime",
+        title: "Date and Time Settings",
+        subtitle: new Date().toLocaleString([], { day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: !settings.clock24h }),
+        iconGlyph: "◷",
+        onConfirm: async () => {
+          clock = await window.axm.getClock().catch(() => null);
+          go("datetime");
+        },
+      },
+      {
+        id: "powersave",
+        title: "Power Save Settings",
+        subtitle: "Power plan, screen off, sleep, menu dimming",
+        iconUrl: "assets/icons/power.png",
+        onConfirm: async () => {
+          power = await window.axm.getPowerSettings().catch(() => null);
+          go("power");
+        },
+      },
+      {
+        id: "chat",
+        title: "Chat Settings",
+        subtitle: "Audio output and microphone for the menu",
+        iconGlyph: "◉",
+        onConfirm: async () => {
+          await refreshAudioDevices();
+          go("chat");
+        },
+      },
+      {
+        id: "notifications",
+        title: "Notification Settings",
+        subtitle: settings.notifications.enabled ? "Display" : "Off",
+        iconGlyph: "▤",
+        onConfirm: () => go("notify"),
+      },
+      {
+        id: "dictionary",
+        title: "Predictive Text Dictionary",
+        subtitle: `${settings.dictionaryTerms.length} terms · ${settings.learnedWords.length} learnt words`,
+        iconGlyph: "Aa",
+        onConfirm: () => go("dictionary"),
       },
       {
         id: "system-info",
@@ -1883,17 +2142,14 @@ async function main(): Promise<void> {
         title: "About A-X-M",
         subtitle: "A passion project · developed with Naha0",
         iconUrl: "assets/icons/settings-about.webp",
-        onConfirm: () => go("about"),
-      },
-      {
-        id: "exit",
-        title: "Exit to Desktop",
-        subtitle: "Close A-X-M",
-        iconUrl: "assets/icons/power.png",
-        onConfirm: async () => {
-          await audio.fadeOutAmbient(800);
-          window.axm.quit();
-        },
+        onConfirm: () =>
+          showText("About A-X-M", [
+            "A-X-M · Ally XMB Menu · Version 0.3.0 Beta 1",
+            "This app was developed using AI. It is a passion project I've always wanted since the PS3 and PSP, then seeing handhelds.",
+            "I don't care about negative AI comments - move along. Otherwise, let's bring our dreams to fruition by any means possible.",
+            "User developed with Naha0 · github.com/nahalewski/A-X-M",
+            "Thanks to SteamGridDB, TMDB, MusicBrainz, the Cover Art Archive, Jellyfin, and the PS3 XMB that started it all.",
+          ]),
       },
     ];
 
@@ -2078,6 +2334,236 @@ async function main(): Promise<void> {
       return rows;
     };
 
+    // ---- Date and Time ----------------------------------------------------------------
+    let clock: ClockInfo | null = null;
+    let sysHostName = "";
+    void window.axm.hostName().then((h) => (sysHostName = h));
+    const dateTimeItems = (): MenuItem[] => [
+      { id: "dt-now", title: "Current Date and Time", subtitle: new Date().toLocaleString([], { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: !settings.clock24h }), iconGlyph: "◷" },
+      {
+        id: "dt-format",
+        title: "Time Format",
+        subtitle: settings.clock24h ? "24-hour" : "12-hour",
+        iconGlyph: "◑",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ clock24h: !settings.clock24h });
+          updateClock();
+          xmb.refresh();
+        },
+      },
+      {
+        id: "dt-zone",
+        title: "Time Zone",
+        subtitle: clock ? `${clock.timeZone} · UTC${clock.timeZoneOffsetMin >= 0 ? "+" : "-"}${Math.floor(Math.abs(clock.timeZoneOffsetMin) / 60)}:${String(Math.abs(clock.timeZoneOffsetMin) % 60).padStart(2, "0")}` : "…",
+        iconGlyph: "⊕",
+        onConfirm: async () => {
+          const zones = await window.axm.listTimeZones();
+          if (zones.length <= 1) return;
+          showOptions("Time Zone", zones.map((z) => ({ label: z, selected: clock?.timeZone === z, run: async () => { const ok = await window.axm.setTimeZone(z); notifier.push(ok ? `Time zone set to ${z}` : "Windows needs administrator rights to change the time zone"); clock = await window.axm.getClock(); xmb.refresh(); } })));
+        },
+      },
+      {
+        id: "dt-auto",
+        title: "Set Automatically via Internet",
+        subtitle: clock?.autoTime === null || clock?.autoTime === undefined ? "Managed by the system" : clock.autoTime ? "On · Windows keeps the clock synced" : "Off in Windows",
+        iconGlyph: "↻",
+        contextHint: "sync now",
+        onConfirm: async () => {
+          const res = await window.axm.syncClock();
+          notifier.push(res.message);
+          clock = await window.axm.getClock();
+          xmb.refresh();
+        },
+      },
+    ];
+
+    // ---- Power Save ---------------------------------------------------------------------
+    let power: PowerSettings | null = null;
+    const minutesLabel = (m: number) => (m === 0 ? "Never" : m < 60 ? `${m} min` : `${m / 60} h`);
+    const TIMEOUTS = [0, 1, 2, 5, 10, 15, 30, 60];
+    const timeoutRow = (id: string, title: string, what: "screen" | "sleep", onBattery: boolean, value: number): MenuItem => ({
+      id,
+      title,
+      subtitle: minutesLabel(value),
+      iconGlyph: what === "screen" ? "▭" : "☾",
+      onConfirm: () =>
+        showOptions(title, TIMEOUTS.map((m) => ({ label: minutesLabel(m), selected: m === value, run: async () => { await window.axm.setPowerTimeout(what, onBattery, m); power = await window.axm.getPowerSettings(); xmb.refresh(); } }))),
+    });
+    const powerItems = (): MenuItem[] => {
+      if (!power) return [{ id: "pw-wait", title: "Reading power settings…", iconGlyph: "…" }];
+      const rows: MenuItem[] = [];
+      if (power.plans.length) {
+        const active = power.plans.find((p) => p.active);
+        rows.push({
+          id: "pw-plan",
+          title: "Power Plan",
+          subtitle: active?.name ?? "—",
+          iconUrl: "assets/icons/power.png",
+          onConfirm: () => showOptions("Power Plan", power!.plans.map((p) => ({ label: p.name, selected: p.active, run: async () => { await window.axm.setPowerPlan(p.guid); power = await window.axm.getPowerSettings(); notifier.push(`Power plan: ${p.name}`); xmb.refresh(); } }))),
+        });
+      }
+      rows.push(
+        timeoutRow("pw-screen-dc", "Turn Off Screen (on battery)", "screen", true, power.screenOffBattery),
+        timeoutRow("pw-screen-ac", "Turn Off Screen (plugged in)", "screen", false, power.screenOffPlugged),
+        timeoutRow("pw-sleep-dc", "Sleep (on battery)", "sleep", true, power.sleepBattery),
+        timeoutRow("pw-sleep-ac", "Sleep (plugged in)", "sleep", false, power.sleepPlugged),
+        {
+          id: "pw-dim",
+          title: "Dim Menu When Idle",
+          subtitle: settings.menuDimMinutes ? `After ${settings.menuDimMinutes} min` : "Never",
+          iconGlyph: "◐",
+          onConfirm: () => showOptions("Dim Menu When Idle", [0, 1, 2, 5, 10].map((m) => ({ label: m ? `After ${m} min` : "Never", selected: settings.menuDimMinutes === m, run: async () => { settings = await window.axm.setSettings({ menuDimMinutes: m }); xmb.refresh(); } }))),
+        }
+      );
+      return rows;
+    };
+
+    // ---- Chat: the menu's audio output and microphone ---------------------------------
+    let audioDevices: MediaDeviceInfo[] = [];
+    let micLevel = -1;
+    const refreshAudioDevices = async () => {
+      try {
+        audioDevices = await navigator.mediaDevices.enumerateDevices();
+        if (audioDevices.some((d) => d.kind === "audioinput" && !d.label)) {
+          // Labels only come once the mic has been allowed once; ask, then re-list.
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          stream.getTracks().forEach((t) => t.stop());
+          audioDevices = await navigator.mediaDevices.enumerateDevices();
+        }
+      } catch {
+        // no devices, or permission refused: rows say so
+      }
+    };
+    const applyAudioOutput = async (id: string) => {
+      const sink = id || "";
+      const els = [musicPlayer.element(), document.querySelector("#media-viewer video") as HTMLMediaElement | null];
+      for (const el of els) {
+        const sinkable = el as (HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+        await sinkable?.setSinkId?.(sink).catch(() => {});
+      }
+      audio.setOutputDevice(sink);
+    };
+    const testMic = async (id: string) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: id ? { deviceId: { exact: id } } : true });
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(stream);
+        const an = ctx.createAnalyser();
+        an.fftSize = 512;
+        src.connect(an);
+        const buf = new Uint8Array(an.frequencyBinCount);
+        const started = performance.now();
+        const tick = () => {
+          an.getByteFrequencyData(buf);
+          micLevel = buf.reduce((a, b) => a + b, 0) / buf.length / 255;
+          xmb.refresh();
+          if (performance.now() - started < 6000) requestAnimationFrame(tick);
+          else {
+            stream.getTracks().forEach((t) => t.stop());
+            void ctx.close();
+            micLevel = -1;
+            xmb.refresh();
+          }
+        };
+        tick();
+      } catch {
+        notifier.push("Couldn't open the microphone");
+      }
+    };
+    const chatItems = (): MenuItem[] => {
+      const outs = audioDevices.filter((d) => d.kind === "audiooutput");
+      const ins = audioDevices.filter((d) => d.kind === "audioinput");
+      const outName = outs.find((d) => d.deviceId === settings.audioOutputId)?.label || "System default";
+      const inName = ins.find((d) => d.deviceId === settings.audioInputId)?.label || "System default";
+      return [
+        {
+          id: "chat-out",
+          title: "Output Device",
+          subtitle: `${outName} · menu music, sounds and video`,
+          iconGlyph: "◉",
+          onConfirm: () => showOptions("Output Device", [{ deviceId: "", label: "System default" } as MediaDeviceInfo, ...outs].map((d) => ({ label: d.label || d.deviceId, selected: (settings.audioOutputId || "") === d.deviceId, run: async () => { settings = await window.axm.setSettings({ audioOutputId: d.deviceId }); await applyAudioOutput(d.deviceId); xmb.refresh(); } }))),
+        },
+        {
+          id: "chat-in",
+          title: "Input Device",
+          subtitle: `${inName} · microphone`,
+          iconGlyph: "◎",
+          onConfirm: () => showOptions("Input Device", [{ deviceId: "", label: "System default" } as MediaDeviceInfo, ...ins].map((d) => ({ label: d.label || d.deviceId, selected: (settings.audioInputId || "") === d.deviceId, run: async () => { settings = await window.axm.setSettings({ audioInputId: d.deviceId }); xmb.refresh(); } }))),
+        },
+        {
+          id: "chat-test",
+          title: "Microphone Level",
+          subtitle: micLevel < 0 ? "A to test for six seconds" : "Speak…",
+          iconGlyph: "≋",
+          meter: micLevel < 0 ? undefined : Math.min(1, micLevel * 3),
+          onConfirm: () => (micLevel < 0 ? testMic(settings.audioInputId) : undefined),
+        },
+        { id: "chat-note", title: "Windows' own default device is unchanged", subtitle: "These pick where the menu plays and listens; games follow Windows", iconGlyph: "ⓘ" },
+      ];
+    };
+
+    // ---- Notifications --------------------------------------------------------------------
+    const notifyItems = (): MenuItem[] => {
+      const n = settings.notifications;
+      const setN = async (next: typeof n) => {
+        settings = await window.axm.setSettings({ notifications: next });
+        notifier.setPrefs(settings.notifications);
+        xmb.refresh();
+      };
+      const kindRow = (key: keyof typeof n.kinds, title: string, subtitle: string): MenuItem => ({
+        id: `nt-${key}`,
+        title,
+        subtitle: `${n.kinds[key] ? "Display" : "Off"} · ${subtitle}`,
+        iconGlyph: n.kinds[key] ? "●" : "○",
+        onConfirm: () => setN({ ...n, kinds: { ...n.kinds, [key]: !n.kinds[key] } }),
+      });
+      return [
+        { id: "nt-all", title: "Notification Messages", subtitle: n.enabled ? "Display" : "Off", iconGlyph: "▤", onConfirm: () => setN({ ...n, enabled: !n.enabled }) },
+        kindRow("transfer", "Copies and Downloads", "when a copy or download finishes"),
+        kindRow("install", "Game Installs", "when Steam finishes installing"),
+        kindRow("controller", "Controllers", "when a pad connects or changes"),
+        kindRow("battery", "Battery", "when the battery runs low"),
+        kindRow("general", "System Messages", "settings changes and sign-ins"),
+        { id: "nt-test", title: "Show a Test Notification", iconGlyph: "▶", onConfirm: () => notifier.push("This is what a notification looks like") },
+        ...notifier.history.slice(0, 10).map((h, i) => ({ id: `nt-h${i}`, title: h.text, subtitle: new Date(h.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: !settings.clock24h }), iconGlyph: "·" })),
+      ];
+    };
+
+    // ---- Predictive text dictionary --------------------------------------------------------
+    const dictionaryItems = (): MenuItem[] => [
+      {
+        id: "dict-add",
+        title: "Add/Edit Term",
+        subtitle: "A word the keyboard should offer",
+        iconGlyph: "+",
+        onConfirm: async () => {
+          const answers = await askText("Add Term", [{ label: "Term" }]);
+          const term = answers?.[0]?.trim();
+          if (!term) return;
+          settings = await window.axm.setSettings({ dictionaryTerms: [...new Set([...settings.dictionaryTerms, term])] });
+          setDictionary(settings.dictionaryTerms, settings.learnedWords, (w) => void window.axm.setSettings({ learnedWords: w }).then((next) => (settings = next)));
+          xmb.refresh();
+        },
+      },
+      {
+        id: "dict-clear",
+        title: "Delete Predictive Text Dictionary",
+        subtitle: `Forget ${settings.learnedWords.length} learnt words (your own terms stay)`,
+        iconGlyph: "✕",
+        onConfirm: () => showOptions("Delete learnt words?", [{ label: "Yes", run: async () => { settings = await window.axm.setSettings({ learnedWords: [] }); setDictionary(settings.dictionaryTerms, [], (w) => void window.axm.setSettings({ learnedWords: w }).then((next) => (settings = next))); xmb.refresh(); } }, { label: "No" }]),
+      },
+      ...settings.dictionaryTerms.map((t) => ({
+        id: `dict-${t}`,
+        title: t,
+        iconGlyph: "Aa",
+        contextHint: "remove",
+        onContext: () => {
+          void window.axm.setSettings({ dictionaryTerms: settings.dictionaryTerms.filter((x) => x !== t) }).then((next) => { settings = next; setDictionary(settings.dictionaryTerms, settings.learnedWords, (w) => void window.axm.setSettings({ learnedWords: w }).then((n2) => (settings = n2))); xmb.refresh(); });
+          return true;
+        },
+      })),
+    ];
+
     // ---- Network: Wi-Fi and Bluetooth without leaving the menu ---------------------
     const net = { wifi: [] as WifiNetwork[], bt: [] as BluetoothDevice[], busy: "", status: "" };
     const netHint = () => net.busy || net.status || "Settings › Network";
@@ -2242,7 +2728,7 @@ async function main(): Promise<void> {
       iconUrl: "assets/icons/settings.png",
       onBack: () => {
         if (view === "root") return false;
-        if (view === "system" || view === "controller") go("sys");
+        if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
         else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network") go("root");
         else if (view === "months") go("theme");
         else go("months");
@@ -2259,6 +2745,11 @@ async function main(): Promise<void> {
         if (view === "audio") return "Settings › Audio";
         if (view === "sys") return "Settings › System";
         if (view === "network") return netHint();
+        if (view === "datetime") return "Settings › System › Date and Time";
+        if (view === "power") return "Settings › System › Power Save";
+        if (view === "chat") return "Settings › System › Chat";
+        if (view === "notify") return "Settings › System › Notifications";
+        if (view === "dictionary") return "Settings › System › Predictive Text Dictionary";
         return `Settings › Theme › ${MONTH_NAMES[view.month]}`;
       },
       getItems: () => {
@@ -2273,6 +2764,11 @@ async function main(): Promise<void> {
           return allRootItems().filter((i) => SETTINGS_GROUPS[i.id] === group);
         }
         if (view === "network") return networkItems();
+        if (view === "datetime") return dateTimeItems();
+        if (view === "power") return powerItems();
+        if (view === "chat") return chatItems();
+        if (view === "notify") return notifyItems();
+        if (view === "dictionary") return dictionaryItems();
         return monthEditorItems(view.month);
       },
     };
@@ -2358,11 +2854,9 @@ async function main(): Promise<void> {
   window.axm.onResolution((state) => applyResolutionState(state));
   void window.axm.getResolution().then(applyResolutionState);
 
-  // Y on a game -> Options -> Change Artwork: every grid SteamGridDB has for it.
-  xmb.setGameActions([
-    {
-      label: "Change Artwork…",
-      run: async (game) => {
+  // Y on a game: the PS3 sidebar - Play, Lossless Scaling ▸, Change Artwork, Folder,
+  // Information.
+  const changeArtwork = async (game: GameEntry) => {
         const pickPromise = pickFromGrid(`Artwork for ${game.name}`, []);
         gridPicker.setStatus("Looking up artwork on SteamGridDB…");
         const choices = await window.axm.listArtChoices(game.id);
@@ -2381,9 +2875,39 @@ async function main(): Promise<void> {
           audio.playConfirm();
           xmb.refresh();
         }
+  };
+  xmb.setOnGameContext((game) => {
+    const profiles: (1 | 2 | 3 | null)[] = [null, 1, 2, 3];
+    showOptions(game.name, [
+      { label: "Play", run: () => void window.axm.launchGame(game.id) },
+      {
+        label: "Lossless Scaling",
+        hint: game.losslessProfile ? `Profile ${game.losslessProfile}` : "Off",
+        children: profiles.map((p) => ({
+          label: p ? `Profile ${p}` : "Off",
+          selected: game.losslessProfile === p,
+          run: async () => {
+            settings = await window.axm.setLosslessProfile(game.id, p);
+            game.losslessProfile = p;
+            xmb.refresh();
+          },
+        })),
       },
-    },
-  ]);
+      { label: "Change Artwork…", hint: "SteamGridDB", run: () => changeArtwork(game) },
+      ...(game.installDir && game.source !== "xbox" ? [{ label: "Open Folder", run: () => void window.axm.openFolder(game.installDir) }] : []),
+      {
+        label: "Information",
+        run: () =>
+          showInfo(game.name, game.iconPath, game.installDir && game.source !== "xbox" ? game.installDir : null, [
+            { label: "Sub-Title", value: { steam: "Steam", epic: "Epic Games", xbox: "Xbox / Game Pass", generic: "Installed program" }[game.source] ?? game.source },
+            { label: "Drive", value: game.drive },
+            { label: "Folder", value: game.installDir ?? "" },
+            { label: "Lossless Scaling", value: game.losslessProfile ? `Profile ${game.losslessProfile}` : "Off" },
+            { label: "Artwork", value: game.iconPath ? (game.iconPath.startsWith("http") ? "Steam" : "SteamGridDB / cached") : "None" },
+          ]),
+      },
+    ]);
+  });
   // Start on Game - it's a game hub first, whatever the XMB running order is.
   xmb.setActiveCategory("games");
   xmb.init();
@@ -2442,6 +2966,7 @@ async function main(): Promise<void> {
   });
 
   const gamepad = new GamepadNav((action) => {
+    noteInput();
     if (action === "guide") {
       void window.axm.overlayToggle();
       return;
@@ -2453,12 +2978,24 @@ async function main(): Promise<void> {
   gamepad.setVibration(settings.gamepadVibration);
   gamepad.setOnControllerType((type) => {
     for (const t of ["ps", "switch", "kishi"]) document.body.classList.toggle(`pad-${t}`, type === t);
+    notifier.push(`${{ ps: "PlayStation", switch: "Nintendo Switch", kishi: "Razer Kishi", xbox: "Xbox" }[type]} controller connected`, "controller");
   });
   const pollGamepad = (now: number) => {
     gamepad.poll(now);
     requestAnimationFrame(pollGamepad);
   };
   requestAnimationFrame(pollGamepad);
+
+  // Dim the menu after a spell of no input, if asked to; any press wakes it.
+  let lastInput = performance.now();
+  const noteInput = () => {
+    lastInput = performance.now();
+    document.body.classList.remove("dimmed");
+  };
+  document.addEventListener("keydown", noteInput);
+  setInterval(() => {
+    if (settings.menuDimMinutes > 0 && performance.now() - lastInput > settings.menuDimMinutes * 60_000) document.body.classList.add("dimmed");
+  }, 5000);
 
   audio.playBootThenAmbient();
 

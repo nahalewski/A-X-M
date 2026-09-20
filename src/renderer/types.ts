@@ -40,18 +40,34 @@ export interface MonthTheme {
  * of it, which is what makes each month read as vividly its own.
  */
 export const DEFAULT_MONTH_THEMES: MonthTheme[] = [
-  { ribbonColor: "#f2f2f2", backgroundColor: "#5c5c5c", ribbonSpeed: 0.18, ribbonWidth: 1.05 }, // January  CBCBCB
-  { ribbonColor: "#fff3a6", backgroundColor: "#8a7a0c", ribbonSpeed: 0.20, ribbonWidth: 1.00 }, // February D8BF1A
-  { ribbonColor: "#dcffb3", backgroundColor: "#3f7a09", ribbonSpeed: 0.24, ribbonWidth: 0.95 }, // March    6DB217
-  { ribbonColor: "#ffd6e6", backgroundColor: "#9c3f5d", ribbonSpeed: 0.26, ribbonWidth: 0.95 }, // April    E17E9A
-  { ribbonColor: "#c8ffcf", backgroundColor: "#0f6a12", ribbonSpeed: 0.28, ribbonWidth: 0.90 }, // May      178816
-  { ribbonColor: "#ead6ff", backgroundColor: "#5f3a85", ribbonSpeed: 0.30, ribbonWidth: 0.90 }, // June     9A61C8
-  { ribbonColor: "#c9fffd", backgroundColor: "#03847f", ribbonSpeed: 0.32, ribbonWidth: 0.85 }, // July     02CDC7
-  { ribbonColor: "#cfe7ff", backgroundColor: "#0a5088", ribbonSpeed: 0.30, ribbonWidth: 0.90 }, // August   0C76C0
-  { ribbonColor: "#f1d3ff", backgroundColor: "#7a2c85", ribbonSpeed: 0.24, ribbonWidth: 1.00 }, // September B444C0
-  { ribbonColor: "#ffe6b3", backgroundColor: "#9a6f05", ribbonSpeed: 0.22, ribbonWidth: 1.05 }, // October  E5A708
-  { ribbonColor: "#f5dcc2", backgroundColor: "#5e3f15", ribbonSpeed: 0.20, ribbonWidth: 1.10 }, // November 875B1E
-  { ribbonColor: "#ffd5cf", backgroundColor: "#9a2b1c", ribbonSpeed: 0.16, ribbonWidth: 1.15 }, // December E3412A
+  { ribbonColor: "#ffffff", backgroundColor: "#a9a9a9", ribbonSpeed: 0.18, ribbonWidth: 1.05 }, // January  CBCBCB
+  { ribbonColor: "#fff6b8", backgroundColor: "#c9b11a", ribbonSpeed: 0.20, ribbonWidth: 1.00 }, // February D8BF1A
+  { ribbonColor: "#e6ffc4", backgroundColor: "#66a615", ribbonSpeed: 0.24, ribbonWidth: 0.95 }, // March    6DB217
+  { ribbonColor: "#ffe4ee", backgroundColor: "#d67590", ribbonSpeed: 0.26, ribbonWidth: 0.95 }, // April    E17E9A
+  { ribbonColor: "#d2ffd8", backgroundColor: "#178816", ribbonSpeed: 0.28, ribbonWidth: 0.90 }, // May      178816
+  { ribbonColor: "#f0e2ff", backgroundColor: "#9057bd", ribbonSpeed: 0.30, ribbonWidth: 0.90 }, // June     9A61C8
+  { ribbonColor: "#d6fffd", backgroundColor: "#02bdb8", ribbonSpeed: 0.32, ribbonWidth: 0.85 }, // July     02CDC7
+  { ribbonColor: "#d9edff", backgroundColor: "#0c6fb4", ribbonSpeed: 0.30, ribbonWidth: 0.90 }, // August   0C76C0
+  { ribbonColor: "#f6dcff", backgroundColor: "#a83fb3", ribbonSpeed: 0.24, ribbonWidth: 1.00 }, // September B444C0
+  { ribbonColor: "#ffeec4", backgroundColor: "#d59c08", ribbonSpeed: 0.22, ribbonWidth: 1.05 }, // October  E5A708
+  { ribbonColor: "#f8e3cc", backgroundColor: "#7f561c", ribbonSpeed: 0.20, ribbonWidth: 1.10 }, // November 875B1E
+  { ribbonColor: "#ffdcd6", backgroundColor: "#d63c27", ribbonSpeed: 0.16, ribbonWidth: 1.15 }, // December E3412A
+];
+
+/** The PS3's Theme › Colour choices: "Original" (the month) and the twelve tints. */
+export const THEME_COLOURS: { name: string; hex: string }[] = [
+  { name: "Silver", hex: "#CBCBCB" },
+  { name: "Yellow", hex: "#D8BF1A" },
+  { name: "Light Green", hex: "#6DB217" },
+  { name: "Pink", hex: "#E17E9A" },
+  { name: "Green", hex: "#178816" },
+  { name: "Violet", hex: "#9A61C8" },
+  { name: "Cyan", hex: "#02CDC7" },
+  { name: "Blue", hex: "#0C76C0" },
+  { name: "Purple", hex: "#B444C0" },
+  { name: "Orange", hex: "#E5A708" },
+  { name: "Brown", hex: "#875B1E" },
+  { name: "Red", hex: "#E3412A" },
 ];
 
 export const MONTH_NAMES = [
@@ -254,6 +270,11 @@ export interface MediaDrive {
   music: string | null;
 }
 
+export interface PowerPlan { guid: string; name: string; active: boolean }
+export interface PowerSettings { plans: PowerPlan[]; screenOffBattery: number; screenOffPlugged: number; sleepBattery: number; sleepPlugged: number }
+export interface ClockInfo { now: string; timeZone: string; timeZoneOffsetMin: number; autoTime: boolean | null }
+export interface FileInfo { sizeBytes: number; modified: string; created: string; exists: boolean }
+
 export interface WifiNetwork {
   ssid: string;
   signal: number;
@@ -345,6 +366,16 @@ export interface Settings {
   renderResolution: number;
   /** Menu upscaling look when rendering below native: off, FSR-style sharpen, strong. */
   menuUpscaling: "off" | "sharpen" | "sharpen-strong";
+  /** PS3-style system settings kept by the menu. */
+  systemName: string;
+  clock24h: boolean;
+  dictionaryTerms: string[];
+  learnedWords: string[];
+  notifications: { enabled: boolean; kinds: { general: boolean; transfer: boolean; controller: boolean; battery: boolean; install: boolean } };
+  audioOutputId: string;
+  audioInputId: string;
+  menuDimMinutes: number;
+  playlists: { name: string; tracks: MusicEntry[] }[];
   playlist: MusicEntry[];
   wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
   knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
@@ -408,6 +439,16 @@ export interface AxmApi {
   btList(): Promise<BluetoothDevice[]>;
   btPair(id: string): Promise<{ ok: boolean; message: string }>;
   btUnpair(id: string): Promise<{ ok: boolean; message: string }>;
+  getPowerSettings(): Promise<PowerSettings>;
+  setPowerPlan(guid: string): Promise<boolean>;
+  setPowerTimeout(what: "screen" | "sleep", onBattery: boolean, minutes: number): Promise<boolean>;
+  powerAction(action: "shutdown" | "restart" | "sleep"): Promise<boolean>;
+  getClock(): Promise<ClockInfo>;
+  syncClock(): Promise<{ ok: boolean; message: string }>;
+  listTimeZones(): Promise<string[]>;
+  setTimeZone(id: string): Promise<boolean>;
+  fileInfo(filePath: string): Promise<FileInfo>;
+  hostName(): Promise<string>;
   createMediaFolder(parentDir: string, name: string): Promise<string>;
   getSongInfo(filePath: string): Promise<SongInfo | null>;
   getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;

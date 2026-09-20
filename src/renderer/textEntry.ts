@@ -23,8 +23,23 @@ const ROWS = [
   ["SHIFT", "SPACE", "BACK", "NEXT"],
 ];
 
+/** Words offered above the keys; learnt from what's typed plus the user's own terms. */
+let dictionary: string[] = [];
+let learned: string[] = [];
+let onLearn: (words: string[]) => void = () => {};
+
+export function setDictionary(terms: string[], learnedWords: string[], learnCallback: (words: string[]) => void): void {
+  dictionary = terms;
+  learned = learnedWords;
+  onLearn = learnCallback;
+}
+
 export class TextEntry {
   private root: HTMLElement;
+  private suggestEl: HTMLElement;
+  private suggestions: string[] = [];
+  /** -1 = keyboard rows; 0.. = a suggestion is highlighted. */
+  private suggestIndex = -1;
   private titleEl: HTMLElement;
   private fieldsEl: HTMLElement;
   private keysEl: HTMLElement;
@@ -46,12 +61,14 @@ export class TextEntry {
     this.titleEl.className = "entry-title";
     this.fieldsEl = document.createElement("div");
     this.fieldsEl.className = "entry-fields";
+    this.suggestEl = document.createElement("div");
+    this.suggestEl.className = "entry-suggest";
     this.keysEl = document.createElement("div");
     this.keysEl.className = "entry-keys";
     this.hintEl = document.createElement("div");
     this.hintEl.className = "entry-hint";
     this.hintEl.innerHTML = `${btn("a")} type · ${btn("b")} backspace · ${btn("y")} shift · Next/Done to continue`;
-    root.append(this.titleEl, this.fieldsEl, this.keysEl, this.hintEl);
+    root.append(this.titleEl, this.fieldsEl, this.suggestEl, this.keysEl, this.hintEl);
 
     // Physical keyboard: characters go straight in; Enter advances; Escape is
     // handled by the menu's own key map as "back".
@@ -105,9 +122,22 @@ export class TextEntry {
   handle(action: EntryAction): boolean {
     if (!this.open) return false;
     const rowKeys = ROWS[this.row];
+    // The suggestion strip sits above the top row: Up from row 0 reaches it, Down
+    // returns to the keys, ◀ ▶ move along it, A inserts the word.
+    if (this.suggestIndex >= 0) {
+      if (action === "down") this.suggestIndex = -1;
+      else if (action === "left") this.suggestIndex = (this.suggestIndex + this.suggestions.length - 1) % this.suggestions.length;
+      else if (action === "right") this.suggestIndex = (this.suggestIndex + 1) % this.suggestions.length;
+      else if (action === "confirm") this.acceptSuggestion(this.suggestions[this.suggestIndex]);
+      else if (action === "back") this.suggestIndex = -1;
+      else if (action === "up") { /* nothing above */ }
+      this.render();
+      return true;
+    }
     switch (action) {
       case "up":
-        this.row = Math.max(0, this.row - 1);
+        if (this.row === 0 && this.suggestions.length > 0) this.suggestIndex = 0;
+        else this.row = Math.max(0, this.row - 1);
         this.col = Math.min(this.col, ROWS[this.row].length - 1);
         break;
       case "down":
@@ -169,6 +199,44 @@ export class TextEntry {
     this.render();
   }
 
+  private currentWord(): string {
+    return this.values[this.field].split(/\s+/).pop() ?? "";
+  }
+
+  private acceptSuggestion(word: string): void {
+    const parts = this.values[this.field].split(/(\s+)/);
+    parts[parts.length - 1] = word;
+    this.values[this.field] = parts.join("") + " ";
+    this.suggestIndex = -1;
+    this.render();
+  }
+
+  private computeSuggestions(): void {
+    const word = this.currentWord().toLowerCase();
+    if (this.fields[this.field]?.secret || word.length < 2) {
+      this.suggestions = [];
+      return;
+    }
+    const pool = [...dictionary, ...learned];
+    const seen = new Set<string>();
+    this.suggestions = pool.filter((w) => {
+      const k = w.toLowerCase();
+      if (seen.has(k) || k === word || !k.startsWith(word)) return false;
+      seen.add(k);
+      return true;
+    }).slice(0, 5);
+    if (this.suggestIndex >= this.suggestions.length) this.suggestIndex = -1;
+  }
+
+  private learnWords(): void {
+    const words = this.values.flatMap((v, i) => (this.fields[i]?.secret ? [] : v.split(/\s+/))).filter((w) => w.length >= 3);
+    const fresh = words.filter((w) => !learned.includes(w) && !dictionary.includes(w));
+    if (fresh.length) {
+      learned = [...learned, ...fresh].slice(-300);
+      onLearn(learned);
+    }
+  }
+
   private next(): void {
     if (this.field < this.fields.length - 1) {
       this.field++;
@@ -176,10 +244,16 @@ export class TextEntry {
       return;
     }
     this.close();
+    this.learnWords();
     this.onSubmit(this.values.map((v) => v.trim()));
   }
 
   private render(): void {
+    this.computeSuggestions();
+    this.suggestEl.innerHTML = this.suggestions
+      .map((w, i) => `<span class="entry-suggestion${i === this.suggestIndex ? " selected" : ""}">${w}</span>`)
+      .join("");
+    this.suggestEl.classList.toggle("hidden", this.suggestions.length === 0);
     this.fieldsEl.innerHTML = "";
     this.fields.forEach((f, i) => {
       const wrap = document.createElement("div");
@@ -204,7 +278,7 @@ export class TextEntry {
         const keyEl = document.createElement("div");
         const isLast = this.field === this.fields.length - 1;
         const label = k === "NEXT" ? (isLast ? "Done" : "Next") : k === "SHIFT" ? "Shift" : k === "SPACE" ? "Space" : k === "BACK" ? "⌫" : this.shift ? k.toUpperCase() : k;
-        keyEl.className = "entry-key" + (r === this.row && c === this.col ? " selected" : "") + (k.length > 1 ? " wide" : "");
+        keyEl.className = "entry-key" + (r === this.row && c === this.col && this.suggestIndex < 0 ? " selected" : "") + (k.length > 1 ? " wide" : "");
         if (k === "SHIFT" && this.shift) keyEl.classList.add("on");
         keyEl.textContent = label;
         rowEl.appendChild(keyEl);

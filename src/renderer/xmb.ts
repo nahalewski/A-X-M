@@ -230,7 +230,8 @@ export class Xmb {
         }
         if (item?.contextGame) {
           this.audio.playContextOpen();
-          this.openModal(item.contextGame);
+          if (this.onGameContext) this.onGameContext(item.contextGame);
+          else this.openModal(item.contextGame);
           break;
         }
         if (this.categories[this.activeCategory].onContext?.()) {
@@ -243,6 +244,13 @@ export class Xmb {
   }
 
   /** Extra actions offered in the game options view, wired up by the app. */
+  private onGameContext: ((game: GameEntry) => void) | null = null;
+
+  /** Y on a game opens this (the PS3-style sidebar) rather than the built-in modal. */
+  setOnGameContext(handler: (game: GameEntry) => void): void {
+    this.onGameContext = handler;
+  }
+
   setGameActions(actions: { label: string; run: (game: GameEntry) => void }[]): void {
     this.gameActions = actions;
   }

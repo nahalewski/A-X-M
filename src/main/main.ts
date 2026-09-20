@@ -17,6 +17,7 @@ import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
+import { getPowerSettings, setPowerPlan, setPowerTimeout, powerAction, getClock, syncClock, listTimeZones, setTimeZone, fileInfo, hostName } from "./system";
 import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairBluetooth, unpairBluetooth, WifiNetwork, BluetoothDevice } from "./network";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
@@ -476,6 +477,19 @@ ipcMain.handle("axm:wifiForget", (_e, ssid: string): Promise<void> => forgetWifi
 ipcMain.handle("axm:btList", (): Promise<BluetoothDevice[]> => listBluetooth());
 ipcMain.handle("axm:btPair", (_e, id: string) => pairBluetooth(id));
 ipcMain.handle("axm:btUnpair", (_e, id: string) => unpairBluetooth(id));
+ipcMain.handle("axm:getPowerSettings", () => getPowerSettings());
+ipcMain.handle("axm:setPowerPlan", (_e, guid: string) => setPowerPlan(guid));
+ipcMain.handle("axm:setPowerTimeout", (_e, what: "screen" | "sleep", onBattery: boolean, minutes: number) => setPowerTimeout(what, onBattery, minutes));
+ipcMain.handle("axm:powerAction", async (_e, action: "shutdown" | "restart" | "sleep") => {
+  if (action !== "sleep") setTimeout(() => app.quit(), 800);
+  return powerAction(action);
+});
+ipcMain.handle("axm:getClock", () => getClock());
+ipcMain.handle("axm:syncClock", () => syncClock());
+ipcMain.handle("axm:listTimeZones", () => listTimeZones());
+ipcMain.handle("axm:setTimeZone", (_e, id: string) => setTimeZone(id));
+ipcMain.handle("axm:fileInfo", (_e, filePath: string) => fileInfo(filePath));
+ipcMain.handle("axm:hostName", () => hostName());
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 

@@ -71,6 +71,9 @@ export class RibbonRenderer {
 
   /** Reused so the colour cycle allocates nothing per frame. */
   private scratchTop = new THREE.Color();
+  private liveTop = new THREE.Color();
+  private liveBottom = new THREE.Color();
+  private staticLive = false;
   private scratchBottom = new THREE.Color();
   private scratchMix = new THREE.Color();
 
@@ -245,9 +248,21 @@ export class RibbonRenderer {
     if (!this.backdropMaterial) return;
 
     if (this.options.backdrop === "static") {
-      this.scratchTop.set(this.options.backdropColors[0]);
-      this.scratchBottom.set(this.options.backdropColors[1]);
+      // Ease towards the chosen colours rather than snapping, so a change in the
+      // theme settings fades in the way the PS3's colour picker did.
+      const target = this.scratchMix.set(this.options.backdropColors[0]);
+      if (!this.staticLive) {
+        this.staticLive = true;
+        this.liveTop.copy(target);
+        this.liveBottom.set(this.options.backdropColors[1]);
+      }
+      const k = 0.06;
+      this.liveTop.lerp(target, k);
+      this.liveBottom.lerp(this.scratchMix.set(this.options.backdropColors[1]), k);
+      this.scratchTop.copy(this.liveTop);
+      this.scratchBottom.copy(this.liveBottom);
     } else {
+      this.staticLive = false;
       const cycle = Math.max(2, this.options.backdropCycleSeconds);
       const position = time / cycle;
       const index = wrapIndex(position, BACKDROP_PALETTE.length);

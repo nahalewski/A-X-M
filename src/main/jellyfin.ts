@@ -13,7 +13,7 @@ const DISCOVERY_PORT = 7359;
 const DISCOVERY_MESSAGE = "who is JellyfinServer?";
 const DISCOVERY_WINDOW_MS = 2200;
 const CLIENT_NAME = "A-X-M";
-const CLIENT_VERSION = "0.2.0-beta.1";
+const CLIENT_VERSION = "0.3.0-beta.1";
 
 export interface JellyfinServer {
   name: string;
@@ -50,7 +50,7 @@ function deviceId(): string {
 function authHeader(token?: string): string {
   const parts = [
     `MediaBrowser Client="${CLIENT_NAME}"`,
-    `Device="${os.hostname()}"`,
+    `Device="${loadSettings().systemName || os.hostname()}"`,
     `DeviceId="${deviceId()}"`,
     `Version="${CLIENT_VERSION}"`,
   ];
