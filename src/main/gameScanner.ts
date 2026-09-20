@@ -21,6 +21,13 @@ export async function scanAllGames(): Promise<GameEntry[]> {
     else console.error("[A-X-M] scanner failed:", r.reason);
   }
 
+  const seenIds = new Set<string>();
+  games = games.filter((g) => {
+    if (seenIds.has(g.id)) return false;
+    seenIds.add(g.id);
+    return true;
+  });
+
   for (const game of games) {
     const override = settings.gameOverrides[game.id];
     if (override) {

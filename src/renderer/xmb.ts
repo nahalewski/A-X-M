@@ -28,6 +28,20 @@ const SOURCE_GLYPH: Record<GameEntry["source"], string> = {
 
 const VISIBLE_RADIUS = 3; // how many items above/below the selection to render
 
+// Slot geometry, in px, measured from the category icon's centre (offset 0 is the
+// focused item sitting on the icon row). The focused slot is taller because its
+// icon and title are enlarged, so neighbours are pushed clear of it.
+const SELECTED_SLOT_HEIGHT = 112;
+const NEIGHBOUR_SLOT_HEIGHT = 64;
+const SLOT_GAP = 12;
+
+function slotTop(offset: number): number {
+  if (offset === 0) return -SELECTED_SLOT_HEIGHT / 2;
+  const stepsFromSelected = Math.abs(offset) - 1;
+  const edge = SELECTED_SLOT_HEIGHT / 2 + SLOT_GAP + stepsFromSelected * (NEIGHBOUR_SLOT_HEIGHT + SLOT_GAP);
+  return offset > 0 ? edge : -edge - NEIGHBOUR_SLOT_HEIGHT;
+}
+
 export class Xmb {
   private activeCategory = 0;
   private selectedIndex = new Map<string, number>();
@@ -215,29 +229,24 @@ export class Xmb {
     if (items.length === 0) {
       const empty = document.createElement("div");
       empty.className = "item-row selected";
+      empty.style.top = `${slotTop(0)}px`;
       empty.innerHTML = `<div class="item-title">Nothing here yet</div>`;
       this.itemRailEl.appendChild(empty);
       return;
     }
 
-    // Render a fixed number of slots with the selected item always pinned to the
-    // center slot (like the real XMB, where the current item sits on the category
-    // row and the list scrolls past it) - a blank placeholder fills any slot that
-    // falls off the start/end of the list, so the selection never jumps position.
+    // Each slot is positioned absolutely at an exact offset from the category icon,
+    // so the selected item always sits on the icon row (the "cross" in XrossMediaBar)
+    // and the list scrolls past it, with guaranteed clearance between neighbours.
     for (let offset = -VISIBLE_RADIUS; offset <= VISIBLE_RADIUS; offset++) {
-      const i = selected + offset;
-      const item = items[i];
-      const row = document.createElement("div");
-
-      if (!item) {
-        row.className = "item-row item-row-empty";
-        this.itemRailEl.appendChild(row);
-        continue;
-      }
+      const item = items[selected + offset];
+      if (!item) continue;
 
       const distance = Math.abs(offset);
+      const row = document.createElement("div");
       row.className = "item-row" + (offset === 0 ? " selected" : "");
-      row.style.opacity = offset === 0 ? "1" : String(Math.max(0.12, 0.5 - distance * 0.12));
+      row.style.top = `${slotTop(offset)}px`;
+      row.style.opacity = offset === 0 ? "1" : String(Math.max(0.15, 0.55 - distance * 0.13));
 
       row.innerHTML = `
         <div class="item-title">${item.title}</div>

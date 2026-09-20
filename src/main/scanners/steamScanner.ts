@@ -20,8 +20,14 @@ function getSteamInstallPath(): string | null {
   return fs.existsSync(fallback) ? fallback : null;
 }
 
+/** Windows paths are case-insensitive and mix separators, so compare on a normalized form. */
+function normalizePath(p: string): string {
+  return p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
+}
+
 function getLibraryFolders(steamPath: string): string[] {
   const libs = [steamPath];
+  const seen = new Set([normalizePath(steamPath)]);
   const vdfPath = path.join(steamPath, "steamapps", "libraryfolders.vdf");
   try {
     const text = fs.readFileSync(vdfPath, "utf-8");
@@ -31,7 +37,9 @@ function getLibraryFolders(steamPath: string): string[] {
       const entry = root[key];
       if (typeof entry === "object" && entry.path) {
         const p = (entry.path as string).replace(/\\\\/g, "\\");
-        if (!libs.includes(p)) libs.push(p);
+        if (seen.has(normalizePath(p))) continue;
+        seen.add(normalizePath(p));
+        libs.push(p);
       }
     }
   } catch {
@@ -45,6 +53,7 @@ export function scanSteamGames(): GameEntry[] {
   if (!steamPath) return [];
   const libraries = getLibraryFolders(steamPath);
   const games: GameEntry[] = [];
+  const seenAppIds = new Set<string>();
 
   for (const lib of libraries) {
     const steamappsDir = path.join(lib, "steamapps");
@@ -66,8 +75,18 @@ export function scanSteamGames(): GameEntry[] {
         const installDirName = app["installdir"] as string;
         if (!appId || !name || !installDirName) continue;
 
-        // Skip Steamworks redistributables / tools that show up as "games"
-        if (/steamworks common redistributables|steam controller configs|steam linux runtime/i.test(name)) continue;
+        // A game installed in one library can still have a stale manifest in another.
+        if (seenAppIds.has(appId)) continue;
+        seenAppIds.add(appId);
+
+        // Skip redistributables / drivers / tools that show up alongside real games
+        if (
+          /steamworks common redistributables|steam controller configs|steam linux runtime|dts audio|proton|steamvr|redistributable/i.test(
+            name
+          )
+        ) {
+          continue;
+        }
 
         const installDir = path.join(steamappsDir, "common", installDirName);
 
