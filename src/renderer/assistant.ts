@@ -205,9 +205,13 @@ export class Assistant {
     this.sprite.setMood("thinking");
     const best = this.match(text);
     if (!best) {
-      this.sprite.setMood("error");
-      this.say(`I don't know how to "${text}".`);
-      this.sleep(3200);
+      // Nothing matched. Ghost unfolds into battle mode and says his line; the
+      // milder red-eye shake stays for "I didn't catch that", which is a different
+      // failure - not hearing, rather than being asked for something impossible.
+      this.sprite.setMood("battle");
+      this.say("Error. You have given an unlawful command. Battle mode engaged.");
+      // Long enough for the transform to unfold, hold and fold back down.
+      this.sleep(4600);
       return;
     }
     // A command that landed is worth a full turn.
@@ -228,7 +232,8 @@ export class Assistant {
     clearTimeout(this.hideTimer);
     this.root.classList.add("speaking");
     // Only take over the mood if nothing louder is playing out.
-    if (this.sprite.currentMood() !== "happy" && this.sprite.currentMood() !== "error") {
+    const busy = this.sprite.currentMood();
+    if (busy !== "happy" && busy !== "error" && busy !== "battle") {
       this.sprite.setMood("speaking");
     }
     this.speaker(reply)

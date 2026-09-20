@@ -1514,7 +1514,18 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
   opacity: 1;
 }
 
-.ghost-body.spinning .ghost-layer-eye { opacity: 0; }
+.ghost-body.spinning .ghost-layer-eye,
+.ghost-body.battling .ghost-layer-eye { opacity: 0; }
+
+/* Battle mode draws a full body, not a shell, so the layer grows up out of the
+   shell's footprint instead of being squeezed into it. Anchored low so his feet
+   stay where the Ghost was hovering. */
+.ghost-layer-battle {
+  /* Scale is set per frame from JS, which ramps it so he doesn't appear to shrink
+     on the first frame; this is only the starting point before that runs. */
+  transform: scale(1.85);
+  transform-origin: 50% 86%;
+}
 
 /* Awake, he bobs faster and the eye glow lifts. */
 #ghost.awake .ghost-body { animation-duration: 1.9s; }
@@ -1522,6 +1533,12 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
 .ghost-body[data-mood="listening"] { filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.28)); }
 .ghost-body[data-mood="speaking"] { animation: ghost-talk 0.42s ease-in-out infinite; }
 .ghost-body[data-mood="happy"] { animation: ghost-cheer 0.85s ease-in-out; }
+
+/* Holding the pose: the float stops, and the thrusters throw a cold glow. */
+.ghost-body[data-mood="battle"] {
+  animation: none;
+  filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 22px rgba(80, 180, 255, 0.5));
+}
 
 /* Can't place what was said: he shakes his head, and the sprite holds the red eye. */
 .ghost-body[data-mood="error"] {

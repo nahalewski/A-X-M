@@ -2258,7 +2258,7 @@ async function main(): Promise<void> {
             ? `${update.latest} is available · you have ${update.current}`
             : `Up to date · ${update.current}`
         : `Version ${settings.systemName ? "" : ""}${update === null ? "A to check for updates" : ""}`,
-      iconGlyph: "↻",
+      iconUrl: "assets/icons/system-update.webp",
       badge: update?.newer ? "UPDATE" : undefined,
       onConfirm: async () => {
         if (update?.newer && update.assetUrl && update.assetName) {
