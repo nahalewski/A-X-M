@@ -17,6 +17,10 @@ const api = {
   pickBackgroundImage: () => ipcRenderer.invoke("axm:pickBackgroundImage"),
   openBrowser: (url: string) => ipcRenderer.invoke("axm:openBrowser", url),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),
+  getSaves: () => ipcRenderer.invoke("axm:getSaves"),
+  openFolder: (dirPath: string) => ipcRenderer.invoke("axm:openFolder", dirPath),
+  getLaunchers: () => ipcRenderer.invoke("axm:getLaunchers"),
+  openLauncher: (id: string) => ipcRenderer.invoke("axm:openLauncher", id),
   onArtUpdated: (callback: (update: { gameId: string; iconPath?: string; heroPath?: string }) => void) => {
     ipcRenderer.on("axm:artUpdated", (_e, update) => callback(update));
   },

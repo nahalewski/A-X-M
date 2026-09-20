@@ -81,6 +81,20 @@ export interface MusicEntry {
   url?: string;
 }
 
+export interface SaveEntry {
+  id: string;
+  name: string;
+  filePath: string;
+  source: "Saved Games" | "My Games" | "Steam Cloud";
+  modified: string;
+}
+
+export interface LauncherEntry {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
 export interface MusicListing {
   path: string | null;
   parent: string | null;
@@ -127,6 +141,10 @@ export interface AxmApi {
   pickGameFolder(): Promise<Settings>;
   getMedia(kind: "photo" | "video" | "music"): Promise<MediaEntry[]>;
   openMedia(filePath: string): Promise<void>;
+  getSaves(): Promise<SaveEntry[]>;
+  openFolder(dirPath: string): Promise<void>;
+  getLaunchers(): Promise<LauncherEntry[]>;
+  openLauncher(id: string): Promise<void>;
   browseMusic(dirPath: string | null): Promise<MusicListing>;
   pickMusicFolder(): Promise<Settings>;
   pickBackgroundImage(): Promise<Settings>;

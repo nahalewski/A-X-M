@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Jellyfin">
+  <!-- A swept teardrop loop, after Jellyfin's mark, in the flat white style of the rest
+       of the icon set. Drop a jellyfin.png next to this to use the real logo instead. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="
+    M34 18 C88 6, 122 52, 102 92 C86 124, 32 122, 20 82 C12 54, 24 30, 34 18 Z
+    M46 40 C80 34, 98 62, 86 84 C76 102, 46 100, 40 76 C36 60, 42 48, 46 40 Z
+    M58 56 C70 54, 78 64, 74 74 C70 82, 58 82, 56 72 C54 64, 56 58, 58 56 Z
+  "/>
+</svg>

@@ -19,8 +19,10 @@ import {
   BackgroundQuality,
   DEFAULT_MONTH_THEMES,
   GameEntry,
+  LauncherEntry,
   MediaEntry,
   MonthTheme,
+  SaveEntry,
   MONTH_NAMES,
   MusicListing,
   Settings,
@@ -82,6 +84,8 @@ async function main(): Promise<void> {
   let photos: MediaEntry[] = [];
   let videos: MediaEntry[] = [];
   let musicListing: MusicListing = { path: null, parent: null, title: "Music", entries: [] };
+  let saves: SaveEntry[] = [];
+  let launchers: LauncherEntry[] = await window.axm.getLaunchers();
 
   const musicPlayer = new MusicPlayer(audio);
   const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
@@ -260,25 +264,114 @@ async function main(): Promise<void> {
     };
   }
 
+  /**
+   * The Game column follows the PS3 layout: the two utility folders sit at the top,
+   * then launcher shortcuts, then the games themselves. Opening a utility folder
+   * descends into it the same way the music library does; B comes back out.
+   */
   function gamesCategory(): Category {
+    let view: "root" | "saves" | "gamedata" = "root";
+
+    const go = (next: typeof view) => {
+      view = next;
+      xmb.resetSelection("games");
+      xmb.refresh();
+    };
+
+    const openSaves = async () => {
+      saves = await window.axm.getSaves();
+      go("saves");
+    };
+
+    const gameRows = (): MenuItem[] =>
+      games
+        .filter((g) => !g.hidden)
+        .map((g) => ({
+          id: g.id,
+          title: g.name,
+          // Drive and folder live in the Y options view now, not under every row.
+          iconUrl: g.iconPath,
+          backgroundUrl: g.heroPath,
+          iconGlyph: sourceGlyph(g.source),
+          badge: g.losslessProfile ? `LS ${g.losslessProfile}` : undefined,
+          contextGame: g,
+          onConfirm: () => window.axm.launchGame(g.id),
+        }));
+
+    const rootItems = (): MenuItem[] => [
+      {
+        id: "saved-data-utility",
+        title: "Saved Data Utility",
+        subtitle: "Game saves",
+        iconUrl: "assets/icons/folder.png",
+        onConfirm: () => openSaves(),
+      },
+      {
+        id: "game-data-utility",
+        title: "Game Data Utility",
+        subtitle: "Installed game files",
+        iconUrl: "assets/icons/folder.png",
+        onConfirm: () => go("gamedata"),
+      },
+      ...launchers
+        .filter((l) => l.installed)
+        .map((l) => ({
+          id: `launcher-${l.id}`,
+          title: l.name,
+          iconUrl: `assets/icons/${l.id}.png`,
+          onConfirm: () => window.axm.openLauncher(l.id),
+        })),
+      ...gameRows(),
+    ];
+
+    const savesItems = (): MenuItem[] => {
+      if (saves.length === 0) {
+        return [{ id: "saves-empty", title: "No saved data found", iconUrl: "assets/icons/folder.png" }];
+      }
+      return saves.map((s) => ({
+        id: s.id,
+        title: s.name,
+        subtitle: `${s.source} · ${new Date(s.modified).toLocaleDateString()}`,
+        iconUrl: "assets/icons/folder.png",
+        onConfirm: () => window.axm.openFolder(s.filePath),
+      }));
+    };
+
+    const gameDataItems = (): MenuItem[] => {
+      // WindowsApps is ACL-locked, so an Xbox install folder can't be opened anyway.
+      const rows = games.filter((g) => !g.hidden && g.installDir && g.source !== "xbox");
+      if (rows.length === 0) {
+        return [{ id: "gamedata-empty", title: "No game data found", iconUrl: "assets/icons/folder.png" }];
+      }
+      return rows.map((g) => ({
+        id: `gamedata-${g.id}`,
+        title: g.name,
+        subtitle: g.installDir,
+        iconUrl: g.iconPath,
+        iconGlyph: sourceGlyph(g.source),
+        onConfirm: () => window.axm.openFolder(g.installDir),
+      }));
+    };
+
     return {
       id: "games",
       label: "Game",
       iconUrl: "assets/icons/games.svg",
-      getItems: () =>
-        games
-          .filter((g) => !g.hidden)
-          .map((g) => ({
-            id: g.id,
-            title: g.name,
-            // Drive and folder live in the Y options view now, not under every row.
-            iconUrl: g.iconPath,
-            backgroundUrl: g.heroPath,
-            iconGlyph: sourceGlyph(g.source),
-            badge: g.losslessProfile ? `LS ${g.losslessProfile}` : undefined,
-            contextGame: g,
-            onConfirm: () => window.axm.launchGame(g.id),
-          })),
+      onBack: () => {
+        if (view === "root") return false;
+        go("root");
+        return true;
+      },
+      footerHint: () => {
+        if (view === "saves") return "Saved Data Utility";
+        if (view === "gamedata") return "Game Data Utility";
+        return undefined;
+      },
+      getItems: () => {
+        if (view === "saves") return savesItems();
+        if (view === "gamedata") return gameDataItems();
+        return rootItems();
+      },
     };
   }
 
@@ -286,7 +379,8 @@ async function main(): Promise<void> {
     id: "video" | "photo" | "music",
     label: string,
     iconUrl: string,
-    getList: () => MediaEntry[]
+    getList: () => MediaEntry[],
+    leading: MenuItem[] = []
   ): Category {
     return {
       id,
@@ -294,7 +388,7 @@ async function main(): Promise<void> {
       iconUrl,
       getItems: () => {
         const list = getList();
-        if (list.length === 0) {
+        if (list.length === 0 && leading.length === 0) {
           return [
             {
               id: `${id}-empty`,
@@ -304,15 +398,28 @@ async function main(): Promise<void> {
             },
           ];
         }
-        return list.map((m) => ({
-          id: m.id,
-          title: m.name,
-          iconUrl,
-          onConfirm: () => window.axm.openMedia(m.filePath),
-        }));
+        return [
+          ...leading,
+          ...list.map((m) => ({
+            id: m.id,
+            title: m.name,
+            iconUrl,
+            onConfirm: () => window.axm.openMedia(m.filePath),
+          })),
+        ];
       },
     };
   }
+
+  // Jellyfin's web client, on its default port. Sits at the top of Video, ahead of
+  // the local files, since a media server is where most of the video actually is.
+  const jellyfinEntry: MenuItem = {
+    id: "jellyfin",
+    title: "Jellyfin",
+    subtitle: "Media server",
+    iconUrl: "assets/icons/jellyfin.svg",
+    onConfirm: () => window.axm.openBrowser("http://localhost:8096/"),
+  };
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
@@ -526,8 +633,9 @@ async function main(): Promise<void> {
         },
       },
       {
-        id: "quit",
-        title: "Quit A-X-M",
+        id: "exit",
+        title: "Exit to Desktop",
+        subtitle: "Close A-X-M",
         iconUrl: "assets/icons/power.png",
         onConfirm: async () => {
           await audio.fadeOutAmbient(800);
@@ -681,7 +789,7 @@ async function main(): Promise<void> {
     settingsCategory(),
     mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photos),
     musicCategory(),
-    mediaCategory("video", "Video", "assets/icons/video.png", () => videos),
+    mediaCategory("video", "Video", "assets/icons/video.png", () => videos, [jellyfinEntry]),
     gamesCategory(),
     browserCategory(),
   ];

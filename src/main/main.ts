@@ -9,6 +9,9 @@ import { isLosslessScalingConfigPresent } from "./losslessScaling";
 import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
 import { resolveArt, isGameArtConfigured } from "./gameArt";
 import { browseMusic, MusicListing } from "./musicLibrary";
+import { scanSaves, SaveEntry } from "./saveScanner";
+import * as fs from "node:fs";
+import { spawn } from "node:child_process";
 
 // Let the compositor track the display's native refresh rate (120Hz on the Ally) via
 // vsync-synced requestAnimationFrame - just remove Chromium's internal 60fps throttle
@@ -204,6 +207,52 @@ ipcMain.handle("axm:pickBackgroundImage", async (): Promise<Settings> => {
 
 ipcMain.handle("axm:openMedia", (_e, filePath: string): void => {
   shell.openPath(filePath);
+});
+
+/** Saved Data Utility: where games keep their saves, named via the game scan where possible. */
+ipcMain.handle("axm:getSaves", (): SaveEntry[] => {
+  const nameByAppId = new Map<string, string>();
+  for (const g of cachedGames) {
+    if (g.source === "steam") nameByAppId.set(g.id.replace(/^steam-/, ""), g.name);
+  }
+  return scanSaves(nameByAppId);
+});
+
+/** Opens a folder in Explorer. Only ever a directory that exists - never an arbitrary path. */
+ipcMain.handle("axm:openFolder", (_e, dirPath: string): void => {
+  try {
+    if (fs.statSync(dirPath).isDirectory()) shell.openPath(dirPath);
+  } catch {
+    // gone or inaccessible - nothing sensible to open
+  }
+});
+
+/**
+ * Launcher shortcuts for the Game column. Each is only offered when it's actually
+ * installed (or, for the web ones, always), so the list matches this machine.
+ */
+const LAUNCHERS: { id: string; name: string; exe?: string; url?: string }[] = [
+  { id: "battlenet", name: "Battle.net", exe: "C:\\Program Files (x86)\\Battle.net\\Battle.net Launcher.exe" },
+  {
+    id: "geforcenow",
+    name: "GeForce NOW",
+    exe: path.join(process.env.LOCALAPPDATA ?? "", "NVIDIA Corporation", "GeForceNOW", "CEF", "GeForceNOW.exe"),
+  },
+  { id: "xboxcloud", name: "Xbox Cloud Gaming", url: "https://www.xbox.com/play" },
+];
+
+ipcMain.handle("axm:getLaunchers", (): { id: string; name: string; installed: boolean }[] =>
+  LAUNCHERS.map((l) => ({ id: l.id, name: l.name, installed: l.url ? true : !!l.exe && fs.existsSync(l.exe) }))
+);
+
+ipcMain.handle("axm:openLauncher", (_e, id: string): void => {
+  const launcher = LAUNCHERS.find((l) => l.id === id);
+  if (!launcher) return;
+  if (launcher.url) {
+    shell.openExternal(launcher.url);
+  } else if (launcher.exe && fs.existsSync(launcher.exe)) {
+    spawn(launcher.exe, [], { cwd: path.dirname(launcher.exe), detached: true, stdio: "ignore" }).unref();
+  }
 });
 
 ipcMain.handle("axm:openBrowser", (_e, url: string): void => {
