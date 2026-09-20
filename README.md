@@ -69,6 +69,119 @@ Art is fetched in the background after a scan and cached under
 Misses are cached too, so unmatched names aren't retried on every launch. Without a
 key the grid just falls back to source letter badges.
 
+## Ribbon background
+
+The animated background is an original real-time effect - no video, no GIF, and no
+console firmware assets or shaders. Layered translucent ribbons bend along their
+length, twist about their own axis and drift through depth, over a deep gradient
+backdrop that cycles colour.
+
+### Dependencies
+
+```bash
+npm install three
+npm install -D @types/three
+```
+
+Nothing else. esbuild already bundles it into `dist/renderer/main.js`.
+
+### Files
+
+| File | What it holds |
+| --- | --- |
+| `src/background/RibbonBackground.ts` | Public API, animation loop, FPS monitor, WebGL/Canvas selection |
+| `src/background/RibbonRenderer.ts` | Three.js scene: ribbon meshes, backdrop quad, camera |
+| `src/background/ribbonShaders.ts` | Vertex and fragment GLSL for the ribbons and the backdrop |
+| `src/background/ribbonFallback.ts` | Canvas 2D renderer used when WebGL is unavailable |
+| `src/background/ribbonTypes.ts` | Options, quality presets, per-layer tuning, backdrop palette |
+
+### Electron integration
+
+It lives entirely in the **renderer** process. It touches WebGL, the DOM and
+`requestAnimationFrame`, none of which exist in the main process, and it uses no Node
+APIs, so it runs unchanged under `contextIsolation: true` / `nodeIntegration: false`.
+It is created in `src/renderer/main.ts` right after settings load:
+
+```ts
+const ribbon = new RibbonBackground(document.getElementById("background-layer")!, {
+  color: "#ffffff",
+  opacity: 0.22,
+  speed: 0.25,
+  layers: 4,
+  quality: settings.backgroundQuality,
+  glow: true,
+  backdrop: "cycle",
+  backdropCycleSeconds: settings.waveColorCycleSeconds,
+});
+ribbon.start();
+```
+
+The full API is `start()`, `stop()`, `resize()`, `destroy()`, plus `setColor`,
+`setOpacity`, `setSpeed`, `setLayers`, `setWaveStrength`, `setGlow`, `setQuality`,
+`setAnimating`, `setBackdropCycleSeconds`, `setInteractivity`, and the optional
+`onNavigate()` / `onSelect()` hooks. `destroy()` removes every listener, disposes the
+geometry, materials and GL context, and drops the canvas.
+
+The component needs no explicit cleanup in this app, because the window and the
+renderer die together, but `destroy()` is required if you ever rebuild it.
+
+### Layers
+
+The UI stacks as `#background-layer` (0), `#game-bg` (1), `#app` (10),
+`#context-modal` (20), `#boot-splash` (30). `#background-layer` is
+`pointer-events: none`, so the ribbon never intercepts controller, keyboard or mouse
+input. `#app` is the UI layer the component spec calls `#ui-layer`.
+
+### Quality and frame rate
+
+Motion is time-based throughout, driven by the elapsed seconds between frames rather
+than a frame count, so 60, 90 and 120 Hz all produce identical speed.
+
+| Preset | Layers | Segments | Max DPR | Glow |
+| --- | --- | --- | --- | --- |
+| Low | 2 | 48 | 1 | off |
+| Medium | 3 | 96 | 1.5 | on |
+| High | 5 | 176 | 2 | on |
+
+`quality: "auto"` starts at high and steps down a preset whenever the average stays
+below 55 FPS for three seconds. It never steps back up: a machine sitting near the
+threshold would otherwise flip presets every few seconds, and that churn is far more
+visible than the frame it saves. Settings > Background Quality overrides it.
+
+Rendering pauses entirely while the window is hidden or minimised.
+
+### Tuning
+
+Nearly everything lives in `src/background/ribbonTypes.ts`.
+
+- **Softer**: raise `thickness` in `LAYER_SPECS`, or lower `opacity`. In the fragment
+  shader, lowering the `pow(band, 1.35)` exponent widens the falloff.
+- **Sharper**: raise that exponent, and raise the `core` multiplier on `uGlow`.
+- **Faster or slower**: `setSpeed()` scales everything at once. For a single band,
+  change its `speed` in `LAYER_SPECS`.
+- **Wider waves**: lower `frequency` for fewer, longer undulations. Raise it for a
+  tighter ripple.
+- **Taller waves**: raise `amplitude`, or `setWaveStrength()` for all layers. Past
+  about 1.6 the bands start colliding.
+- **More layered**: add entries to `LAYER_SPECS` and raise `maxLayers` in the quality
+  profiles. Keep new layers' `depth` spread out, since that is where the parallax
+  comes from.
+- **More twist**: raise `TWIST` in `RibbonRenderer.ts`. Zero gives flat stripes.
+- **Backdrop**: edit `BACKDROP_PALETTE`, or pass `backdrop: "static"` with
+  `backdropColors`, or `backdrop: "none"` to leave the container transparent.
+
+### Interactivity
+
+Navigation boost, selection pulse and pointer parallax are all implemented but
+**disabled by default**, as specified. Turn them on with:
+
+```ts
+ribbon.setInteractivity({ enabled: true });
+```
+
+then call `ribbon.onNavigate()` as the selection moves and `ribbon.onSelect()` when a
+game is chosen.
+
 ## Menu background
 
 Selecting a game swaps the animated wave for that game's wide hero banner, blurred

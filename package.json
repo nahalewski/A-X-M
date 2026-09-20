@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@types/three": "^0.171.0",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.24.2",
@@ -33,5 +34,8 @@
       "target": "portable",
       "icon": "assets/icons/app.ico"
     }
+  },
+  "dependencies": {
+    "three": "^0.171.0"
   }
 }

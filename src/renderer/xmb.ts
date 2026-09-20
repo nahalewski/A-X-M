@@ -47,6 +47,13 @@ const SELECTED_SLOT_HEIGHT = 150;
 const NEIGHBOUR_SLOT_HEIGHT = 86;
 const SLOT_GAP = 12;
 
+/**
+ * Extra room between the category row and the item column, on top of the measured
+ * icon half-height. Game box art is the tallest thing the rail draws, and without
+ * this the focused tile creeps up under the category icon and the two collide.
+ */
+const CATEGORY_CLEARANCE = 44;
+
 interface IconClearance {
   above: number; // from icon centre up to the top of the label
   below: number; // from icon centre down to the bottom of the icon
@@ -302,8 +309,8 @@ export class Xmb {
       const labelEl = active?.querySelector(".category-label");
       const labelTop = labelEl ? labelEl.getBoundingClientRect().top : rect.top;
       this.clearance = {
-        above: centreY - labelTop + SLOT_GAP,
-        below: rect.height / 2 + SLOT_GAP,
+        above: centreY - labelTop + SLOT_GAP + CATEGORY_CLEARANCE * 0.5,
+        below: rect.height / 2 + SLOT_GAP + CATEGORY_CLEARANCE,
       };
     }
   }
@@ -317,7 +324,9 @@ export class Xmb {
       const empty = document.createElement("div");
       empty.className = "item-row selected";
       empty.style.top = `${slotTop(0, this.clearance)}px`;
-      empty.innerHTML = `<div class="item-title">Nothing here yet</div>`;
+      empty.innerHTML =
+        `<div class="item-icon-slot"></div>` +
+        `<div class="item-text"><div class="item-title">Nothing here yet</div></div>`;
       this.itemRailEl.appendChild(empty);
       return;
     }
@@ -335,14 +344,21 @@ export class Xmb {
       row.style.top = `${slotTop(offset, this.clearance)}px`;
       row.style.opacity = offset === 0 ? "1" : String(Math.max(0.15, 0.55 - distance * 0.13));
 
-      row.innerHTML = `
+      // Icon in its own fixed-width column on the left, then a text block holding
+      // the title with the subtitle and badge stacked beneath it.
+      const slot = document.createElement("div");
+      slot.className = "item-icon-slot";
+      slot.appendChild(this.buildIcon(item));
+
+      const text = document.createElement("div");
+      text.className = "item-text";
+      text.innerHTML = `
         <div class="item-title">${item.title}</div>
         ${item.subtitle ? `<div class="item-subtitle">${item.subtitle}</div>` : ""}
         ${item.badge ? `<div class="item-badge">${item.badge}</div>` : ""}
       `;
 
-      const iconEl = this.buildIcon(item);
-      row.prepend(iconEl);
+      row.append(slot, text);
       this.itemRailEl.appendChild(row);
     }
   }

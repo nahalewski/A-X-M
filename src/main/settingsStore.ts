@@ -10,6 +10,9 @@ export interface GameOverride {
 /** Which loop plays behind the menu. Values match AMBIENT_TRACKS in the renderer. */
 export type AmbientTrackId = "xmb" | "luminous";
 
+/** Ribbon background quality. "auto" starts high and steps down if frames suffer. */
+export type BackgroundQuality = "auto" | "low" | "medium" | "high";
+
 export interface Settings {
   windowed: boolean;
   targetHz: number;
@@ -24,6 +27,8 @@ export interface Settings {
   musicFolders: string[];
   /** Which background loop the menu plays. */
   ambientTrack: AmbientTrackId;
+  /** Ribbon background detail level. */
+  backgroundQuality: BackgroundQuality;
 }
 
 const DEFAULTS: Settings = {
@@ -37,6 +42,7 @@ const DEFAULTS: Settings = {
   gameArtApiKey: "",
   musicFolders: [],
   ambientTrack: "xmb",
+  backgroundQuality: "auto",
 };
 
 let cache: Settings | null = null;

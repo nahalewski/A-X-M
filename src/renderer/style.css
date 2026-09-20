@@ -10,6 +10,12 @@
   padding: 0;
 }
 
+:root {
+  /* Width of the item rail's icon column. Both the focused (100px) and unfocused
+     (58px) icons centre inside it, so the column never shifts as you scroll. */
+  --icon-column: 112px;
+}
+
 html,
 body {
   width: 100%;
@@ -21,10 +27,21 @@ body {
   user-select: none;
 }
 
-#wave {
+/* The ribbon background. Must never intercept controller, keyboard or mouse input,
+   hence pointer-events: none - the UI layer above it owns all of that. */
+#background-layer {
   position: fixed;
   inset: 0;
   z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Canvas element the ribbon renderer appends, WebGL or Canvas 2D alike. Sized in
+   JS; the CSS here only guarantees it fills its container and stays behind. */
+.ribbon-canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
@@ -36,7 +53,7 @@ body {
 #game-bg {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.55s ease;
@@ -82,10 +99,11 @@ body {
     );
 }
 
+/* The UI layer. Sits above #background-layer and #game-bg and takes all input. */
 #app {
   position: fixed;
   inset: 0;
-  z-index: 1;
+  z-index: 10;
   display: flex;
   flex-direction: column;
 }
@@ -175,16 +193,18 @@ body {
   pointer-events: none;
 }
 
+/* Icon on the left, sitting directly under the category icon, with the title to its
+   right and the subtitle beneath the title. The row is shifted left by half the icon
+   column so the icon - not the whole row - is what lines up with the anchor. */
 .item-row {
   position: absolute;
   left: 0;
-  transform: translateX(-50%);
+  transform: translateX(calc(var(--icon-column) / -2));
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 260px;
+  gap: 20px;
+  width: 620px;
   height: 86px;
   opacity: 0.3;
   transition: opacity 0.16s ease;
@@ -193,8 +213,32 @@ body {
 .item-row.selected {
   height: 150px;
   opacity: 1;
-  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.18) 60%, transparent 80%);
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.34) 45%,
+    transparent 92%
+  );
   border-radius: 16px;
+}
+
+/* Fixed-width column so a 58px and a 100px icon both centre on the same x, which is
+   what keeps the column from shifting as the selection moves. */
+.item-icon-slot {
+  width: var(--icon-column);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.item-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .item-icon {
@@ -221,13 +265,13 @@ body {
 
 .item-title {
   flex-shrink: 0;
+  max-width: 100%;
   font-size: 16px;
   font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 250px;
-  text-align: center;
+  text-align: left;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 2px 12px rgba(0, 0, 0, 0.8);
 }
 
@@ -238,8 +282,13 @@ body {
 
 .item-subtitle {
   flex-shrink: 0;
+  max-width: 100%;
   font-size: 12px;
   opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 /* Only the focused item shows its drive / scaling-profile detail, like the real XMB -
@@ -273,7 +322,7 @@ body {
 #context-modal {
   position: fixed;
   inset: 0;
-  z-index: 5;
+  z-index: 20;
   background: rgba(2, 4, 12, 0.72);
   display: flex;
   align-items: center;
@@ -336,7 +385,7 @@ body {
 #boot-splash {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  z-index: 30;
   background: #050814;
   display: flex;
   align-items: center;

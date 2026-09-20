@@ -3,6 +3,9 @@ export type GameSource = "steam" | "epic" | "xbox" | "generic";
 /** Which loop plays behind the menu. Keys of AMBIENT_TRACKS in audio.ts. */
 export type AmbientTrackId = "xmb" | "luminous";
 
+/** Ribbon background quality. "auto" starts high and steps down if frames suffer. */
+export type BackgroundQuality = "auto" | "low" | "medium" | "high";
+
 export interface GameEntry {
   id: string;
   name: string;
@@ -50,6 +53,7 @@ export interface Settings {
   gameArtApiKey: string;
   musicFolders: string[];
   ambientTrack: AmbientTrackId;
+  backgroundQuality: BackgroundQuality;
 }
 
 /** Artwork that landed after the initial scan. Either field may be absent. */

@@ -1,20 +1,43 @@
 import "./types";
-import { WaveBackground } from "./wave";
+import { RibbonBackground } from "../background/RibbonBackground";
 import { AudioManager, AMBIENT_TRACKS, AMBIENT_TRACK_IDS } from "./audio";
 import { GamepadNav } from "./gamepad";
 import { Xmb, Category, sourceGlyph } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
 import { GameBackground } from "./background";
-import { GameEntry, MediaEntry, MusicListing, Settings } from "./types";
+import { BackgroundQuality, GameEntry, MediaEntry, MusicListing, Settings } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
 const VOLUME_PRESETS = [0, 0.25, 0.5, 0.75, 1];
+const QUALITY_PRESETS: BackgroundQuality[] = ["auto", "low", "medium", "high"];
+const QUALITY_LABELS: Record<BackgroundQuality, string> = {
+  auto: "Auto",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
 
 async function main(): Promise<void> {
   const audio = new AudioManager();
-  const wave = new WaveBackground(document.getElementById("wave") as HTMLCanvasElement);
 
   let settings: Settings = await window.axm.getSettings();
+
+  // Renderer-process only: the ribbon touches WebGL, the DOM and rAF, so none of it
+  // may move to the main process. It needs no Node APIs, so it runs as-is under
+  // contextIsolation: true / nodeIntegration: false.
+  const ribbon = new RibbonBackground(document.getElementById("background-layer")!, {
+    color: "#ffffff",
+    opacity: 0.22,
+    speed: 0.25,
+    layers: 4,
+    quality: settings.backgroundQuality,
+    glow: true,
+    // The menu's existing colour-speed setting drives the backdrop the ribbons
+    // sit on; the ribbons themselves stay white.
+    backdrop: "cycle",
+    backdropCycleSeconds: settings.waveColorCycleSeconds,
+  });
+
   let games: GameEntry[] = await window.axm.getGames();
   let photos: MediaEntry[] = [];
   let videos: MediaEntry[] = [];
@@ -22,10 +45,9 @@ async function main(): Promise<void> {
 
   const musicPlayer = new MusicPlayer(audio);
 
-  wave.setCycleSeconds(settings.waveColorCycleSeconds);
   audio.setVolumes(settings.musicVolume, settings.sfxVolume);
   audio.setAmbientTrack(settings.ambientTrack);
-  wave.start();
+  ribbon.start();
 
   const clockEl = document.getElementById("clock")!;
   const updateClock = () => {
@@ -210,13 +232,29 @@ async function main(): Promise<void> {
         },
         {
           id: "waveSpeed",
-          title: "Wave Color Speed",
+          title: "Background Color Speed",
           subtitle: `${settings.waveColorCycleSeconds}s / color`,
           iconGlyph: "〰",
           onConfirm: async () => {
             const next = WAVE_CYCLE_PRESETS[(cycleIdx() + 1) % WAVE_CYCLE_PRESETS.length];
             settings = await window.axm.setSettings({ waveColorCycleSeconds: next });
-            wave.setCycleSeconds(settings.waveColorCycleSeconds);
+            ribbon.setBackdropCycleSeconds(settings.waveColorCycleSeconds);
+            xmb.refresh();
+          },
+        },
+        {
+          id: "backgroundQuality",
+          title: "Background Quality",
+          subtitle:
+            settings.backgroundQuality === "auto"
+              ? `Auto (${ribbon.activeQuality()})`
+              : QUALITY_LABELS[settings.backgroundQuality],
+          iconGlyph: "◈",
+          onConfirm: async () => {
+            const i = QUALITY_PRESETS.indexOf(settings.backgroundQuality);
+            const next = QUALITY_PRESETS[(i + 1) % QUALITY_PRESETS.length];
+            settings = await window.axm.setSettings({ backgroundQuality: next });
+            ribbon.setQuality(next);
             xmb.refresh();
           },
         },
