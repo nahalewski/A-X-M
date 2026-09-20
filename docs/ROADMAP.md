@@ -52,8 +52,9 @@ Kept honest and current. If something here is fixed or shipped, it moves.
 
 ## Devices and processors this build runs on
 
-- Windows 10 / 11, **x64** only (the installer and portable EXE are 64-bit; no ARM64 build
-  yet - Snapdragon X machines run it through Windows' x64 emulation).
+- Windows 10 / 11, **x64** (installer and portable EXE); **Steam Deck / SteamOS** via the x64
+  AppImage (Linux). No ARM64 build yet - Snapdragon X machines run it through Windows' x64
+  emulation.
 - Tested on: ROG Xbox Ally (Ryzen Z2 A), ROG Ally / Ally X (Ryzen Z1 / Z1 Extreme), a
   desktop with a Ryzen 7 9700X + RTX 3080 (development machine).
 - Should run on: Legion Go / Go S, MSI Claw (Intel Core Ultra), Steam Deck on Windows, and

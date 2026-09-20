@@ -12,7 +12,7 @@ will warn because the build isn't code-signed - choose *More info › Run anyway
 - **Network**: Wi-Fi join / disconnect / forget and Bluetooth pair / remove inside the menu
 - **Menu Upscaling** (FSR-style sharpening when rendering below native) next to Menu Resolution
 - Progress ring rebuilt with all 17 steps from the new sheet
-- Portable EXE alongside the installer
+- Portable EXE alongside the installer, and a **Steam Deck** AppImage (SteamOS / Linux x64)
 - Boot splash uses the logo only
 
 ## What's in
@@ -37,8 +37,9 @@ will warn because the build isn't code-signed - choose *More info › Run anyway
 
 ## Devices
 
-Windows 10 / 11 x64: ROG Xbox Ally, ROG Ally / Ally X, Legion Go, MSI Claw, Steam Deck on
-Windows, any x64 PC with a WebGL 2 GPU. No ARM64 build yet.
+Windows 10 / 11 x64: ROG Xbox Ally, ROG Ally / Ally X, Legion Go, MSI Claw, any x64 PC with a
+WebGL 2 GPU. Steam Deck: the AppImage runs on SteamOS (Desktop Mode, or add it to Steam as a
+non-Steam game for Game Mode) - untested on real Deck hardware so far. No ARM64 build yet.
 
 ## Known limits
 
