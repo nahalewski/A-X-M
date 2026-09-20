@@ -100,27 +100,47 @@ ipcMain.handle("axm:scanGames", async (): Promise<GameEntry[]> => {
 });
 
 /**
- * Fills in box art for entries no launcher gave us any for. Runs in the background
- * with small concurrency so the menu stays responsive, pushing each result to the
- * renderer as it lands rather than making the first paint wait on the network.
+ * Fills in the artwork no launcher gave us: box art for the tiles, and the wide hero
+ * banner the menu uses as its background. Runs in the background with small
+ * concurrency so the menu stays responsive, pushing each result to the renderer as it
+ * lands rather than making the first paint wait on the network.
  */
 let artRunId = 0;
 async function fetchMissingArt(): Promise<void> {
   if (!isGameArtConfigured()) return;
   const runId = ++artRunId;
-  const pending = cachedGames.filter((g) => !g.iconPath);
+  // Steam hands us both already, so only the rest need looking up - but a game can
+  // easily have one and not the other, hence the per-kind check.
+  const pending = cachedGames.filter((g) => !g.iconPath || !g.heroPath);
   const CONCURRENCY = 3;
 
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < pending.length && runId === artRunId) {
       const game = pending[cursor++];
-      const art = await resolveArt(game.name);
-      if (runId !== artRunId) return;
-      if (!art) continue;
-      game.iconPath = art;
+      const update: { gameId: string; iconPath?: string; heroPath?: string } = { gameId: game.id };
+
+      if (!game.iconPath) {
+        const grid = await resolveArt(game.name, "grid");
+        if (runId !== artRunId) return;
+        if (grid) {
+          game.iconPath = grid;
+          update.iconPath = grid;
+        }
+      }
+
+      if (!game.heroPath) {
+        const hero = await resolveArt(game.name, "hero");
+        if (runId !== artRunId) return;
+        if (hero) {
+          game.heroPath = hero;
+          update.heroPath = hero;
+        }
+      }
+
+      if (!update.iconPath && !update.heroPath) continue;
       if (!mainWindow?.isDestroyed()) {
-        mainWindow?.webContents.send("axm:artUpdated", { gameId: game.id, iconPath: art });
+        mainWindow?.webContents.send("axm:artUpdated", update);
       }
     }
   };

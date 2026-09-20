@@ -6,17 +6,24 @@ import { createHash } from "node:crypto";
 import { loadSettings } from "./settingsStore";
 
 /**
- * Box art lookup via SteamGridDB, for the launchers that don't hand us any art of
- * their own (Epic, loose exes, Xbox titles whose package logo didn't resolve).
+ * Artwork lookup via SteamGridDB, for the launchers that don't hand us any of their
+ * own (Epic, loose exes, Xbox titles whose package logo didn't resolve). Two kinds
+ * are fetched: `grid` box art for the tiles, and `hero` banners used as the menu
+ * background behind the selected game, the way a PS3 theme swaps the wave out.
+ *
  * Results - including misses - are cached on disk so a given name is only ever
- * looked up once, and the images themselves are stored locally so the grid still
+ * looked up once, and the images themselves are stored locally so the menu still
  * renders with no network and without re-fetching on every launch.
  */
 
 const API_BASE = "https://www.steamgriddb.com/api/v2";
 
+export type ArtKind = "grid" | "hero";
+
 interface CacheIndex {
-  [normalizedName: string]: string | null; // cached file name, or null for a known miss
+  /** `${kind}:${normalizedName}` -> cached file name, or null for a known miss.
+   *  `id:${normalizedName}`      -> SteamGridDB game id as a string, or null. */
+  [key: string]: string | null;
 }
 
 let cacheIndex: CacheIndex | null = null;
@@ -75,20 +82,56 @@ async function apiGet(endpoint: string): Promise<unknown | null> {
   }
 }
 
-async function findGridUrl(name: string): Promise<string | null> {
+/**
+ * Resolves a name to a SteamGridDB game id. Cached separately from the images so
+ * looking up a game's grid and its hero only costs one search.
+ */
+async function findGameId(name: string): Promise<number | null> {
+  const index = loadIndex();
+  const cacheKey = `id:${normalize(name)}`;
+  if (cacheKey in index) {
+    const cached = index[cacheKey];
+    return cached === null ? null : Number(cached);
+  }
+
   const search = (await apiGet(`/search/autocomplete/${encodeURIComponent(name)}`)) as
     | { data?: { id: number }[] }
     | null;
-  const gameId = search?.data?.[0]?.id;
-  if (!gameId) return null;
+  const gameId = search?.data?.[0]?.id ?? null;
 
-  // Portrait box art first (matches the tile shape), then anything else that fits.
-  for (const query of [`?dimensions=600x900&types=static&limit=1`, `?types=static&limit=1`]) {
-    const grids = (await apiGet(`/grids/game/${gameId}${query}`)) as
+  // Only cache a definite answer - a network blip shouldn't poison the name forever.
+  if (search) {
+    index[cacheKey] = gameId === null ? null : String(gameId);
+    saveIndex();
+  }
+  return gameId;
+}
+
+/** Endpoint + preferred dimensions per art kind, tried in order. */
+const QUERIES: Record<ArtKind, { endpoint: string; queries: string[] }> = {
+  grid: {
+    endpoint: "grids",
+    // Portrait box art first (matches the tile shape), then anything else that fits.
+    queries: ["?dimensions=600x900&types=static&limit=1", "?types=static&limit=1"],
+  },
+  hero: {
+    endpoint: "heroes",
+    // 1920x620 is the size the menu actually renders at; wider ones are fine too.
+    queries: ["?dimensions=1920x620&types=static&limit=1", "?types=static&limit=1"],
+  },
+};
+
+async function findArtUrl(gameId: number, kind: ArtKind): Promise<string | null> {
+  const { endpoint, queries } = QUERIES[kind];
+  for (const query of queries) {
+    const res = (await apiGet(`/${endpoint}/game/${gameId}${query}`)) as
       | { data?: { url?: string; thumb?: string }[] }
       | null;
-    const hit = grids?.data?.[0];
-    if (hit?.thumb || hit?.url) return hit.thumb ?? hit.url ?? null;
+    const hit = res?.data?.[0];
+    if (!hit) continue;
+    // Tiles are small, so the thumb is plenty; a full-screen background is not.
+    const preferred = kind === "grid" ? hit.thumb ?? hit.url : hit.url ?? hit.thumb;
+    if (preferred) return preferred;
   }
   return null;
 }
@@ -106,37 +149,42 @@ async function download(url: string, destination: string): Promise<boolean> {
   }
 }
 
-/** Returns a file:// URL to box art for `name`, or null if there isn't any. */
-export async function resolveArt(name: string): Promise<string | null> {
+/**
+ * Returns a file:// URL to cached artwork for `name`, or null if there isn't any.
+ * `kind` picks box art for the tile or a wide hero banner for the background.
+ */
+export async function resolveArt(name: string, kind: ArtKind = "grid"): Promise<string | null> {
   if (!isGameArtConfigured()) return null;
 
   const index = loadIndex();
   const key = normalize(name);
-  if (key in index) {
-    const cached = index[key];
+  const cacheKey = `${kind}:${key}`;
+  if (cacheKey in index) {
+    const cached = index[cacheKey];
     if (cached === null) return null;
     const full = path.join(artDir(), cached);
     if (fs.existsSync(full)) return pathToFileURL(full).href;
   }
 
-  const url = await findGridUrl(name);
+  const gameId = await findGameId(name);
+  const url = gameId === null ? null : await findArtUrl(gameId, kind);
   if (!url) {
-    index[key] = null;
+    index[cacheKey] = null;
     saveIndex();
     return null;
   }
 
   const ext = path.extname(new URL(url).pathname) || ".jpg";
-  const fileName = createHash("sha1").update(key).digest("hex") + ext;
+  const fileName = createHash("sha1").update(cacheKey).digest("hex") + ext;
   const destination = path.join(artDir(), fileName);
 
   if (!(await download(url, destination))) {
-    index[key] = null;
+    index[cacheKey] = null;
     saveIndex();
     return null;
   }
 
-  index[key] = fileName;
+  index[cacheKey] = fileName;
   saveIndex();
   return pathToFileURL(destination).href;
 }

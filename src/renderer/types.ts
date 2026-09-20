@@ -13,6 +13,8 @@ export interface GameEntry {
   installDir: string;
   drive: string;
   iconPath?: string;
+  /** Wide banner shown as the menu background while this game is selected. */
+  heroPath?: string;
   losslessProfile: 1 | 2 | 3 | null;
   hidden: boolean;
 }
@@ -50,6 +52,13 @@ export interface Settings {
   ambientTrack: AmbientTrackId;
 }
 
+/** Artwork that landed after the initial scan. Either field may be absent. */
+export interface ArtUpdate {
+  gameId: string;
+  iconPath?: string;
+  heroPath?: string;
+}
+
 export interface AxmApi {
   getSettings(): Promise<Settings>;
   setSettings(partial: Partial<Settings>): Promise<Settings>;
@@ -65,7 +74,7 @@ export interface AxmApi {
   browseMusic(dirPath: string | null): Promise<MusicListing>;
   pickMusicFolder(): Promise<Settings>;
   openBrowser(url: string): Promise<void>;
-  onArtUpdated(callback: (update: { gameId: string; iconPath: string }) => void): void;
+  onArtUpdated(callback: (update: ArtUpdate) => void): void;
   quit(): Promise<void>;
 }
 

@@ -4,6 +4,8 @@ import { AudioManager } from "./audio";
 export interface MenuItem {
   id: string;
   title: string;
+  /** Wide image to show as the menu background while this item is focused. */
+  backgroundUrl?: string;
   subtitle?: string;
   iconUrl?: string;
   iconGlyph?: string;
@@ -79,6 +81,8 @@ export class Xmb {
   private modalSelection: 0 | 1 | 2 | 3 = 0;
   private clearance: IconClearance = { above: 60, below: 44 };
 
+  private onSelectionChange: (item: MenuItem | null) => void = () => {};
+
   private categoryBarEl = document.getElementById("category-bar")!;
   private itemRailEl = document.getElementById("item-rail")!;
   private modalEl = document.getElementById("context-modal")!;
@@ -87,6 +91,15 @@ export class Xmb {
   private footerEl = document.getElementById("footer-hints")!;
 
   constructor(private categories: Category[], private audio: AudioManager) {}
+
+  /** Fired after every render with whatever is currently focused, or null if nothing is. */
+  setOnSelectionChange(callback: (item: MenuItem | null) => void): void {
+    this.onSelectionChange = callback;
+  }
+
+  activeCategoryId(): string {
+    return this.categories[this.activeCategory].id;
+  }
 
   setActiveCategory(categoryId: string): void {
     const index = this.categories.findIndex((c) => c.id === categoryId);
@@ -248,6 +261,7 @@ export class Xmb {
     this.renderItemRail();
     this.renderModal();
     this.renderFooter();
+    this.onSelectionChange(this.currentItems()[this.currentSelectedIndex()] ?? null);
   }
 
   private renderCategoryBar(): void {

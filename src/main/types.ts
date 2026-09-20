@@ -12,6 +12,8 @@ export interface GameEntry {
   installDir: string;
   drive: string;
   iconPath?: string;
+  /** Wide banner shown as the menu background while this game is selected. */
+  heroPath?: string;
   losslessProfile: 1 | 2 | 3 | null;
   hidden: boolean;
 }

@@ -11,9 +11,9 @@ built as a RetroArch XMB overlay. A-X-M uses:
 
 - `sounds/ambient.ogg` (from `bgm.ogg`) - menu background loop
 - `sounds/boot.ogg` (from `launch.ogg`) - boot stinger
-- `sounds/nav-up.ogg`, `sounds/nav-down.ogg` (from `up.ogg`/`down.ogg`) - navigation ticks
 - `sounds/confirm.ogg` (from `ok.ogg`), `sounds/back.ogg` (from `cancel.ogg`)
 - `sounds/context-open.ogg`, `sounds/context-close.ogg` (from `notice.ogg`/`notice_back.ogg`)
+
 The pack's icons are no longer used - see below.
 
 ## Supplied by the project owner
@@ -22,7 +22,12 @@ The pack's icons are no longer used - see below.
   white-on-transparent icon sheet provided for this project. Provenance and license
   of that sheet have not been verified here; confirm before redistributing.
 - `sounds/luminous.mp3` - the "Luminous Ambience" menu loop, from `Luminous_Standby.mp3`.
-  Same caveat: provenance not verified here.
+- `sounds/nav.mp3` - the navigation blip, from `menu navigation sound.mp3`. Replaces
+  the pack's `nav-up.ogg`/`nav-down.ogg`, which have been removed.
+- `icons/boot-logo.png` - the A-X-M wordmark shown on the boot splash, trimmed to its
+  own bounds from the supplied artwork.
+
+Same caveat as the icon sheet: provenance not verified here.
 
 ## Original to this project
 

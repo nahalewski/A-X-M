@@ -99,6 +99,9 @@ export function scanSteamGames(): GameEntry[] {
           installDir,
           drive: lib.slice(0, 2).toUpperCase(),
           iconPath: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900_2x.jpg`,
+          // Steam ships the same wide banner the store uses; the renderer falls back
+          // to the wave if a given app doesn't have one.
+          heroPath: `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_hero.jpg`,
           losslessProfile: null,
           hidden: false,
         });

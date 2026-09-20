@@ -16,7 +16,7 @@ const api = {
   pickMusicFolder: () => ipcRenderer.invoke("axm:pickMusicFolder"),
   openBrowser: (url: string) => ipcRenderer.invoke("axm:openBrowser", url),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),
-  onArtUpdated: (callback: (update: { gameId: string; iconPath: string }) => void) => {
+  onArtUpdated: (callback: (update: { gameId: string; iconPath?: string; heroPath?: string }) => void) => {
     ipcRenderer.on("axm:artUpdated", (_e, update) => callback(update));
   },
   quit: () => ipcRenderer.invoke("axm:quit"),

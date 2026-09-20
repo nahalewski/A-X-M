@@ -10,6 +10,9 @@ export const AMBIENT_TRACKS: Record<AmbientTrackId, { label: string; src: string
   luminous: { label: "Luminous Ambience", src: "assets/sounds/luminous.mp3" },
 };
 
+/** One blip for every direction, as the XMB uses - supplied for this project. */
+const NAV_SOUND = "assets/sounds/nav.mp3";
+
 export const AMBIENT_TRACK_IDS = Object.keys(AMBIENT_TRACKS) as AmbientTrackId[];
 
 /** HTMLMediaElement.volume throws outside [0,1], and rAF timing can overshoot a fade by a hair. */
@@ -133,11 +136,11 @@ export class AudioManager {
   }
 
   playMoveUp(): void {
-    safePlay("assets/sounds/nav-up.ogg", this.sfxVolume);
+    safePlay(NAV_SOUND, this.sfxVolume);
   }
 
   playMoveDown(): void {
-    safePlay("assets/sounds/nav-down.ogg", this.sfxVolume);
+    safePlay(NAV_SOUND, this.sfxVolume);
   }
 
   playConfirm(): void {

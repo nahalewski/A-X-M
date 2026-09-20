@@ -4,6 +4,7 @@ import { AudioManager, AMBIENT_TRACKS, AMBIENT_TRACK_IDS } from "./audio";
 import { GamepadNav } from "./gamepad";
 import { Xmb, Category, sourceGlyph } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
+import { GameBackground } from "./background";
 import { GameEntry, MediaEntry, MusicListing, Settings } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -137,6 +138,7 @@ async function main(): Promise<void> {
             title: g.name,
             subtitle: g.drive,
             iconUrl: g.iconPath,
+            backgroundUrl: g.heroPath,
             iconGlyph: sourceGlyph(g.source),
             badge: g.losslessProfile ? `LS ${g.losslessProfile}` : undefined,
             contextGame: g,
@@ -310,7 +312,9 @@ async function main(): Promise<void> {
     gamesCategory(),
     browserCategory(),
   ];
+  const gameBackground = new GameBackground(document.getElementById("game-bg")!);
   const xmb = new Xmb(categories, audio);
+  xmb.setOnSelectionChange((item) => gameBackground.show(item?.backgroundUrl));
   // Start on Game - it's a game hub first, whatever the XMB running order is.
   xmb.setActiveCategory("games");
   xmb.init();
@@ -368,10 +372,13 @@ async function main(): Promise<void> {
   tryLogo(0);
 
   // Box art arrives asynchronously in the background - patch it in as it lands.
-  window.axm.onArtUpdated(({ gameId, iconPath }) => {
+  window.axm.onArtUpdated(({ gameId, iconPath, heroPath }) => {
     const game = games.find((g) => g.id === gameId);
     if (!game) return;
-    game.iconPath = iconPath;
+    if (iconPath) game.iconPath = iconPath;
+    if (heroPath) game.heroPath = heroPath;
+    // refresh() re-runs the selection callback, so a banner that arrives while its
+    // game is already focused still fades in.
     xmb.refresh();
   });
 

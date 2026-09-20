@@ -69,22 +69,25 @@ Art is fetched in the background after a scan and cached under
 Misses are cached too, so unmatched names aren't retried on every launch. Without a
 key the grid just falls back to source letter badges.
 
+## Menu background
+
+Selecting a game swaps the animated wave for that game's wide hero banner, blurred
+and darkened behind the menu, the way a PS3 theme replaces the XMB background.
+Moving to another game crossfades; leaving the Game category fades back to the wave.
+
+Steam titles use Steam's own `library_hero.jpg`. Everything else is looked up on
+SteamGridDB with the same key as the box art, and cached next to it in
+`%APPDATA%\A-X-M\art-cache`. Games with no hero available simply keep the wave.
+
 ## Boot logo
 
 The splash shows `assets/icons/boot-logo.png` if it exists, falling back to
-`.webp`, `.jpg` and `.svg`, and finally to the A-X-M wordmark as text. Drop a file
-in at any of those names and rebuild; nothing else needs changing.
+`.webp`, `.jpg` and `.svg`, and finally to the A-X-M wordmark as text. Replace the
+file and rebuild; nothing else needs changing.
 
 ## Still needed before this is "done"
 
-1. **Audio assets** - drop these into `assets/sounds/`:
-   - `boot.ogg` - short boot stinger, plays once on launch.
-   - `ambient.ogg` - loop-friendly ambient pad, fades in after boot and loops until quit.
-     Settings > Menu Music switches between this ("XMB Ambience") and
-     `luminous.mp3` ("Luminous Ambience"); the change crossfades immediately.
-   UI navigation blips (move/confirm/back/context) are synthesized in-code, so the menu
-   has sound even without these two files.
-2. **Verified Lossless Scaling automation** - currently A-X-M just launches LS and lets
+1. **Verified Lossless Scaling automation** - currently A-X-M just launches LS and lets
    its own per-app auto-scale filters (which you configure inside LS) do the switching.
    Real automatic profile writing needs LS's `Settings.xml` schema verified against an
    actual install before it's safe to touch.
