@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>A-X-M</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="wave"></canvas>
+
+    <div id="app">
+      <header id="clock"></header>
+
+      <nav id="category-bar"></nav>
+
+      <section id="item-rail"></section>
+
+      <div id="footer-hints"></div>
+    </div>
+
+    <div id="context-modal" class="hidden">
+      <div id="context-panel">
+        <h2 id="context-title"></h2>
+        <div id="context-options"></div>
+        <div id="context-hint">A confirm &middot; B cancel</div>
+      </div>
+    </div>
+
+    <div id="boot-splash">
+      <div id="boot-logo">A-X-M</div>
+    </div>
+
+    <script src="main.js"></script>
+  </body>
+</html>

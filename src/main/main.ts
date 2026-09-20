@@ -1,0 +1,136 @@
+import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
+import * as path from "node:path";
+import { loadSettings, saveSettings, setGameOverride, Settings } from "./settingsStore";
+import { scanAllGames } from "./gameScanner";
+import { launchGame } from "./gameLauncher";
+import { GameEntry } from "./types";
+import { isLosslessScalingConfigPresent } from "./losslessScaling";
+import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
+
+// Let the compositor track the display's native refresh rate (120Hz on the Ally) via
+// vsync-synced requestAnimationFrame - just remove Chromium's internal 60fps throttle
+// rather than disabling vsync, which would tear and waste battery on a handheld.
+app.commandLine.appendSwitch("disable-frame-rate-limit");
+app.commandLine.appendSwitch("enable-gpu-rasterization");
+app.commandLine.appendSwitch("high-dpi-support", "1");
+
+let mainWindow: BrowserWindow | null = null;
+let cachedGames: GameEntry[] = [];
+
+function createWindow(): void {
+  const settings = loadSettings();
+  const display = screen.getPrimaryDisplay();
+
+  mainWindow = new BrowserWindow({
+    width: settings.windowed ? 1280 : display.size.width,
+    height: settings.windowed ? 800 : display.size.height,
+    fullscreen: !settings.windowed,
+    autoHideMenuBar: true,
+    backgroundColor: "#050814",
+    frame: settings.windowed,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  mainWindow.setMenuBarVisibility(false);
+  mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
+
+  if (process.argv.includes("--dev")) {
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+  }
+
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
+}
+
+function applyWindowMode(windowed: boolean): void {
+  if (!mainWindow) return;
+  const display = screen.getPrimaryDisplay();
+  mainWindow.setFullScreen(!windowed);
+  mainWindow.setMenuBarVisibility(false);
+  if (windowed) {
+    mainWindow.setSize(1280, 800);
+    mainWindow.center();
+  } else {
+    mainWindow.setSize(display.size.width, display.size.height);
+  }
+}
+
+app.whenReady().then(() => {
+  createWindow();
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
+});
+
+// ---- IPC ----
+
+ipcMain.handle("axm:getSettings", (): Settings => loadSettings());
+
+ipcMain.handle("axm:setSettings", (_e, partial: Partial<Settings>): Settings => {
+  const updated = saveSettings(partial);
+  if (partial.windowed !== undefined) applyWindowMode(partial.windowed);
+  return updated;
+});
+
+ipcMain.handle("axm:toggleFullscreen", (): Settings => {
+  const settings = loadSettings();
+  const windowed = !settings.windowed;
+  const updated = saveSettings({ windowed });
+  applyWindowMode(windowed);
+  return updated;
+});
+
+ipcMain.handle("axm:scanGames", async (): Promise<GameEntry[]> => {
+  cachedGames = await scanAllGames();
+  return cachedGames;
+});
+
+ipcMain.handle("axm:getGames", async (): Promise<GameEntry[]> => {
+  if (cachedGames.length === 0) cachedGames = await scanAllGames();
+  return cachedGames;
+});
+
+ipcMain.handle("axm:launchGame", (_e, gameId: string): void => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  if (game) launchGame(game);
+});
+
+ipcMain.handle("axm:setLosslessProfile", (_e, gameId: string, profile: 1 | 2 | 3 | null): Settings => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  if (game) game.losslessProfile = profile;
+  return setGameOverride(gameId, { losslessProfile: profile });
+});
+
+ipcMain.handle("axm:losslessScalingStatus", (): { configPresent: boolean } => ({
+  configPresent: isLosslessScalingConfigPresent(),
+}));
+
+ipcMain.handle("axm:quit", (): void => {
+  app.quit();
+});
+
+ipcMain.handle("axm:getMedia", (_e, kind: MediaKind): MediaEntry[] => scanMedia(kind));
+
+ipcMain.handle("axm:openMedia", (_e, filePath: string): void => {
+  shell.openPath(filePath);
+});
+
+ipcMain.handle("axm:pickGameFolder", async (): Promise<Settings> => {
+  if (!mainWindow) return loadSettings();
+  const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+  if (result.canceled || result.filePaths.length === 0) return loadSettings();
+  const settings = loadSettings();
+  const extraGameFolders = Array.from(new Set([...settings.extraGameFolders, result.filePaths[0]]));
+  return saveSettings({ extraGameFolders });
+});

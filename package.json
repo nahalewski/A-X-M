@@ -1,0 +1,37 @@
+{
+  "name": "axm",
+  "productName": "A-X-M",
+  "version": "0.1.0",
+  "description": "Ally XMB Menu - PS3-style game hub for ROG Xbox Ally",
+  "main": "dist/main/main.js",
+  "private": true,
+  "scripts": {
+    "build:main": "esbuild src/main/main.ts --bundle --platform=node --target=node22 --external:electron --outdir=dist/main --format=cjs && esbuild src/preload/preload.ts --bundle --platform=node --target=node22 --external:electron --outdir=dist/main --format=cjs",
+    "build:renderer": "esbuild src/renderer/main.ts --bundle --platform=browser --outdir=dist/renderer --format=iife",
+    "copy:assets": "node scripts/copy-assets.js",
+    "build": "npm run build:main && npm run build:renderer && npm run copy:assets",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev",
+    "package": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
+  },
+  "build": {
+    "appId": "com.axm.launcher",
+    "productName": "A-X-M",
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "assets/icons/app.ico"
+    }
+  }
+}

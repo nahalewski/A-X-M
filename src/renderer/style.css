@@ -1,0 +1,319 @@
+@font-face {
+  font-family: "XMB";
+  src: url("assets/fonts/xmb-font.ttf") format("truetype");
+  font-display: swap;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #050814;
+  font-family: "XMB", "Segoe UI", "Noto Sans", system-ui, sans-serif;
+  color: #eaf1ff;
+  user-select: none;
+}
+
+#wave {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#clock {
+  position: absolute;
+  top: 28px;
+  right: 42px;
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  opacity: 0.9;
+}
+
+#category-bar {
+  position: absolute;
+  top: 42%;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 64px;
+  transform: translateY(-50%);
+}
+
+.category {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.45;
+  transform: scale(0.8);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.category.active {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.category-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.category-icon img {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+}
+
+.category-label {
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  opacity: 0;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.2s ease;
+}
+
+.category.active .category-label {
+  opacity: 0.9;
+}
+
+#item-rail {
+  position: absolute;
+  /* left/top are set per-frame in JS to the selected category icon's own center,
+     so the item column never spreads into neighboring category icons and the
+     crossing point lines up with the icon rather than the icon+label block. */
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.item-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 220px;
+  height: 78px;
+  opacity: 0.3;
+  transform: scale(0.75);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.item-row-empty {
+  opacity: 0;
+  pointer-events: none;
+  height: 78px;
+}
+
+.item-row.selected {
+  opacity: 1;
+  transform: scale(1);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.15) 60%, transparent 80%);
+  border-radius: 16px;
+}
+
+.item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition: width 0.16s ease, height 0.16s ease;
+}
+
+.item-row.selected .item-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.item-title {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 210px;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+.item-row.selected .item-title {
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.item-subtitle {
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.item-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  letter-spacing: 0.4px;
+}
+
+#footer-hints {
+  position: absolute;
+  bottom: 26px;
+  left: 42px;
+  right: 42px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  opacity: 0.6;
+  letter-spacing: 0.4px;
+}
+
+#context-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  background: rgba(2, 4, 12, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.15s ease;
+}
+
+#context-modal.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#context-panel {
+  background: rgba(18, 22, 38, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  padding: 28px 34px;
+  min-width: 360px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+}
+
+#context-title {
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 18px;
+}
+
+#context-options {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.context-option {
+  flex: 1;
+  padding: 14px 10px;
+  text-align: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  opacity: 0.6;
+  transform: scale(0.95);
+  transition: all 0.15s ease;
+}
+
+.context-option.selected {
+  opacity: 1;
+  transform: scale(1);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+#context-hint {
+  font-size: 12px;
+  opacity: 0.6;
+  text-align: center;
+}
+
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: #050814;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.6s ease;
+}
+
+#boot-splash.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#boot-logo {
+  font-size: 56px;
+  font-weight: 200;
+  letter-spacing: 10px;
+  opacity: 0;
+  animation: boot-fade 1.6s ease forwards;
+}
+
+@keyframes boot-fade {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
