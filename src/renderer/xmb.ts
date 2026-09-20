@@ -98,6 +98,10 @@ export class Xmb {
   private selectedIndex = new Map<string, number>();
   private modalGame: GameEntry | null = null;
   private modalSelection: 0 | 1 | 2 | 3 = 0;
+  /** 0 = the scaling-profile row, 1 = the actions row beneath it. */
+  private modalRow: 0 | 1 = 0;
+  private modalActionIndex = 0;
+  private gameActions: { label: string; run: (game: GameEntry) => void }[] = [];
   private clearance: IconClearance = { above: 60, below: 44 };
 
   private onSelectionChange: (item: MenuItem | null) => void = () => {};
@@ -224,9 +228,16 @@ export class Xmb {
     }
   }
 
+  /** Extra actions offered in the game options view, wired up by the app. */
+  setGameActions(actions: { label: string; run: (game: GameEntry) => void }[]): void {
+    this.gameActions = actions;
+  }
+
   private openModal(game: GameEntry): void {
     this.modalGame = game;
     this.modalSelection = (game.losslessProfile ?? 0) as 0 | 1 | 2 | 3;
+    this.modalRow = 0;
+    this.modalActionIndex = 0;
     this.render();
   }
 
@@ -236,22 +247,37 @@ export class Xmb {
   }
 
   private handleModalAction(action: string): void {
-    if (action === "left") {
-      this.modalSelection = ((this.modalSelection + 3) % 4) as 0 | 1 | 2 | 3;
+    const onProfiles = this.modalRow === 0;
+    if (action === "up" || action === "down") {
+      if (this.gameActions.length > 0) {
+        this.modalRow = this.modalRow === 0 ? 1 : 0;
+        this.audio.playMoveUp();
+        this.render();
+      }
+    } else if (action === "left") {
+      if (onProfiles) this.modalSelection = ((this.modalSelection + 3) % 4) as 0 | 1 | 2 | 3;
+      else this.modalActionIndex = (this.modalActionIndex + this.gameActions.length - 1) % this.gameActions.length;
       this.audio.playMoveUp();
       this.render();
     } else if (action === "right") {
-      this.modalSelection = ((this.modalSelection + 1) % 4) as 0 | 1 | 2 | 3;
+      if (onProfiles) this.modalSelection = ((this.modalSelection + 1) % 4) as 0 | 1 | 2 | 3;
+      else this.modalActionIndex = (this.modalActionIndex + 1) % this.gameActions.length;
       this.audio.playMoveDown();
       this.render();
     } else if (action === "confirm") {
-      if (this.modalGame) {
+      const game = this.modalGame;
+      if (game && onProfiles) {
         const profile = this.modalSelection === 0 ? null : this.modalSelection;
-        this.modalGame.losslessProfile = profile;
-        window.axm.setLosslessProfile(this.modalGame.id, profile);
+        game.losslessProfile = profile;
+        window.axm.setLosslessProfile(game.id, profile);
+        this.audio.playConfirm();
+        this.closeModal();
+      } else if (game) {
+        const chosen = this.gameActions[this.modalActionIndex];
+        this.audio.playConfirm();
+        this.closeModal();
+        chosen?.run(game);
       }
-      this.audio.playConfirm();
-      this.closeModal();
     } else if (action === "back" || action === "context") {
       this.audio.playContextClose();
       this.closeModal();
@@ -446,16 +472,38 @@ export class Xmb {
     choices.className = "context-choices";
     ["None", "Profile 1", "Profile 2", "Profile 3"].forEach((label, i) => {
       const opt = document.createElement("div");
-      opt.className = "context-option" + (i === this.modalSelection ? " selected" : "");
+      opt.className =
+        "context-option" + (this.modalRow === 0 && i === this.modalSelection ? " selected" : "") +
+        (this.modalRow !== 0 ? " dim" : "");
       opt.textContent = label;
       choices.appendChild(opt);
     });
     this.modalOptionsEl.appendChild(choices);
+
+    if (this.gameActions.length > 0) {
+      const actionsHeading = document.createElement("div");
+      actionsHeading.className = "context-section";
+      actionsHeading.textContent = "Options";
+      this.modalOptionsEl.appendChild(actionsHeading);
+
+      const actions = document.createElement("div");
+      actions.className = "context-choices";
+      this.gameActions.forEach((a, i) => {
+        const opt = document.createElement("div");
+        opt.className =
+          "context-option" + (this.modalRow === 1 && i === this.modalActionIndex ? " selected" : "") +
+          (this.modalRow !== 1 ? " dim" : "");
+        opt.textContent = a.label;
+        actions.appendChild(opt);
+      });
+      this.modalOptionsEl.appendChild(actions);
+    }
   }
 
   private renderFooter(): void {
     if (this.modalGame) {
-      this.footerEl.innerHTML = `<span>◀ ▶ scaling profile</span><span>A apply &middot; B close</span>`;
+      const rows = this.gameActions.length > 0 ? "▲ ▼ row &middot; " : "";
+      this.footerEl.innerHTML = `<span>${rows}◀ ▶ choose</span><span>A apply &middot; B close</span>`;
       return;
     }
     const category = this.categories[this.activeCategory];

@@ -188,3 +188,82 @@ export async function resolveArt(name: string, kind: ArtKind = "grid"): Promise<
   saveIndex();
   return pathToFileURL(destination).href;
 }
+
+/** One choice in an artwork picker: the full image and a small preview of it. */
+export interface ArtChoice {
+  id: number;
+  url: string;
+  thumb: string;
+}
+
+/**
+ * Every static grid SteamGridDB has for `name`, for the "change artwork" picker.
+ * Portrait first, since that's the tile shape, but the rest are offered too.
+ */
+export async function listGridChoices(name: string, limit = 45): Promise<ArtChoice[]> {
+  if (!isGameArtConfigured()) return [];
+  const gameId = await findGameId(name);
+  if (!gameId) return [];
+  const seen = new Set<number>();
+  const out: ArtChoice[] = [];
+  for (const query of [`?dimensions=600x900&types=static&limit=${limit}`, `?types=static&limit=${limit}`]) {
+    const res = (await apiGet(`/grids/game/${gameId}${query}`)) as
+      | { data?: { id: number; url: string; thumb: string }[] }
+      | null;
+    for (const g of res?.data ?? []) {
+      if (seen.has(g.id) || !g.url) continue;
+      seen.add(g.id);
+      out.push({ id: g.id, url: g.url, thumb: g.thumb ?? g.url });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
+/** The first square icon SteamGridDB has for `name`, cached like the other art. */
+export async function resolveIcon(name: string): Promise<string | null> {
+  if (!isGameArtConfigured()) return null;
+  const index = loadIndex();
+  const key = `icon:${normalize(name)}`;
+  if (key in index) {
+    const cached = index[key];
+    if (cached === null) return null;
+    const full = path.join(artDir(), cached);
+    if (fs.existsSync(full)) return pathToFileURL(full).href;
+  }
+  const gameId = await findGameId(name);
+  if (!gameId) return null;
+  const res = (await apiGet(`/icons/game/${gameId}?types=static&limit=1`)) as
+    | { data?: { url?: string; thumb?: string }[] }
+    | null;
+  const url = res?.data?.[0]?.thumb ?? res?.data?.[0]?.url ?? null;
+  if (!url) {
+    if (res) {
+      index[key] = null;
+      saveIndex();
+    }
+    return null;
+  }
+  const fileName = createHash("sha1").update(key).digest("hex") + (path.extname(new URL(url).pathname) || ".png");
+  const destination = path.join(artDir(), fileName);
+  if (!(await download(url, destination))) return null;
+  index[key] = fileName;
+  saveIndex();
+  return pathToFileURL(destination).href;
+}
+
+/**
+ * Stores an arbitrary image URL in the art cache and returns its file:// URL, so a
+ * user's chosen artwork keeps working offline and doesn't re-download on launch.
+ */
+export async function cacheImage(url: string, cacheKey: string): Promise<string | null> {
+  const index = loadIndex();
+  const key = `pick:${cacheKey}`;
+  const ext = path.extname(new URL(url).pathname) || ".png";
+  const fileName = createHash("sha1").update(url).digest("hex") + ext;
+  const destination = path.join(artDir(), fileName);
+  if (!fs.existsSync(destination) && !(await download(url, destination))) return null;
+  index[key] = fileName;
+  saveIndex();
+  return pathToFileURL(destination).href;
+}

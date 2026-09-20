@@ -20,6 +20,22 @@ const api = {
   getSaves: () => ipcRenderer.invoke("axm:getSaves"),
   browseMedia: (kind: "photo" | "video", dirPath: string | null) =>
     ipcRenderer.invoke("axm:browseMedia", kind, dirPath),
+  listBundledAvatars: () => ipcRenderer.invoke("axm:listBundledAvatars"),
+  listPictures: () => ipcRenderer.invoke("axm:listPictures"),
+  fetchGameIcons: () => ipcRenderer.invoke("axm:fetchGameIcons"),
+  onGameIcon: (callback: (update: { gameId?: string; name?: string; url?: string; done?: boolean }) => void) => {
+    ipcRenderer.on("axm:gameIcon", (_e, update) => callback(update));
+  },
+  saveProfile: (profile: { name: string; avatarUrl: string }) => ipcRenderer.invoke("axm:saveProfile", profile),
+  cacheImage: (url: string, key: string) => ipcRenderer.invoke("axm:cacheImage", url, key),
+  listArtChoices: (gameId: string) => ipcRenderer.invoke("axm:listArtChoices", gameId),
+  setGameArt: (gameId: string, url: string) => ipcRenderer.invoke("axm:setGameArt", gameId, url),
+  jellyfinDiscover: () => ipcRenderer.invoke("axm:jellyfinDiscover"),
+  jellyfinLogin: (server: unknown, username: string, password: string) =>
+    ipcRenderer.invoke("axm:jellyfinLogin", server, username, password),
+  jellyfinForget: (serverUrl: string) => ipcRenderer.invoke("axm:jellyfinForget", serverUrl),
+  jellyfinLibraries: (login: unknown) => ipcRenderer.invoke("axm:jellyfinLibraries", login),
+  jellyfinItems: (login: unknown, parentId: string) => ipcRenderer.invoke("axm:jellyfinItems", login, parentId),
   getSteamLibrary: () => ipcRenderer.invoke("axm:getSteamLibrary"),
   installSteamGame: (appid: number) => ipcRenderer.invoke("axm:installSteamGame", appid),
   launchSteamApp: (appid: number) => ipcRenderer.invoke("axm:launchSteamApp", appid),

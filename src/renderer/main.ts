@@ -6,6 +6,8 @@ import { Xmb, Category, MenuItem, sourceGlyph } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
 import { MusicVisualizer } from "./visualizer";
 import { MediaViewer } from "./mediaViewer";
+import { GridPicker, GridChoice } from "./gridPicker";
+import { TextEntry } from "./textEntry";
 import { GameBackground } from "./background";
 import {
   ThemeManager,
@@ -21,6 +23,9 @@ import {
   BrowseListing,
   DEFAULT_MONTH_THEMES,
   GameEntry,
+  JellyfinItem,
+  JellyfinLogin,
+  JellyfinServer,
   LauncherEntry,
   MediaEntry,
   MonthTheme,
@@ -101,6 +106,115 @@ async function main(): Promise<void> {
   const musicPlayer = new MusicPlayer(audio);
   const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
   const mediaViewer = new MediaViewer(document.getElementById("media-viewer")!);
+  const gridPicker = new GridPicker(document.getElementById("grid-picker")!);
+  const textEntry = new TextEntry(document.getElementById("text-entry")!);
+
+  // ---- Overlay stack -------------------------------------------------------------
+  //
+  // Overlays (viewer, picker, keyboard, visualizer stage) each want first refusal on
+  // input. The menu only supports one external handler, so nesting - a wizard that
+  // opens a keyboard that gives way to a picker - is managed here as a stack.
+  type Handler = (action: string) => boolean;
+  const overlayStack: Handler[] = [];
+  const pushOverlay = (h: Handler) => {
+    overlayStack.push(h);
+    xmb.setExternalHandler(h);
+  };
+  const popOverlay = () => {
+    overlayStack.pop();
+    xmb.setExternalHandler(overlayStack[overlayStack.length - 1] ?? null);
+  };
+
+  const askText = (title: string, fields: Parameters<TextEntry["show"]>[1]): Promise<string[] | null> =>
+    new Promise((resolve) => {
+      textEntry.show(
+        title,
+        fields,
+        (values) => { popOverlay(); resolve(values); },
+        () => { popOverlay(); resolve(null); }
+      );
+      pushOverlay((a) => textEntry.handle(a as Parameters<TextEntry["handle"]>[0]));
+    });
+
+  const pickFromGrid = (title: string, choices: GridChoice[]): Promise<GridChoice | null> =>
+    new Promise((resolve) => {
+      gridPicker.show(
+        title,
+        choices,
+        (c) => { popOverlay(); resolve(c); },
+        () => { popOverlay(); resolve(null); }
+      );
+      pushOverlay((a) => gridPicker.handle(a as Parameters<GridPicker["handle"]>[0]));
+    });
+
+  // ---- Avatar picking ------------------------------------------------------------
+
+  // One IPC subscription for the streamed game-icon lookups; whichever picker is
+  // open at the time is the sink, so repeated pickers don't stack listeners.
+  let gameIconSink: ((u: { gameId?: string; name?: string; url?: string; done?: boolean }) => void) | null = null;
+  window.axm.onGameIcon((u) => gameIconSink?.(u));
+
+  /** Three sources: the bundled set, the user's own pictures, or a game's icon. */
+  const pickAvatar = async (): Promise<string | null> => {
+    const bundled = await window.axm.listBundledAvatars();
+    const source = await pickFromGrid("Where should your avatar come from?", [
+      { id: "bundled", imageUrl: bundled[0]?.url ?? "assets/icons/user.png", label: "A-X-M avatars" },
+      { id: "pictures", imageUrl: "assets/icons/photo.png", label: "My Pictures" },
+      { id: "games", imageUrl: "assets/icons/games.svg", label: "Game icons" },
+    ]);
+    if (!source) return null;
+
+    if (source.id === "bundled") {
+      const pick = await pickFromGrid("Choose an avatar", bundled.map((a) => ({ id: a.id, imageUrl: a.url })));
+      return pick?.imageUrl ?? null;
+    }
+
+    if (source.id === "pictures") {
+      const pictures = await window.axm.listPictures();
+      const pick = await pickFromGrid(
+        "Choose a picture",
+        pictures.map((p) => ({ id: p.id, imageUrl: p.url, label: p.label }))
+      );
+      if (!pick) return null;
+      // Copy it into the app's cache so the avatar survives the original moving.
+      return (await window.axm.cacheImage(pick.imageUrl, `avatar-${pick.id}`)) ?? pick.imageUrl;
+    }
+
+    // Game icons arrive one lookup at a time; the grid fills as they land.
+    const icons: GridChoice[] = [];
+    const donePromise = new Promise<void>((resolve) => {
+      gameIconSink = (u) => {
+        if (u.done) {
+          gridPicker.setStatus(`${icons.length} game icons`);
+          gameIconSink = null;
+          resolve();
+          return;
+        }
+        if (u.gameId && u.url) {
+          icons.push({ id: u.gameId, imageUrl: u.url, label: u.name });
+          if (gridPicker.isOpen()) gridPicker.setChoices([...icons], `Loading… ${icons.length} so far`);
+        }
+      };
+    });
+    void window.axm.fetchGameIcons();
+    const pickPromise = pickFromGrid("Choose a game icon", []);
+    gridPicker.setStatus("Looking up icons on SteamGridDB…");
+    await Promise.race([donePromise, pickPromise]);
+    const pick = await pickPromise;
+    if (!pick) return null;
+    return (await window.axm.cacheImage(pick.imageUrl, `avatar-${pick.id}`)) ?? pick.imageUrl;
+  };
+
+  /** First-boot setup: a name and an avatar. Also reachable later from Users. */
+  const runProfileSetup = async (existing: { name: string; avatarUrl: string } | null): Promise<void> => {
+    const answers = await askText("Welcome to A-X-M", [{ label: "Your name", value: existing?.name ?? "" }]);
+    if (!answers) return;
+    const name = answers[0] || existing?.name || "Player";
+    const avatarUrl = (await pickAvatar()) ?? existing?.avatarUrl ?? "assets/icons/user.png";
+    settings = await window.axm.saveProfile({ name, avatarUrl });
+    audio.playConfirm();
+    xmb.refresh();
+  };
   const themeManager = new ThemeManager(ribbon, backgroundLayer);
 
   /**
@@ -157,18 +271,18 @@ async function main(): Promise<void> {
     visualizer.setTrackName(musicPlayer.current()?.name ?? null);
     visualizer.setMode("stage");
     ribbon.setRibbonsVisible(false);
-    xmb.setExternalHandler(stageHandler);
+    pushOverlay(stageHandler);
   };
 
   const leaveStage = () => {
-    xmb.setExternalHandler(null);
+    if (overlayStack[overlayStack.length - 1] === stageHandler) popOverlay();
     visualizer.setMode("background");
     audio.playBack();
     xmb.refresh();
   };
 
   const clearVisualizer = () => {
-    xmb.setExternalHandler(null);
+    if (overlayStack[overlayStack.length - 1] === stageHandler) popOverlay();
     visualizer.setMode("off");
     visualizer.setTrackName(null);
     applyTheme();
@@ -180,15 +294,55 @@ async function main(): Promise<void> {
     return {
       id: "users",
       label: "Users",
-      iconUrl: "assets/icons/user.png",
-      getItems: () => [
-        {
-          id: "current-user",
-          title: navigator.userAgent.includes("Windows") ? "Signed in" : "User",
-          subtitle: "A-X-M",
-          iconUrl: "assets/icons/user.png",
-        },
-      ],
+      // A getter, so the column's own icon becomes the avatar once one is chosen.
+      get iconUrl() {
+        return settings.profile?.avatarUrl ?? "assets/icons/user.png";
+      },
+      getItems: () => {
+        const profile = settings.profile;
+        if (!profile) {
+          return [
+            {
+              id: "create-profile",
+              title: "Create your profile",
+              subtitle: "Name and avatar",
+              iconUrl: "assets/icons/user.png",
+              onConfirm: () => runProfileSetup(null),
+            },
+          ];
+        }
+        return [
+          {
+            id: "profile",
+            title: profile.name,
+            subtitle: "Signed in",
+            iconUrl: profile.avatarUrl,
+            iconGlyph: profile.name.slice(0, 1).toUpperCase(),
+          },
+          {
+            id: "change-avatar",
+            title: "Change Avatar",
+            iconUrl: "assets/icons/photo.png",
+            onConfirm: async () => {
+              const avatarUrl = await pickAvatar();
+              if (!avatarUrl) return;
+              settings = await window.axm.saveProfile({ ...profile, avatarUrl });
+              xmb.refresh();
+            },
+          },
+          {
+            id: "change-name",
+            title: "Change Name",
+            iconGlyph: "Aa",
+            onConfirm: async () => {
+              const answers = await askText("Your name", [{ label: "Name", value: profile.name }]);
+              if (!answers || !answers[0]) return;
+              settings = await window.axm.saveProfile({ ...profile, name: answers[0] });
+              xmb.refresh();
+            },
+          },
+        ];
+      },
     };
   }
 
@@ -469,13 +623,22 @@ async function main(): Promise<void> {
    * time, and open files in the in-app viewer rather than handing off to Windows.
    * A descends into a folder or opens a file, B goes back up.
    */
+  /** A mode that can take over a media column's list, e.g. Jellyfin inside Video. */
+  interface ColumnMode {
+    active: () => boolean;
+    items: () => MenuItem[];
+    back: () => boolean;
+    hint: () => string;
+  }
+
   function mediaCategory(
     kind: "photo" | "video",
     label: string,
     iconUrl: string,
     getListing: () => BrowseListing,
     setListing: (l: BrowseListing) => void,
-    leading: MenuItem[] = []
+    leading: MenuItem[] = [],
+    mode?: ColumnMode
   ): Category {
     const openFolder = async (dirPath: string | null) => {
       setListing(await window.axm.browseMedia(kind, dirPath));
@@ -490,7 +653,7 @@ async function main(): Promise<void> {
         audio.fadeOutAmbient(400);
       }
       mediaViewer.open(kind, entry, getListing().entries);
-      xmb.setExternalHandler((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+      pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
     };
 
     return {
@@ -498,16 +661,19 @@ async function main(): Promise<void> {
       label,
       iconUrl,
       onBack: () => {
+        if (mode?.active()) return mode.back();
         const listing = getListing();
         if (!listing.parent) return false;
         void openFolder(listing.parent);
         return true;
       },
       footerHint: () => {
+        if (mode?.active()) return mode.hint();
         const listing = getListing();
         return listing.parent ? listing.title : undefined;
       },
       getItems: () => {
+        if (mode?.active()) return mode.items();
         const listing = getListing();
         if (listing.entries.length === 0 && leading.length === 0) {
           return [
@@ -545,19 +711,209 @@ async function main(): Promise<void> {
   // Leaving either viewer hands input back to the menu and brings the menu music
   // back if a video had taken it.
   mediaViewer.setOnClose(() => {
-    xmb.setExternalHandler(null);
+    popOverlay();
     audio.playBack();
     if (!musicPlayer.current()) audio.fadeInAmbient(1200);
   });
 
-  // Jellyfin's web client, on its default port. Sits at the top of Video, ahead of
-  // the local files, since a media server is where most of the video actually is.
+  // ---- Jellyfin, inside the Video column ---------------------------------------
+  //
+  // Servers are found by broadcast; a sign-in is asked for once per server and the
+  // token kept, so the next visit goes straight to the libraries. Video items play
+  // in the in-app viewer off the server's direct stream.
+  const jf = {
+    active: false,
+    view: "servers" as "servers" | "libraries" | "items",
+    servers: [] as JellyfinServer[],
+    searching: false,
+    login: null as JellyfinLogin | null,
+    libraries: [] as JellyfinItem[],
+    // Folder stack: each level's parent id + name + items.
+    stack: [] as { id: string; name: string; items: JellyfinItem[] }[],
+    status: "" as string,
+  };
+
+  const jfRefresh = () => {
+    xmb.resetSelection("video");
+    xmb.refresh();
+  };
+
+  const jfDiscover = async () => {
+    jf.searching = true;
+    jf.status = "Searching the network…";
+    xmb.refresh();
+    jf.servers = await window.axm.jellyfinDiscover();
+    jf.searching = false;
+    jf.status = jf.servers.length === 0 ? "No Jellyfin servers answered" : "";
+    xmb.refresh();
+  };
+
+  const jfOpenLibraries = async (login: JellyfinLogin) => {
+    jf.status = "Loading libraries…";
+    xmb.refresh();
+    const libs = await window.axm.jellyfinLibraries(login);
+    if (!libs) {
+      // Token revoked or server changed - drop the saved login and ask again.
+      settings = await window.axm.jellyfinForget(login.serverUrl);
+      jf.status = "Saved sign-in no longer works - sign in again";
+      jf.view = "servers";
+      jfRefresh();
+      return;
+    }
+    jf.login = login;
+    jf.libraries = libs;
+    jf.stack = [];
+    jf.status = "";
+    jf.view = "libraries";
+    jfRefresh();
+  };
+
+  const jfSignIn = async (server: JellyfinServer) => {
+    const saved = settings.jellyfinLogins[server.url];
+    if (saved) return jfOpenLibraries(saved);
+    const answers = await askText(`Sign in to ${server.name}`, [
+      { label: "Username" },
+      { label: "Password", secret: true },
+    ]);
+    if (!answers) return;
+    jf.status = "Signing in…";
+    xmb.refresh();
+    const login = await window.axm.jellyfinLogin(server, answers[0], answers[1]);
+    if (!login) {
+      jf.status = "Sign-in failed - check the username and password";
+      xmb.refresh();
+      return;
+    }
+    settings = await window.axm.getSettings();
+    await jfOpenLibraries(login);
+  };
+
+  const jfDescend = async (item: JellyfinItem) => {
+    if (!jf.login) return;
+    jf.status = "Loading…";
+    xmb.refresh();
+    const items = (await window.axm.jellyfinItems(jf.login, item.id)) ?? [];
+    jf.stack.push({ id: item.id, name: item.name, items });
+    jf.status = "";
+    jf.view = "items";
+    jfRefresh();
+  };
+
+  const jfPlay = (item: JellyfinItem) => {
+    if (!item.streamUrl) return;
+    musicPlayer.stop();
+    audio.fadeOutAmbient(400);
+    mediaViewer.open("video", { kind: "file", name: item.name, filePath: item.id, url: item.streamUrl }, [
+      { kind: "file", name: item.name, filePath: item.id, url: item.streamUrl },
+    ]);
+    pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+  };
+
+  const jfItems = (): MenuItem[] => {
+    const statusRow: MenuItem[] = jf.status
+      ? [{ id: "jf-status", title: jf.status, iconUrl: "assets/icons/jellyfin.svg" }]
+      : [];
+
+    if (jf.view === "servers") {
+      const rows: MenuItem[] = jf.servers.map((s) => ({
+        id: `jf-server-${s.id}`,
+        title: s.name,
+        subtitle: settings.jellyfinLogins[s.url]
+          ? `${s.url} · signed in as ${settings.jellyfinLogins[s.url].userName}`
+          : s.url,
+        iconUrl: "assets/icons/jellyfin.svg",
+        badge: settings.jellyfinLogins[s.url] ? "SAVED" : undefined,
+        onConfirm: () => jfSignIn(s),
+        contextHint: settings.jellyfinLogins[s.url] ? "forget sign-in" : undefined,
+        onContext: () => {
+          if (!settings.jellyfinLogins[s.url]) return false;
+          void window.axm.jellyfinForget(s.url).then((next) => {
+            settings = next;
+            xmb.refresh();
+          });
+          return true;
+        },
+      }));
+      rows.push({
+        id: "jf-search",
+        title: jf.searching ? "Searching…" : "Search Again",
+        iconGlyph: "↻",
+        onConfirm: () => (jf.searching ? undefined : jfDiscover()),
+      });
+      return [...statusRow, ...rows];
+    }
+
+    if (jf.view === "libraries") {
+      return [
+        ...statusRow,
+        ...jf.libraries.map((lib) => ({
+          id: `jf-lib-${lib.id}`,
+          title: lib.name,
+          subtitle: lib.type,
+          iconUrl: lib.imageUrl ?? "assets/icons/jellyfin.svg",
+          iconGlyph: "J",
+          onConfirm: () => jfDescend(lib),
+        })),
+      ];
+    }
+
+    const level = jf.stack[jf.stack.length - 1];
+    if (!level) return statusRow;
+    if (level.items.length === 0) return [...statusRow, { id: "jf-empty", title: "Nothing here", iconUrl: "assets/icons/jellyfin.svg" }];
+    return [
+      ...statusRow,
+      ...level.items.map((item) => ({
+        id: `jf-item-${item.id}`,
+        title: item.name,
+        subtitle: item.isFolder ? item.type : item.streamUrl ? "Play" : item.type,
+        iconUrl: item.imageUrl ?? (item.isFolder ? "assets/icons/folder.png" : "assets/icons/video.png"),
+        iconGlyph: item.isFolder ? "▸" : "▶",
+        onConfirm: () => (item.isFolder ? jfDescend(item) : jfPlay(item)),
+      })),
+    ];
+  };
+
+  /** True if B was consumed by stepping back inside Jellyfin. */
+  const jfBack = (): boolean => {
+    if (!jf.active) return false;
+    if (jf.view === "items") {
+      jf.stack.pop();
+      if (jf.stack.length === 0) jf.view = "libraries";
+      jfRefresh();
+      return true;
+    }
+    if (jf.view === "libraries") {
+      jf.view = "servers";
+      jf.login = null;
+      jfRefresh();
+      return true;
+    }
+    jf.active = false;
+    jf.status = "";
+    jfRefresh();
+    return true;
+  };
+
+  const jfHint = (): string => {
+    if (jf.view === "servers") return "Jellyfin";
+    if (jf.view === "libraries") return `Jellyfin · ${jf.login?.serverName ?? ""}`;
+    return `Jellyfin · ${jf.stack.map((s) => s.name).join(" › ")}`;
+  };
+
   const jellyfinEntry: MenuItem = {
     id: "jellyfin",
     title: "Jellyfin",
-    subtitle: "Media server",
+    subtitle: (() => {
+      const logins = Object.values(settings.jellyfinLogins);
+      return logins.length > 0 ? `Signed in to ${logins.map((l) => l.serverName).join(", ")}` : "Media server";
+    })(),
     iconUrl: "assets/icons/jellyfin.svg",
-    onConfirm: () => window.axm.openBrowser("http://localhost:8096/"),
+    onConfirm: () => {
+      jf.active = true;
+      jf.view = "servers";
+      jfRefresh();
+      if (jf.servers.length === 0) void jfDiscover();
+    },
   };
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
@@ -928,15 +1284,48 @@ async function main(): Promise<void> {
     settingsCategory(),
     mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photoListing, (l) => (photoListing = l)),
     musicCategory(),
-    mediaCategory("video", "Video", "assets/icons/video.png", () => videoListing, (l) => (videoListing = l), [
-      jellyfinEntry,
-    ]),
+    mediaCategory(
+      "video",
+      "Video",
+      "assets/icons/video.png",
+      () => videoListing,
+      (l) => (videoListing = l),
+      [jellyfinEntry],
+      { active: () => jf.active, items: jfItems, back: jfBack, hint: jfHint }
+    ),
     gamesCategory(),
     browserCategory(),
   ];
   const gameBackground = new GameBackground(document.getElementById("game-bg")!);
   const xmb = new Xmb(categories, audio);
   xmb.setOnSelectionChange((item) => gameBackground.show(item?.backgroundUrl));
+
+  // Y on a game -> Options -> Change Artwork: every grid SteamGridDB has for it.
+  xmb.setGameActions([
+    {
+      label: "Change Artwork…",
+      run: async (game) => {
+        const pickPromise = pickFromGrid(`Artwork for ${game.name}`, []);
+        gridPicker.setStatus("Looking up artwork on SteamGridDB…");
+        const choices = await window.axm.listArtChoices(game.id);
+        if (gridPicker.isOpen()) {
+          gridPicker.setChoices(
+            choices.map((c) => ({ id: String(c.id), imageUrl: c.thumb })),
+            choices.length === 0 ? "No artwork found for this game" : `${choices.length} covers`
+          );
+        }
+        const pick = await pickPromise;
+        if (!pick) return;
+        const full = choices.find((c) => String(c.id) === pick.id)?.url ?? pick.imageUrl;
+        const cached = await window.axm.setGameArt(game.id, full);
+        if (cached) {
+          game.iconPath = cached;
+          audio.playConfirm();
+          xmb.refresh();
+        }
+      },
+    },
+  ]);
   // Start on Game - it's a game hub first, whatever the XMB running order is.
   xmb.setActiveCategory("games");
   xmb.init();
@@ -1019,7 +1408,11 @@ async function main(): Promise<void> {
   audio.playBootThenAmbient();
 
   const bootSplash = document.getElementById("boot-splash")!;
-  setTimeout(() => bootSplash.classList.add("hidden"), 1600);
+  setTimeout(() => {
+    bootSplash.classList.add("hidden");
+    // First boot: no profile yet, so set one up before the menu is used.
+    if (!settings.profile) void runProfileSetup(null);
+  }, 1600);
 
   // Background rescan shortly after boot to pick up anything the first pass missed,
   // and to fill in the media categories without blocking startup on slow drives.

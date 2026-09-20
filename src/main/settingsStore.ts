@@ -5,6 +5,23 @@ import * as path from "node:path";
 export interface GameOverride {
   hidden?: boolean;
   losslessProfile?: 1 | 2 | 3 | null;
+  /** file:// URL of artwork the user picked, taking precedence over the auto lookup. */
+  artUrl?: string;
+}
+
+export interface UserProfile {
+  name: string;
+  /** file:// or asset URL of the avatar image. */
+  avatarUrl: string;
+}
+
+/** A Jellyfin login. The access token is kept, the password never is. */
+export interface JellyfinLogin {
+  serverUrl: string;
+  serverName: string;
+  userId: string;
+  userName: string;
+  accessToken: string;
 }
 
 /** Which loop plays behind the menu. Values match AMBIENT_TRACKS in the renderer. */
@@ -86,6 +103,10 @@ export interface Settings {
   ribbonEnabled: boolean;
   /** Whether the music visualizer may take over the background. */
   visualizerEnabled: boolean;
+  /** Null until first-boot setup has run. */
+  profile: UserProfile | null;
+  /** Saved Jellyfin logins, keyed by server URL. */
+  jellyfinLogins: Record<string, JellyfinLogin>;
 }
 
 const DEFAULTS: Settings = {
@@ -106,6 +127,8 @@ const DEFAULTS: Settings = {
   customImageUrl: "",
   ribbonEnabled: true,
   visualizerEnabled: true,
+  profile: null,
+  jellyfinLogins: {},
 };
 
 let cache: Settings | null = null;

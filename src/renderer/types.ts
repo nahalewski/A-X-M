@@ -111,6 +111,40 @@ export interface SteamLibrary {
   games: SteamLibraryEntry[];
 }
 
+export interface UserProfile {
+  name: string;
+  avatarUrl: string;
+}
+
+export interface JellyfinLogin {
+  serverUrl: string;
+  serverName: string;
+  userId: string;
+  userName: string;
+  accessToken: string;
+}
+
+export interface JellyfinServer {
+  name: string;
+  url: string;
+  id: string;
+}
+
+export interface JellyfinItem {
+  id: string;
+  name: string;
+  type: string;
+  isFolder: boolean;
+  imageUrl?: string;
+  streamUrl?: string;
+}
+
+export interface ArtChoice {
+  id: number;
+  url: string;
+  thumb: string;
+}
+
 export interface SaveEntry {
   id: string;
   name: string;
@@ -150,6 +184,8 @@ export interface Settings {
   customImageUrl: string;
   ribbonEnabled: boolean;
   visualizerEnabled: boolean;
+  profile: UserProfile | null;
+  jellyfinLogins: Record<string, JellyfinLogin>;
 }
 
 /** Artwork that landed after the initial scan. Either field may be absent. */
@@ -173,6 +209,19 @@ export interface AxmApi {
   openMedia(filePath: string): Promise<void>;
   getSaves(): Promise<SaveEntry[]>;
   browseMedia(kind: "photo" | "video", dirPath: string | null): Promise<BrowseListing>;
+  listBundledAvatars(): Promise<{ id: string; url: string }[]>;
+  listPictures(): Promise<{ id: string; url: string; label: string }[]>;
+  fetchGameIcons(): Promise<void>;
+  onGameIcon(callback: (update: { gameId?: string; name?: string; url?: string; done?: boolean }) => void): void;
+  saveProfile(profile: UserProfile): Promise<Settings>;
+  cacheImage(url: string, key: string): Promise<string | null>;
+  listArtChoices(gameId: string): Promise<ArtChoice[]>;
+  setGameArt(gameId: string, url: string): Promise<string | null>;
+  jellyfinDiscover(): Promise<JellyfinServer[]>;
+  jellyfinLogin(server: JellyfinServer, username: string, password: string): Promise<JellyfinLogin | null>;
+  jellyfinForget(serverUrl: string): Promise<Settings>;
+  jellyfinLibraries(login: JellyfinLogin): Promise<JellyfinItem[] | null>;
+  jellyfinItems(login: JellyfinLogin, parentId: string): Promise<JellyfinItem[] | null>;
   getSteamLibrary(): Promise<SteamLibrary>;
   installSteamGame(appid: number): Promise<void>;
   launchSteamApp(appid: number): Promise<void>;

@@ -703,3 +703,223 @@ body {
   opacity: 0.8;
   letter-spacing: 0.5px;
 }
+
+/* Grid picker: nine across, rows scroll. Above the menu and the media viewer. */
+#grid-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 22;
+  background: rgba(3, 5, 12, 0.94);
+  display: flex;
+  flex-direction: column;
+  padding: 36px 6vw 28px;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#grid-picker.hidden,
+#text-entry.hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.grid-title {
+  font-size: 24px;
+  font-weight: 300;
+  letter-spacing: 0.8px;
+  margin-bottom: 18px;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+}
+
+.grid-cells {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 10px;
+  align-content: start;
+  scrollbar-width: none;
+}
+
+.grid-cell {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid transparent;
+  opacity: 0.72;
+  transition: transform 0.12s ease, opacity 0.12s ease, border-color 0.12s ease;
+}
+
+.grid-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.grid-cell.broken img {
+  opacity: 0.15;
+}
+
+.grid-cell.selected {
+  opacity: 1;
+  transform: scale(1.06);
+  border-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+  z-index: 1;
+}
+
+.grid-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85), transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grid-status {
+  margin-top: 14px;
+  font-size: 13px;
+  opacity: 0.65;
+  min-height: 18px;
+}
+
+/* Text entry with the on-screen keyboard. */
+#text-entry {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  background: rgba(3, 5, 12, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.entry-title {
+  font-size: 26px;
+  font-weight: 300;
+  letter-spacing: 0.8px;
+}
+
+.entry-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(640px, 80vw);
+}
+
+.entry-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  opacity: 0.6;
+}
+
+.entry-field.active {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.entry-label {
+  font-size: 12px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.entry-value {
+  font-size: 22px;
+  min-height: 28px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entry-value.caret::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 22px;
+  margin-left: 2px;
+  vertical-align: -3px;
+  background: #fff;
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+@keyframes caret-blink {
+  50% { opacity: 0; }
+}
+
+.entry-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.entry-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.entry-key {
+  min-width: 52px;
+  height: 50px;
+  padding: 0 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  opacity: 0.75;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.entry-key.wide {
+  min-width: 110px;
+}
+
+.entry-key.on {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.entry-key.selected {
+  opacity: 1;
+  transform: scale(1.08);
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.entry-hint {
+  font-size: 13px;
+  opacity: 0.55;
+}
+
+/* Avatar in the Users column. */
+.item-icon.avatar {
+  border-radius: 50%;
+}
+
+/* The row of the game options view that isn't focused. */
+.context-option.dim {
+  opacity: 0.35;
+}

@@ -12,6 +12,10 @@ import { browseMusic, MusicListing } from "./musicLibrary";
 import { scanSaves, SaveEntry } from "./saveScanner";
 import { browseMedia, BrowseKind, BrowseListing } from "./mediaBrowser";
 import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary";
+import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
+import { mediaRoot } from "./mediaBrowser";
+import * as jellyfin from "./jellyfin";
+import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 
@@ -213,6 +217,115 @@ ipcMain.handle("axm:openMedia", (_e, filePath: string): void => {
 
 ipcMain.handle("axm:browseMedia", (_e, kind: BrowseKind, dirPath: string | null): BrowseListing =>
   browseMedia(kind, dirPath)
+);
+
+// ---- Profile & avatars ------------------------------------------------------------
+
+/** The avatars that ship with the app, as renderer-relative URLs. */
+ipcMain.handle("axm:listBundledAvatars", (): { id: string; url: string }[] => {
+  const dir = path.join(__dirname, "..", "renderer", "assets", "avatars");
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((f) => /\.(png|jpg|jpeg|webp)$/i.test(f))
+      .sort()
+      .map((f) => ({ id: f, url: `assets/avatars/${f}` }));
+  } catch {
+    return [];
+  }
+});
+
+/** Every image under the user's Pictures folder, a few levels deep, for the avatar picker. */
+ipcMain.handle("axm:listPictures", (): { id: string; url: string; label: string }[] => {
+  const out: { id: string; url: string; label: string }[] = [];
+  const walk = (dir: string, depth: number) => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name.startsWith(".")) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (depth > 0) walk(full, depth - 1);
+      } else if (/\.(png|jpg|jpeg|webp|bmp)$/i.test(e.name)) {
+        out.push({ id: full, url: pathToFileURL(full).href, label: path.basename(e.name, path.extname(e.name)) });
+      }
+      if (out.length >= 400) return;
+    }
+  };
+  walk(mediaRoot("photo"), 3);
+  return out;
+});
+
+/**
+ * A SteamGridDB icon for each scanned game, for the avatar picker. Streams results
+ * back as they land, since a hundred lookups shouldn't leave the picker empty.
+ */
+ipcMain.handle("axm:fetchGameIcons", async (): Promise<void> => {
+  const targets = cachedGames.filter((g) => !g.hidden);
+  const CONCURRENCY = 3;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < targets.length) {
+      const game = targets[cursor++];
+      const url = await resolveIcon(game.name);
+      if (url && !mainWindow?.isDestroyed()) {
+        mainWindow?.webContents.send("axm:gameIcon", { gameId: game.id, name: game.name, url });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:gameIcon", { done: true });
+});
+
+ipcMain.handle("axm:saveProfile", (_e, profile: UserProfile): Settings => saveSettings({ profile }));
+
+/** Copies a picked image into the art cache so the avatar survives the source moving. */
+ipcMain.handle("axm:cacheImage", (_e, url: string, key: string): Promise<string | null> => cacheImage(url, key));
+
+// ---- Game artwork -----------------------------------------------------------------
+
+ipcMain.handle("axm:listArtChoices", (_e, gameId: string): Promise<ArtChoice[]> => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  return game ? listGridChoices(game.name) : Promise.resolve([]);
+});
+
+ipcMain.handle("axm:setGameArt", async (_e, gameId: string, url: string): Promise<string | null> => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  if (!game) return null;
+  const cached = await cacheImage(url, `art-${gameId}`);
+  if (!cached) return null;
+  game.iconPath = cached;
+  setGameOverride(gameId, { artUrl: cached });
+  return cached;
+});
+
+// ---- Jellyfin ---------------------------------------------------------------------
+
+ipcMain.handle("axm:jellyfinDiscover", (): Promise<jellyfin.JellyfinServer[]> => jellyfin.discoverServers());
+
+ipcMain.handle(
+  "axm:jellyfinLogin",
+  (_e, server: jellyfin.JellyfinServer, username: string, password: string): Promise<JellyfinLogin | null> =>
+    jellyfin.login(server, username, password)
+);
+
+ipcMain.handle("axm:jellyfinForget", (_e, serverUrl: string): Settings => {
+  jellyfin.forgetLogin(serverUrl);
+  return loadSettings();
+});
+
+ipcMain.handle("axm:jellyfinLibraries", (_e, login: JellyfinLogin): Promise<jellyfin.JellyfinItem[] | null> =>
+  jellyfin.getLibraries(login)
+);
+
+ipcMain.handle(
+  "axm:jellyfinItems",
+  (_e, login: JellyfinLogin, parentId: string): Promise<jellyfin.JellyfinItem[] | null> =>
+    jellyfin.getItems(login, parentId)
 );
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());

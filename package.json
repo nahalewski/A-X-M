@@ -31,14 +31,27 @@
       "package.json"
     ],
     "win": {
-      "target": "portable",
+      "target": [
+        "nsis"
+      ],
       "icon": "assets/icons/app.ico"
     },
     "directories": {
       "output": "release"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "A-X-M",
+      "artifactName": "A-X-M-Setup-${version}.${ext}",
+      "runAfterFinish": true
     }
   },
   "dependencies": {
     "three": "^0.171.0"
-  }
+  },
+  "author": "nahalewski"
 }

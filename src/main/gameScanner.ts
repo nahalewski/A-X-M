@@ -33,6 +33,8 @@ export async function scanAllGames(): Promise<GameEntry[]> {
     if (override) {
       if (override.hidden !== undefined) game.hidden = override.hidden;
       if (override.losslessProfile !== undefined) game.losslessProfile = override.losslessProfile;
+      // A hand-picked cover beats whatever the launcher or the lookup would supply.
+      if (override.artUrl) game.iconPath = override.artUrl;
     }
   }
 
