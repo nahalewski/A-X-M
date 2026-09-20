@@ -6,6 +6,7 @@ import { launchGame } from "./gameLauncher";
 import { GameEntry } from "./types";
 import { isLosslessScalingConfigPresent } from "./losslessScaling";
 import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
+import { resolveArt, isGameArtConfigured } from "./gameArt";
 
 // Let the compositor track the display's native refresh rate (120Hz on the Ally) via
 // vsync-synced requestAnimationFrame - just remove Chromium's internal 60fps throttle
@@ -93,11 +94,44 @@ ipcMain.handle("axm:toggleFullscreen", (): Settings => {
 
 ipcMain.handle("axm:scanGames", async (): Promise<GameEntry[]> => {
   cachedGames = await scanAllGames();
+  void fetchMissingArt();
   return cachedGames;
 });
 
+/**
+ * Fills in box art for entries no launcher gave us any for. Runs in the background
+ * with small concurrency so the menu stays responsive, pushing each result to the
+ * renderer as it lands rather than making the first paint wait on the network.
+ */
+let artRunId = 0;
+async function fetchMissingArt(): Promise<void> {
+  if (!isGameArtConfigured()) return;
+  const runId = ++artRunId;
+  const pending = cachedGames.filter((g) => !g.iconPath);
+  const CONCURRENCY = 3;
+
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < pending.length && runId === artRunId) {
+      const game = pending[cursor++];
+      const art = await resolveArt(game.name);
+      if (runId !== artRunId) return;
+      if (!art) continue;
+      game.iconPath = art;
+      if (!mainWindow?.isDestroyed()) {
+        mainWindow?.webContents.send("axm:artUpdated", { gameId: game.id, iconPath: art });
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+}
+
 ipcMain.handle("axm:getGames", async (): Promise<GameEntry[]> => {
-  if (cachedGames.length === 0) cachedGames = await scanAllGames();
+  if (cachedGames.length === 0) {
+    cachedGames = await scanAllGames();
+    void fetchMissingArt();
+  }
   return cachedGames;
 });
 

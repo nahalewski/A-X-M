@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { GameEntry } from "../types";
 
@@ -86,7 +87,9 @@ function resolveLogo(installLocation: string, logoRelative?: string): string | u
   ];
   for (const c of candidates) {
     const full = path.join(installLocation, c);
-    if (fs.existsSync(full)) return full;
+    // Must be a file:// URL - a raw Windows path in an <img src> resolves relative
+    // to the renderer's own file:// document and silently fails to load.
+    if (fs.existsSync(full)) return pathToFileURL(full).href;
   }
   return undefined;
 }

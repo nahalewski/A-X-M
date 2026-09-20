@@ -13,6 +13,9 @@ const api = {
   pickGameFolder: () => ipcRenderer.invoke("axm:pickGameFolder"),
   getMedia: (kind: "photo" | "video" | "music") => ipcRenderer.invoke("axm:getMedia", kind),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),
+  onArtUpdated: (callback: (update: { gameId: string; iconPath: string }) => void) => {
+    ipcRenderer.on("axm:artUpdated", (_e, update) => callback(update));
+  },
   quit: () => ipcRenderer.invoke("axm:quit"),
 };
 

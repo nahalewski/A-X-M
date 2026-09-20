@@ -28,6 +28,7 @@ export interface Settings {
   sfxVolume: number;
   extraGameFolders: string[];
   gameOverrides: Record<string, { hidden?: boolean; losslessProfile?: 1 | 2 | 3 | null }>;
+  gameArtApiKey: string;
 }
 
 export interface AxmApi {
@@ -42,6 +43,7 @@ export interface AxmApi {
   pickGameFolder(): Promise<Settings>;
   getMedia(kind: "photo" | "video" | "music"): Promise<MediaEntry[]>;
   openMedia(filePath: string): Promise<void>;
+  onArtUpdated(callback: (update: { gameId: string; iconPath: string }) => void): void;
   quit(): Promise<void>;
 }
 

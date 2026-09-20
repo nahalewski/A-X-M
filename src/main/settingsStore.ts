@@ -15,6 +15,8 @@ export interface Settings {
   sfxVolume: number;
   extraGameFolders: string[];
   gameOverrides: Record<string, GameOverride>;
+  /** SteamGridDB key for box-art lookup. Lives here (in userData), never in the repo. */
+  gameArtApiKey: string;
 }
 
 const DEFAULTS: Settings = {
@@ -25,6 +27,7 @@ const DEFAULTS: Settings = {
   sfxVolume: 0.8,
   extraGameFolders: [],
   gameOverrides: {},
+  gameArtApiKey: "",
 };
 
 let cache: Settings | null = null;

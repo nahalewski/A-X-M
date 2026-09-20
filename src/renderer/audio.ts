@@ -2,9 +2,14 @@
 // All clips are original PS3-XMB-inspired assets (see assets/THIRD_PARTY_LICENSES.md) -
 // if a file is ever missing this all no-ops gracefully instead of throwing.
 
+/** HTMLMediaElement.volume throws outside [0,1], and rAF timing can overshoot a fade by a hair. */
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
 function safePlay(path: string, volume: number): HTMLAudioElement {
   const el = new Audio(path);
-  el.volume = volume;
+  el.volume = clamp01(volume);
   el.play().catch(() => {
     /* asset missing or autoplay blocked - stay silent */
   });
@@ -18,9 +23,9 @@ export class AudioManager {
   private sfxVolume = 0.8;
 
   setVolumes(music: number, sfx: number): void {
-    this.musicVolume = music;
-    this.sfxVolume = sfx;
-    if (this.ambient && !this.ambientFadeRaf) this.ambient.volume = music;
+    this.musicVolume = clamp01(music);
+    this.sfxVolume = clamp01(sfx);
+    if (this.ambient && !this.ambientFadeRaf) this.ambient.volume = this.musicVolume;
   }
 
   /** Plays boot.ogg once, then fades the ambient loop in once it actually finishes. */
@@ -64,8 +69,9 @@ export class AudioManager {
     const start = performance.now();
     const target = this.musicVolume;
     const step = (now: number) => {
-      const t = Math.min(1, (now - start) / durationMs);
-      el.volume = target * t;
+      // rAF hands back the frame's start time, which can predate `start` - clamp both ends.
+      const t = clamp01((now - start) / durationMs);
+      el.volume = clamp01(target * t);
       if (t < 1) {
         this.ambientFadeRaf = requestAnimationFrame(step);
       } else {
@@ -83,8 +89,8 @@ export class AudioManager {
       const start = performance.now();
       const startVol = el.volume;
       const step = (now: number) => {
-        const t = Math.min(1, (now - start) / durationMs);
-        el.volume = startVol * (1 - t);
+        const t = clamp01((now - start) / durationMs);
+        el.volume = clamp01(startVol * (1 - t));
         if (t < 1) {
           this.ambientFadeRaf = requestAnimationFrame(step);
         } else {

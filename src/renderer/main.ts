@@ -192,6 +192,14 @@ async function main(): Promise<void> {
   const xmb = new Xmb(categories, audio);
   xmb.init();
 
+  // Box art arrives asynchronously in the background - patch it in as it lands.
+  window.axm.onArtUpdated(({ gameId, iconPath }) => {
+    const game = games.find((g) => g.id === gameId);
+    if (!game) return;
+    game.iconPath = iconPath;
+    xmb.refresh();
+  });
+
   const gamepad = new GamepadNav((action) => xmb.handleAction(action));
   const pollGamepad = (now: number) => {
     gamepad.poll(now);

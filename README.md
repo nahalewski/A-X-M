@@ -38,6 +38,20 @@ Output goes to `release/`.
 - Runs uncapped by Chromium's internal frame limiter so it tracks the display's native
   refresh rate (120Hz on the Ally) through normal vsync - no tearing hacks.
 
+## Box art
+
+Steam titles pull their art from Steam's CDN. Everything else (Epic, loose exes,
+Xbox titles with no package logo) is looked up on [SteamGridDB](https://www.steamgriddb.com),
+which needs a free API key. The key is **not** stored in this repo - put it in either:
+
+- the `AXM_STEAMGRIDDB_KEY` environment variable, or
+- `gameArtApiKey` in `%APPDATA%\A-X-M\axm-settings.json`
+
+Art is fetched in the background after a scan and cached under
+`%APPDATA%\A-X-M\art-cache`, so it only downloads once and works offline after that.
+Misses are cached too, so unmatched names aren't retried on every launch. Without a
+key the grid just falls back to source letter badges.
+
 ## Still needed before this is "done"
 
 1. **Audio assets** - drop these into `assets/sounds/`:
