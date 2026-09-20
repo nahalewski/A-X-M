@@ -33,6 +33,9 @@
     "win": {
       "target": "portable",
       "icon": "assets/icons/app.ico"
+    },
+    "directories": {
+      "output": "release"
     }
   },
   "dependencies": {
