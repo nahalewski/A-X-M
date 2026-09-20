@@ -44,6 +44,12 @@ interface IconClearance {
   below: number; // from icon centre down to the bottom of the icon
 }
 
+// Where the focused category icon is pinned horizontally, as a fraction of the
+// window width. The whole bar slides so the focused icon lands here, which is what
+// makes the XMB appear to scroll left as you move right; icons that run past the
+// left edge simply clip. Matches the ~29% the real XMB uses.
+const CATEGORY_ANCHOR_X = 0.29;
+
 function slotTop(offset: number, clearance: IconClearance): number {
   // Focused item hangs directly under the category icon.
   if (offset === 0) return clearance.below;
@@ -233,11 +239,20 @@ export class Xmb {
     // would push the item text down into the label) - matching how the real XMB
     // scrolls items through the icon row rather than a screen-centered block.
     const active = activeEl as HTMLElement | null;
-    const iconEl = active?.querySelector(".category-icon");
-    if (iconEl) {
+    const iconEl = active?.querySelector(".category-icon") as HTMLElement | null;
+    if (active && iconEl) {
+      // Horizontal uses offsetLeft, which ignores transforms - reading a transformed
+      // rect here would force the bar back to 0 mid-transition and make it snap.
+      const iconCentreInBar = active.offsetLeft + iconEl.offsetLeft + iconEl.offsetWidth / 2;
+      const anchorX = window.innerWidth * CATEGORY_ANCHOR_X;
+
+      // Slide the whole bar so the focused icon lands on the anchor - the row moves,
+      // the focus stays put, exactly like the real XMB.
+      this.categoryBarEl.style.transform = `translate(${anchorX - iconCentreInBar}px, -50%)`;
+
       const rect = iconEl.getBoundingClientRect();
       const centreY = rect.top + rect.height / 2;
-      this.itemRailEl.style.left = `${rect.left + rect.width / 2}px`;
+      this.itemRailEl.style.left = `${anchorX}px`;
       this.itemRailEl.style.top = `${centreY}px`;
 
       // Measure the real dead zone rather than assuming icon sizes, so the items

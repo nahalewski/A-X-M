@@ -53,12 +53,14 @@ body {
   position: absolute;
   top: 30%;
   left: 0;
-  right: 0;
   display: flex;
-  justify-content: center;
   align-items: center;
   gap: 92px;
-  transform: translateY(-50%);
+  /* Laid out left-to-right at natural width; JS slides it horizontally so the
+     focused icon sits on the anchor. Anything past the window edge just clips. */
+  width: max-content;
+  transform: translate(0, -50%);
+  transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 .category {
