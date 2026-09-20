@@ -111,12 +111,18 @@ export interface Settings {
   ankerDeviceName: string;
   /** Navigation / confirm / back blips. */
   navSoundsEnabled: boolean;
+  /** The ambient menu loop. Off means silence between the boot sound and a game. */
+  menuMusicEnabled: boolean;
   /** Show the percentage next to the battery icons. */
   batteryPercentEnabled: boolean;
   /** Preferred drive for Steam installs, e.g. "N:", or "" to leave it to Steam. */
   steamInstallDrive: string;
   /** Keyboard fallback for the controller Guide button, in Electron accelerator syntax. */
   overlayHotkey: string;
+  /** Frame-rate readout, top-left. */
+  fpsCounterEnabled: boolean;
+  /** CPU / RAM / GPU / device summary, bottom-left. */
+  hardwareInfoEnabled: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -141,9 +147,12 @@ const DEFAULTS: Settings = {
   jellyfinLogins: {},
   ankerDeviceName: "Anker",
   navSoundsEnabled: true,
+  menuMusicEnabled: true,
   batteryPercentEnabled: true,
   steamInstallDrive: "",
   overlayHotkey: "Alt+Home",
+  fpsCounterEnabled: false,
+  hardwareInfoEnabled: false,
 };
 
 let cache: Settings | null = null;

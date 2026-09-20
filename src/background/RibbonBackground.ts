@@ -77,6 +77,18 @@ export class RibbonBackground {
 
   /** Rolling window for the FPS monitor. */
   private frameCount = 0;
+  /** Frames per second to render at, or 0 to follow the display. */
+  private maxFps = 0;
+  private lastRendered = 0;
+
+  /**
+   * Caps the render rate below the display's. rAF still fires every refresh, but
+   * frames that arrive sooner than the cap allows are skipped rather than drawn,
+   * which is how a 120Hz screen gets a 60fps ribbon without any tearing.
+   */
+  setMaxFps(fps: number): void {
+    this.maxFps = Math.max(0, fps);
+  }
   private windowStart = 0;
   private slowFor = 0;
   private level: QualityLevel;
@@ -170,6 +182,16 @@ export class RibbonBackground {
     // reports the frame's *start* time, which can predate the performance.now()
     // captured in start(), making the very first delta negative. Time-based
     // throughout, so 60, 90 and 120 Hz all produce identical motion.
+    // Frame cap: skip this refresh if the previous draw was too recent. Delta
+    // keeps accumulating across skipped frames, so motion speed is unaffected.
+    if (this.maxFps > 0) {
+      const minInterval = 1000 / this.maxFps;
+      // Allow a small tolerance so 60 on a 120Hz display lands on every other frame
+      // rather than every third.
+      if (now - this.lastRendered < minInterval - 1.5) return;
+      this.lastRendered = now;
+    }
+
     const delta = Math.max(0, Math.min(0.1, (now - this.lastFrame) / 1000));
     this.lastFrame = now;
 

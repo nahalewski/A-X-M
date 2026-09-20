@@ -24,7 +24,28 @@ interface DirState {
   nextRepeat: number;
 }
 
+export type ControllerType = "xbox" | "ps" | "switch" | "kishi";
+
+/**
+ * Which family a pad belongs to, from its Gamepad id: by name, or by the USB
+ * vendor id Chromium embeds (Sony 054c, Nintendo 057e, Razer 1532). Anything else
+ * is treated as Xbox-layout, which the Ally's own controls are.
+ */
+export function controllerTypeOf(id: string): ControllerType {
+  if (/dualsense|dualshock|playstation|sony|054c|wireless controller/i.test(id)) return "ps";
+  if (/nintendo|switch|joy-con|057e/i.test(id)) return "switch";
+  if (/kishi|razer|1532/i.test(id)) return "kishi";
+  return "xbox";
+}
+
 export class GamepadNav {
+  private lastType: ControllerType | null = null;
+  private onType: ((type: ControllerType) => void) | null = null;
+
+  /** Called whenever the connected controller's family changes (Xbox vs PlayStation). */
+  setOnControllerType(callback: (type: ControllerType) => void): void {
+    this.onType = callback;
+  }
   private prevButtons = new Map<number, boolean[]>();
   private dirState: Record<"up" | "down" | "left" | "right", DirState> = {
     up: { held: false, nextRepeat: 0 },
@@ -39,6 +60,11 @@ export class GamepadNav {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const pad of pads) {
       if (!pad) continue;
+      const type = controllerTypeOf(pad.id);
+      if (type !== this.lastType) {
+        this.lastType = type;
+        this.onType?.(type);
+      }
       const prev = this.prevButtons.get(pad.index) ?? [];
       const cur = pad.buttons.map((b) => b.pressed);
 

@@ -1026,3 +1026,110 @@ body.overlay #app {
 body.overlay #game-bg {
   display: none;
 }
+
+
+/* Face-button glyphs in hints. Default is an Xbox-style lettered badge; with a
+   PlayStation pad connected (body.pad-ps) the symbol from the supplied sheet is
+   used instead, masked and tinted like the other sprites. */
+.btn {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  vertical-align: -5px;
+  margin-right: 3px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  color: #0b1020;
+}
+.btn-a { background: #7ed67e; }
+.btn-b { background: #ff6f6f; }
+.btn-x { background: #6fb6ff; }
+.btn-y { background: #ffd86b; }
+.btn-a::after { content: "A"; }
+.btn-b::after { content: "B"; }
+.btn-x::after { content: "X"; }
+.btn-y::after { content: "Y"; }
+
+body.pad-ps .btn, body.pad-switch .btn, body.pad-kishi .btn {
+  background: #eef2ff;
+  border-radius: 0;
+  -webkit-mask-image: url("assets/icons/ps-buttons.webp");
+  mask-image: url("assets/icons/ps-buttons.webp");
+  -webkit-mask-size: 400% 100%;
+  mask-size: 400% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+body.pad-ps .btn::after, body.pad-switch .btn::after, body.pad-kishi .btn::after { content: ""; }
+/* Switch and Kishi sheets are tiled in the same positional order (top, right,
+   bottom, left) as the PlayStation one, so only the image changes. Chromium maps
+   the Switch's B (bottom) to button 0, so its sheet shows B where Xbox shows A. */
+body.pad-switch .btn {
+  -webkit-mask-image: url("assets/icons/switch-buttons.webp");
+  mask-image: url("assets/icons/switch-buttons.webp");
+}
+body.pad-kishi .btn {
+  -webkit-mask-image: url("assets/icons/kishi-buttons.webp");
+  mask-image: url("assets/icons/kishi-buttons.webp");
+}
+body.pad-switch .btn-a, body.pad-kishi .btn-a { -webkit-mask-position: 66.667% 0; mask-position: 66.667% 0; }
+body.pad-switch .btn-b, body.pad-kishi .btn-b { -webkit-mask-position: 33.333% 0; mask-position: 33.333% 0; }
+body.pad-switch .btn-x, body.pad-kishi .btn-x { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+body.pad-switch .btn-y, body.pad-kishi .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
+
+/* External drive rows: the ROG logo's hue follows the column it appears in. */
+.item-icon.hdd { object-fit: contain; }
+.item-icon.hdd-photo { filter: hue-rotate(80deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+.item-icon.hdd-video { filter: hue-rotate(200deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+.item-icon.hdd-game { filter: hue-rotate(320deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+/* Sheet order: triangle, circle, cross, square. Xbox A=cross, B=circle, X=square, Y=triangle. */
+body.pad-ps .btn-a { -webkit-mask-position: 66.667% 0; mask-position: 66.667% 0; }
+body.pad-ps .btn-b { -webkit-mask-position: 33.333% 0; mask-position: 33.333% 0; }
+body.pad-ps .btn-x { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+body.pad-ps .btn-y { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
+
+/* Wi-Fi / Bluetooth in the status bar. */
+.status-icon {
+  width: 26px;
+  height: 24px;
+  background-color: #f4f7ff;
+  -webkit-mask-image: url("assets/icons/status-sprite.webp");
+  mask-image: url("assets/icons/status-sprite.webp");
+  -webkit-mask-size: 400% 400%;
+  mask-size: 400% 400%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+.status-icon.hidden { display: none; }
+.status-icon.dim { opacity: 0.4; }
+
+/* HUD readouts. */
+#fps-counter {
+  position: absolute;
+  top: 24px;
+  left: 42px;
+  font-size: 15px;
+  letter-spacing: 0.6px;
+  opacity: 0.85;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+}
+#hardware-info {
+  position: absolute;
+  bottom: 58px;
+  left: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  opacity: 0.7;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+#fps-counter.hidden, #hardware-info.hidden { display: none; }
+.hw-row { display: flex; gap: 10px; }
+.hw-label { width: 46px; opacity: 0.6; letter-spacing: 0.5px; text-transform: uppercase; font-size: 10px; line-height: 15px; }
+.hw-value { white-space: nowrap; }

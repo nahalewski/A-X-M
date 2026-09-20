@@ -1,3 +1,4 @@
+import Hls from "hls.js";
 import { BrowseEntry } from "./types";
 
 /**
@@ -33,6 +34,8 @@ export class MediaViewer {
   private timeEl: HTMLElement;
 
   private items: BrowseEntry[] = [];
+  /** Live only while an HLS stream (a Jellyfin transcode) is playing. */
+  private hls: Hls | null = null;
   private index = -1;
   private kind: "photo" | "video" | null = null;
   private onClose: () => void = () => {};
@@ -109,8 +112,21 @@ export class MediaViewer {
         this.items.length > 1 ? `${entry.name}  ·  ${this.index + 1} / ${this.items.length}` : entry.name;
     } else {
       this.imageEl.removeAttribute("src");
-      this.videoEl.src = entry.url;
-      this.videoEl.play().catch(() => {});
+      this.detachHls();
+      if (entry.hls && Hls.isSupported()) {
+        // Chromium has no native HLS; hls.js feeds the playlist's segments through
+        // Media Source Extensions. Used for anything Jellyfin has to transcode.
+        this.hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        this.hls.on(Hls.Events.ERROR, (_e, data) => {
+          if (data.fatal) this.captionEl.textContent = `Couldn't play ${entry.name} (${data.type})`;
+        });
+        this.hls.loadSource(entry.url);
+        this.hls.attachMedia(this.videoEl);
+        this.hls.on(Hls.Events.MANIFEST_PARSED, () => this.videoEl.play().catch(() => {}));
+      } else {
+        this.videoEl.src = entry.url;
+        this.videoEl.play().catch(() => {});
+      }
       this.captionEl.textContent = entry.name;
       this.updateVideoChrome();
     }
@@ -157,9 +173,17 @@ export class MediaViewer {
     this.show();
   }
 
+  private detachHls(): void {
+    if (this.hls) {
+      this.hls.destroy();
+      this.hls = null;
+    }
+  }
+
   close(): void {
     if (!this.kind) return;
     this.kind = null;
+    this.detachHls();
     this.videoEl.pause();
     this.videoEl.removeAttribute("src");
     this.videoEl.load();

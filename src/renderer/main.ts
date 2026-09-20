@@ -2,13 +2,15 @@ import "./types";
 import { RibbonBackground } from "../background/RibbonBackground";
 import { AudioManager, AMBIENT_TRACKS, AMBIENT_TRACK_IDS } from "./audio";
 import { GamepadNav } from "./gamepad";
-import { Xmb, Category, MenuItem, sourceGlyph } from "./xmb";
+import { Xmb, Category, MenuItem, sourceGlyph, btn } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
 import { MusicVisualizer } from "./visualizer";
 import { MediaViewer } from "./mediaViewer";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
 import { BatteryIndicators } from "./battery";
+import { StatusIcons } from "./statusIcons";
+import { Hud } from "./hud";
 import { GameBackground } from "./background";
 import {
   ThemeManager,
@@ -36,6 +38,7 @@ import {
   Settings,
   SteamLibrary,
   ThemeMode,
+  MediaDrive,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -88,8 +91,23 @@ async function main(): Promise<void> {
     backdrop: "cycle",
     backdropCycleSeconds: settings.waveColorCycleSeconds,
   });
+  // 0 means "whatever the display does"; otherwise the ribbon skips frames to the cap.
+  ribbon.setMaxFps(settings.targetHz);
 
   let games: GameEntry[] = await window.axm.getGames();
+  // Drives with PHOTO / VIDEO / GAME folders at the root; re-read on each rescan.
+  let mediaDrives: MediaDrive[] = await window.axm.getMediaDrives();
+  const driveRows = (kind: "photo" | "video" | "game", open: (folder: string) => void): MenuItem[] =>
+    mediaDrives
+      .filter((d) => d[kind])
+      .map((d) => ({
+        id: `drive-${kind}-${d.drive}`,
+        title: `${d.drive} Drive`,
+        subtitle: `${kind.toUpperCase()} folder`,
+        iconUrl: "assets/icons/hdd.webp",
+        iconClass: `hdd hdd-${kind}`,
+        onConfirm: () => open(d[kind]!),
+      }));
   const emptyListing = (kind: "photo" | "video"): BrowseListing => ({
     kind,
     path: "",
@@ -275,6 +293,12 @@ async function main(): Promise<void> {
   batteries.setPercentVisible(settings.batteryPercentEnabled);
   void batteries.start();
   audio.setSfxEnabled(settings.navSoundsEnabled);
+  audio.setAmbientEnabled(settings.menuMusicEnabled);
+  const statusIcons = new StatusIcons(document.getElementById("batteries")!);
+  statusIcons.start();
+  const hud = new Hud(document.body);
+  hud.setFpsVisible(settings.fpsCounterEnabled);
+  void hud.setHardwareVisible(settings.hardwareInfoEnabled);
 
   // ---- Visualizer lifecycle -------------------------------------------------------
   //
@@ -377,18 +401,62 @@ async function main(): Promise<void> {
     };
   }
 
+  // ---- In-menu browser ------------------------------------------------------------
+  //
+  // The page is a WebContentsView owned by the main process, drawn over everything
+  // but the footer. While it's up the menu keeps the controller and relays each
+  // press over IPC: D-pad scrolls / history, Y reloads, B closes.
+  let browserOpen = false;
+  const browserHandler = (action: string): boolean => {
+    void window.axm.browserInput(action);
+    return true;
+  };
+  const openInMenuBrowser = (url: string) => {
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    if (!browserOpen) {
+      browserOpen = true;
+      pushOverlay(browserHandler);
+    }
+    void window.axm.browserOpen(url);
+    xmb.refresh();
+  };
+  window.axm.onBrowserClosed(() => {
+    if (!browserOpen) return;
+    browserOpen = false;
+    if (overlayStack[overlayStack.length - 1] === browserHandler) popOverlay();
+    xmb.refresh();
+  });
+
   function browserCategory(): Category {
+    const sites: [string, string][] = [
+      ["Google", "https://www.google.com"],
+      ["YouTube", "https://www.youtube.com/tv"],
+      ["Xbox Cloud Gaming", "https://www.xbox.com/play"],
+      ["GeForce NOW", "https://play.geforcenow.com"],
+    ];
     return {
       id: "browser",
       label: "Browser",
       iconUrl: "assets/icons/browser.png",
+      footerHint: () => (browserOpen ? `▲ ▼ scroll · ◀ ▶ back / forward · ${btn("y")} reload · ${btn("b")} close` : undefined),
       getItems: () => [
         {
-          id: "open-browser",
-          title: "Open Web Browser",
+          id: "browser-address",
+          title: "Enter Address…",
+          subtitle: "Opens inside the menu",
           iconUrl: "assets/icons/browser.png",
-          onConfirm: () => window.axm.openBrowser("https://www.google.com"),
+          onConfirm: async () => {
+            const values = await askText("Web Address", [{ label: "Address", value: "https://" }]);
+            if (values?.[0] && values[0] !== "https://") openInMenuBrowser(values[0]);
+          },
         },
+        ...sites.map(([title, url]) => ({
+          id: `site-${title}`,
+          title,
+          subtitle: url.replace(/^https?:\/\//, ""),
+          iconUrl: "assets/icons/browser.png",
+          onConfirm: () => openInMenuBrowser(url),
+        })),
       ],
     };
   }
@@ -467,7 +535,8 @@ async function main(): Promise<void> {
    * descends into it the same way the music library does; B comes back out.
    */
   function gamesCategory(): Category {
-    let view: "root" | "saves" | "gamedata" | "steam" = "root";
+    let view: "root" | "saves" | "gamedata" | "steam" | "drive" = "root";
+    let driveFolder = "";
 
     const go = (next: typeof view) => {
       view = next;
@@ -604,8 +673,25 @@ async function main(): Promise<void> {
           iconUrl: `assets/icons/${l.id}.png`,
           onConfirm: () => window.axm.openLauncher(l.id),
         })),
+      ...driveRows("game", (folder) => {
+        driveFolder = folder;
+        go("drive");
+      }),
       ...gameRows(),
     ];
+
+    /** Games the scanner found under a drive's GAME folder. */
+    const driveItems = (): MenuItem[] => {
+      const root = driveFolder.toLowerCase();
+      const rows = gameRows().filter((r) => {
+        const dir = r.contextGame?.installDir?.toLowerCase() ?? "";
+        return dir === root || dir.startsWith(root + "\\");
+      });
+      if (rows.length === 0) {
+        return [{ id: "drive-empty", title: "No games found", subtitle: `Put each game in its own folder under ${driveFolder}`, iconUrl: "assets/icons/hdd.webp", iconClass: "hdd hdd-game" }];
+      }
+      return rows;
+    };
 
     const savesItems = (): MenuItem[] => {
       if (saves.length === 0) {
@@ -648,6 +734,7 @@ async function main(): Promise<void> {
       footerHint: () => {
         if (view === "saves") return "Saved Data Utility";
         if (view === "gamedata") return "Game Data Utility";
+        if (view === "drive") return driveFolder;
         if (view === "steam") {
           if (steamInstallHint) return steamInstallHint;
           const installed = steamLibrary.games.filter((g) => g.state === "installed").length;
@@ -659,6 +746,7 @@ async function main(): Promise<void> {
         if (view === "saves") return savesItems();
         if (view === "gamedata") return gameDataItems();
         if (view === "steam") return steamItems();
+        if (view === "drive") return driveItems();
         return rootItems();
       },
     };
@@ -683,7 +771,7 @@ async function main(): Promise<void> {
     iconUrl: string,
     getListing: () => BrowseListing,
     setListing: (l: BrowseListing) => void,
-    leading: MenuItem[] = [],
+    leading: (openFolder: (dirPath: string) => void) => MenuItem[] = () => [],
     mode?: ColumnMode
   ): Category {
     const openFolder = async (dirPath: string | null) => {
@@ -721,7 +809,8 @@ async function main(): Promise<void> {
       getItems: () => {
         if (mode?.active()) return mode.items();
         const listing = getListing();
-        if (listing.entries.length === 0 && leading.length === 0) {
+        const lead = leading((p) => void openFolder(p));
+        if (listing.entries.length === 0 && lead.length === 0) {
           return [
             {
               id: `${kind}-empty`,
@@ -732,7 +821,7 @@ async function main(): Promise<void> {
           ];
         }
         return [
-          ...(listing.parent ? [] : leading),
+          ...(listing.parent ? [] : lead),
           ...listing.entries.map((entry): MenuItem =>
             entry.kind === "folder"
               ? {
@@ -849,9 +938,8 @@ async function main(): Promise<void> {
     if (!item.streamUrl) return;
     musicPlayer.stop();
     audio.fadeOutAmbient(400);
-    mediaViewer.open("video", { kind: "file", name: item.name, filePath: item.id, url: item.streamUrl }, [
-      { kind: "file", name: item.name, filePath: item.id, url: item.streamUrl },
-    ]);
+    const entry = { kind: "file" as const, name: item.name, filePath: item.id, url: item.streamUrl, hls: item.hls };
+    mediaViewer.open("video", entry, [entry]);
     pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
   };
 
@@ -1119,13 +1207,24 @@ async function main(): Promise<void> {
       {
         id: "ambientTrack",
         title: "Menu Music",
-        subtitle: AMBIENT_TRACKS[settings.ambientTrack].label,
+        subtitle: settings.menuMusicEnabled ? AMBIENT_TRACKS[settings.ambientTrack].label : "Off",
         iconUrl: "assets/icons/music.png",
         onConfirm: async () => {
-          const i = AMBIENT_TRACK_IDS.indexOf(settings.ambientTrack);
-          const next = AMBIENT_TRACK_IDS[(i + 1) % AMBIENT_TRACK_IDS.length];
-          settings = await window.axm.setSettings({ ambientTrack: next });
-          audio.setAmbientTrack(settings.ambientTrack);
+          // One row cycles through each loop and then Off: the chosen track survives
+          // being switched off, so turning it back on resumes the same one.
+          if (!settings.menuMusicEnabled) {
+            settings = await window.axm.setSettings({ menuMusicEnabled: true });
+            audio.setAmbientEnabled(true);
+          } else {
+            const i = AMBIENT_TRACK_IDS.indexOf(settings.ambientTrack);
+            if (i >= AMBIENT_TRACK_IDS.length - 1) {
+              settings = await window.axm.setSettings({ menuMusicEnabled: false });
+              audio.setAmbientEnabled(false);
+            } else {
+              settings = await window.axm.setSettings({ ambientTrack: AMBIENT_TRACK_IDS[i + 1] });
+              audio.setAmbientTrack(settings.ambientTrack);
+            }
+          }
           xmb.refresh();
         },
       },
@@ -1149,6 +1248,43 @@ async function main(): Promise<void> {
         onConfirm: async () => {
           settings = await window.axm.setSettings({ navSoundsEnabled: !settings.navSoundsEnabled });
           audio.setSfxEnabled(settings.navSoundsEnabled);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "targetHz",
+        title: "Menu Refresh Rate",
+        subtitle: settings.targetHz ? `${settings.targetHz} fps` : "Match display",
+        iconGlyph: "⟳",
+        onConfirm: async () => {
+          // 60 -> 120 -> 144 -> display -> 60. The ribbon can't exceed the panel's
+          // own refresh, so "144" on a 120 Hz screen simply runs uncapped.
+          const steps = [60, 120, 144, 0];
+          const next = steps[(steps.indexOf(settings.targetHz) + 1) % steps.length];
+          settings = await window.axm.setSettings({ targetHz: next });
+          ribbon.setMaxFps(next);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "fpsCounter",
+        title: "FPS Counter",
+        subtitle: settings.fpsCounterEnabled ? "Shown top-left" : "Hidden",
+        iconGlyph: "▤",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ fpsCounterEnabled: !settings.fpsCounterEnabled });
+          hud.setFpsVisible(settings.fpsCounterEnabled);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "hardwareInfo",
+        title: "Hardware Info",
+        subtitle: settings.hardwareInfoEnabled ? "Shown bottom-left" : "Hidden",
+        iconGlyph: "▦",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ hardwareInfoEnabled: !settings.hardwareInfoEnabled });
+          void hud.setHardwareVisible(settings.hardwareInfoEnabled);
           xmb.refresh();
         },
       },
@@ -1180,7 +1316,7 @@ async function main(): Promise<void> {
       {
         id: "overlayHotkey",
         title: "In-Game Menu Button",
-        subtitle: `Xbox / PS button · keyboard ${settings.overlayHotkey}`,
+        subtitle: `Xbox / PS button, or M1 mapped to ${settings.overlayHotkey} in Armoury Crate`,
         iconGlyph: "⌂",
       },
       {
@@ -1370,7 +1506,7 @@ async function main(): Promise<void> {
   const categories: Category[] = [
     usersCategory(),
     settingsCategory(),
-    mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photoListing, (l) => (photoListing = l)),
+    mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photoListing, (l) => (photoListing = l), (open) => driveRows("photo", open)),
     musicCategory(),
     mediaCategory(
       "video",
@@ -1378,7 +1514,7 @@ async function main(): Promise<void> {
       "assets/icons/video.png",
       () => videoListing,
       (l) => (videoListing = l),
-      [jellyfinEntry],
+      (open) => [jellyfinEntry, ...driveRows("video", open)],
       { active: () => jf.active, items: jfItems, back: jfBack, hint: jfHint }
     ),
     gamesCategory(),
@@ -1493,6 +1629,9 @@ async function main(): Promise<void> {
     }
     xmb.handleAction(action);
   });
+  gamepad.setOnControllerType((type) => {
+    for (const t of ["ps", "switch", "kishi"]) document.body.classList.toggle(`pad-${t}`, type === t);
+  });
   const pollGamepad = (now: number) => {
     gamepad.poll(now);
     requestAnimationFrame(pollGamepad);
@@ -1511,14 +1650,16 @@ async function main(): Promise<void> {
   // Background rescan shortly after boot to pick up anything the first pass missed,
   // and to fill in the media categories without blocking startup on slow drives.
   setTimeout(async () => {
-    const [scannedGames, videos, photos, listing, steam] = await Promise.all([
+    const [scannedGames, videos, photos, listing, steam, drives] = await Promise.all([
       window.axm.scanGames(),
       window.axm.browseMedia("video", null),
       window.axm.browseMedia("photo", null),
       window.axm.browseMusic(null),
       window.axm.getSteamLibrary(),
+      window.axm.getMediaDrives(),
     ]);
     games = scannedGames;
+    mediaDrives = drives;
     videoListing = videos;
     photoListing = photos;
     musicListing = listing;

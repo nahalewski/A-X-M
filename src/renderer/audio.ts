@@ -36,10 +36,23 @@ export class AudioManager {
   private musicVolume = 0.6;
   private sfxVolume = 0.8;
   private sfxEnabled = true;
+  private ambientEnabled = true;
 
   /** Menu navigation/confirm/back blips on or off. The ambient loop is separate. */
   setSfxEnabled(enabled: boolean): void {
     this.sfxEnabled = enabled;
+  }
+
+  /**
+   * Menu music on or off. Turning it off fades the loop out; turning it on brings
+   * it straight back. While off, every fade-in request is ignored so the loop stays
+   * silent after videos and games as well.
+   */
+  setAmbientEnabled(enabled: boolean): void {
+    if (enabled === this.ambientEnabled) return;
+    this.ambientEnabled = enabled;
+    if (enabled) this.fadeInAmbient(900);
+    else void this.fadeOutAmbient(600);
   }
 
   private sfx(path: string): void {
@@ -97,6 +110,7 @@ export class AudioManager {
   }
 
   fadeInAmbient(durationMs = 2500): void {
+    if (!this.ambientEnabled) return;
     if (!this.ambient) {
       this.ambient = new Audio(AMBIENT_TRACKS[this.ambientTrack].src);
       this.ambient.loop = true;

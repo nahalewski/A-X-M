@@ -5,6 +5,8 @@
  * A real keyboard works too: keydown goes straight into the focused field.
  */
 
+import { btn } from "./xmb";
+
 export interface TextField {
   label: string;
   value?: string;
@@ -48,7 +50,7 @@ export class TextEntry {
     this.keysEl.className = "entry-keys";
     this.hintEl = document.createElement("div");
     this.hintEl.className = "entry-hint";
-    this.hintEl.textContent = "A type · B backspace · Y shift · Next/Done to continue";
+    this.hintEl.innerHTML = `${btn("a")} type · ${btn("b")} backspace · ${btn("y")} shift · Next/Done to continue`;
     root.append(this.titleEl, this.fieldsEl, this.keysEl, this.hintEl);
 
     // Physical keyboard: characters go straight in; Enter advances; Escape is

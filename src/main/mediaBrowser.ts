@@ -41,6 +41,62 @@ export function mediaRoot(kind: BrowseKind): string {
   return path.join(os.homedir(), HOME_FOLDER[kind]);
 }
 
+/**
+ * A drive with a PHOTO, VIDEO or GAME folder (or the plural) at its root is treated
+ * as a media drive: each such folder is surfaced in the matching column. Anything without
+ * them (or the Windows drive) is ignored, so a plain USB stick adds nothing.
+ */
+export interface MediaDrive {
+  /** "D:" */
+  drive: string;
+  photo: string | null;
+  video: string | null;
+  game: string | null;
+}
+
+const DRIVE_FOLDERS = { photo: ["PHOTO", "PHOTOS"], video: ["VIDEO", "VIDEOS"], game: ["GAME", "GAMES"] } as const;
+
+export function listMediaDrives(): MediaDrive[] {
+  const system = (process.env.SystemDrive ?? "C:").toUpperCase();
+  const drives: MediaDrive[] = [];
+  for (let c = 65; c <= 90; c++) {
+    const drive = `${String.fromCharCode(c)}:`;
+    if (drive === system) continue;
+    let names: string[];
+    try {
+      names = fs.readdirSync(drive + "\\");
+    } catch {
+      continue;
+    }
+    const upper = new Map(names.map((n) => [n.toUpperCase(), n]));
+    const found = (key: keyof typeof DRIVE_FOLDERS): string | null => {
+      const real = DRIVE_FOLDERS[key].map((n) => upper.get(n)).find(Boolean);
+      if (!real) return null;
+      const full = path.join(drive + "\\", real);
+      try {
+        return fs.statSync(full).isDirectory() ? full : null;
+      } catch {
+        return null;
+      }
+    };
+    const entry = { drive, photo: found("photo"), video: found("video"), game: found("game") };
+    if (entry.photo || entry.video || entry.game) drives.push(entry);
+  }
+  return drives;
+}
+
+/** The drive folder (if any) that a path sits under, for the given column. */
+function driveRootOf(kind: BrowseKind, target: string): string | null {
+  const resolved = path.resolve(target).toLowerCase();
+  for (const d of listMediaDrives()) {
+    const root = d[kind];
+    if (!root) continue;
+    const r = path.resolve(root).toLowerCase();
+    if (resolved === r || resolved.startsWith(r + path.sep)) return root;
+  }
+  return null;
+}
+
 function compareNatural(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
@@ -52,9 +108,12 @@ function isUnderRoot(kind: BrowseKind, target: string): boolean {
 }
 
 export function browseMedia(kind: BrowseKind, dirPath?: string | null): BrowseListing {
-  const root = mediaRoot(kind);
-  // Never browse outside the user's own media folder, whatever comes over IPC.
-  const dir = dirPath && isUnderRoot(kind, dirPath) ? dirPath : root;
+  const home = mediaRoot(kind);
+  // Never browse outside the user's own media folder or a drive's PHOTO/VIDEO
+  // folder, whatever comes over IPC.
+  const driveRoot = dirPath ? driveRootOf(kind, dirPath) : null;
+  const dir = dirPath && (driveRoot || isUnderRoot(kind, dirPath)) ? dirPath : home;
+  const root = driveRoot ?? home;
 
   let dirents: fs.Dirent[] = [];
   try {
@@ -83,11 +142,13 @@ export function browseMedia(kind: BrowseKind, dirPath?: string | null): BrowseLi
   files.sort((a, b) => compareNatural(a.name, b.name));
 
   const atRoot = path.resolve(dir).toLowerCase() === path.resolve(root).toLowerCase();
+  // Backing out of a drive's folder lands in the home listing, where its row lives.
+  const parent = atRoot ? (driveRoot ? home : null) : path.dirname(dir);
   return {
     kind,
     path: dir,
-    parent: atRoot ? null : path.dirname(dir),
-    title: atRoot ? HOME_FOLDER[kind] : path.basename(dir),
+    parent,
+    title: atRoot ? driveRoot ?? HOME_FOLDER[kind] : path.basename(dir),
     entries: [...folders, ...files],
   };
 }

@@ -8,6 +8,8 @@ export interface MenuItem {
   backgroundUrl?: string;
   subtitle?: string;
   iconUrl?: string;
+  /** Extra class on the icon image, e.g. a per-column tint. */
+  iconClass?: string;
   iconGlyph?: string;
   badge?: string;
   onConfirm?: () => void | Promise<void>;
@@ -48,6 +50,15 @@ const SOURCE_GLYPH: Record<GameEntry["source"], string> = {
 
 // How many items to render on each side of the focus. More below than above,
 // since the list grows downward from the category row.
+/**
+ * A face-button glyph for the footer. Rendered by CSS as an Xbox letter badge, or
+ * as the PlayStation symbol from the supplied sheet when body has .pad-ps - so
+ * the hint matches whichever controller is actually connected.
+ */
+export function btn(name: "a" | "b" | "x" | "y"): string {
+  return `<span class="btn btn-${name}"></span>`;
+}
+
 const VISIBLE_ABOVE = 2;
 const VISIBLE_BELOW = 4;
 
@@ -420,7 +431,7 @@ export class Xmb {
   private buildIcon(item: MenuItem): HTMLElement {
     if (item.iconUrl) {
       const img = document.createElement("img");
-      img.className = "item-icon";
+      img.className = "item-icon" + (item.iconClass ? " " + item.iconClass : "");
       img.src = item.iconUrl;
       img.addEventListener("error", () => {
         const fallback = document.createElement("div");
@@ -503,7 +514,7 @@ export class Xmb {
   private renderFooter(): void {
     if (this.modalGame) {
       const rows = this.gameActions.length > 0 ? "▲ ▼ row &middot; " : "";
-      this.footerEl.innerHTML = `<span>${rows}◀ ▶ choose</span><span>A apply &middot; B close</span>`;
+      this.footerEl.innerHTML = `<span>${rows}◀ ▶ choose</span><span>${btn("a")} apply &middot; ${btn("b")} close</span>`;
       return;
     }
     const category = this.categories[this.activeCategory];
@@ -512,11 +523,11 @@ export class Xmb {
     const left = extra
       ? `<span>${extra}</span>`
       : `<span>◀ ▶ category &middot; ▲ ▼ select</span>`;
-    const hints = ["A select"];
-    if (item?.contextHint) hints.push(`Y ${item.contextHint}`);
-    else if (item?.contextGame) hints.push("Y game options");
-    if (category.onBack) hints.push("B back");
-    if (!item?.contextHint && !item?.contextGame && category.onContext) hints.push("Y play/pause");
+    const hints = [`${btn("a")} select`];
+    if (item?.contextHint) hints.push(`${btn("y")} ${item.contextHint}`);
+    else if (item?.contextGame) hints.push(`${btn("y")} game options`);
+    if (category.onBack) hints.push(`${btn("b")} back`);
+    if (!item?.contextHint && !item?.contextGame && category.onContext) hints.push(`${btn("y")} play/pause`);
     this.footerEl.innerHTML = `${left}<span>${hints.join(" &middot; ")}</span>`;
   }
 }

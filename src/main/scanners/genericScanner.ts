@@ -13,6 +13,7 @@ const IGNORE_EXE_PATTERN =
  */
 const IGNORE_DIR_PATTERN = /^(\.|md5$|sfv$|_?commonredist$|redist|fairlight$|crack$|_?installer$|setup$|extras?$|soundtrack$|ost$|dlc$)/i;
 
+// "Game" also covers a drive's GAME folder - NTFS lookups are case-insensitive.
 const CANDIDATE_FOLDER_NAMES = ["Games", "Game", "GOG Games", "My Games"];
 
 /**

@@ -10,13 +10,15 @@ import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
 import { resolveArt, isGameArtConfigured } from "./gameArt";
 import { browseMusic, MusicListing } from "./musicLibrary";
 import { scanSaves, SaveEntry } from "./saveScanner";
-import { browseMedia, BrowseKind, BrowseListing } from "./mediaBrowser";
+import { browseMedia, BrowseKind, BrowseListing, listMediaDrives, MediaDrive } from "./mediaBrowser";
 import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary";
 import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
 import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
+import { InMenuBrowser } from "./browserView";
+import { getWifiStatus, getBluetoothStatus, getHardwareInfo, WifiStatus, BluetoothStatus, HardwareInfo } from "./systemStatus";
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
@@ -140,6 +142,18 @@ ipcMain.handle("axm:setSettings", (_e, partial: Partial<Settings>): Settings => 
   if (partial.overlayHotkey !== undefined) overlayHotkey?.setShortcut(partial.overlayHotkey);
   return updated;
 });
+
+// The pop-up browser lives in the main process as a WebContentsView over the menu.
+const browser = new InMenuBrowser(
+  () => mainWindow,
+  () => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:browserClosed");
+  }
+);
+
+ipcMain.handle("axm:browserOpen", (_e, url: string): void => browser.open(url));
+ipcMain.handle("axm:browserClose", (): void => browser.close());
+ipcMain.handle("axm:browserInput", (_e, action: string): boolean => browser.input(action));
 
 ipcMain.handle("axm:overlayClose", (): void => setOverlay(false));
 ipcMain.handle("axm:overlayToggle", (): void => toggleOverlay());
@@ -379,6 +393,10 @@ ipcMain.handle(
 );
 
 ipcMain.handle("axm:getAnkerStatus", (): Promise<AnkerStatus> => readAnkerStatus());
+ipcMain.handle("axm:getMediaDrives", (): MediaDrive[] => listMediaDrives());
+ipcMain.handle("axm:getWifiStatus", (): Promise<WifiStatus> => getWifiStatus());
+ipcMain.handle("axm:getBluetoothStatus", (): Promise<BluetoothStatus> => getBluetoothStatus());
+ipcMain.handle("axm:getHardwareInfo", (): Promise<HardwareInfo> => getHardwareInfo());
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 

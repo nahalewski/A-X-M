@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https:; media-src 'self' file:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https: http:; media-src 'self' file: blob: https: http:; connect-src 'self' https: http:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
     <title>A-X-M</title>
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -42,7 +42,7 @@
         <h2 id="context-title"></h2>
         <div id="context-details"></div>
         <div id="context-options"></div>
-        <div id="context-hint">A confirm &middot; B cancel</div>
+        <div id="context-hint"><span class="btn btn-a"></span> confirm &middot; <span class="btn btn-b"></span> cancel</div>
       </div>
     </div>
 

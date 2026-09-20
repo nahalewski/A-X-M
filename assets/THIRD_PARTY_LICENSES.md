@@ -26,6 +26,13 @@ The pack's icons are no longer used - see below.
   the pack's `nav-up.ogg`/`nav-down.ogg`, which have been removed.
 - `icons/boot-logo.png` - the A-X-M wordmark shown on the boot splash, trimmed to its
   own bounds from the supplied artwork.
+- `icons/battery-sprite.webp`, `icons/status-sprite.webp` - battery and Wi-Fi /
+  Bluetooth indicators, re-tiled onto exact grids from the supplied sheets.
+- `icons/ps-buttons.webp`, `icons/switch-buttons.webp`, `icons/kishi-buttons.webp` -
+  the four face buttons cropped from the supplied PlayStation, Nintendo Switch and
+  Razer Kishi button sheets, for the footer hints.
+- `icons/hdd.webp` - the ROG external drive, cropped from the supplied artwork; shown
+  for drives that carry PHOTO / VIDEO / GAME folders. The ROG logo is ASUS's mark.
 
 Same caveat as the icon sheet: provenance not verified here.
 
@@ -59,3 +66,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## Libraries bundled into the renderer
+
+- [hls.js](https://github.com/video-dev/hls.js) - Apache License 2.0, Copyright (c)
+  2017 Dailymotion. Used to play Jellyfin's HLS transcodes in the built-in viewer.
+  Full text: `node_modules/hls.js/LICENSE`.

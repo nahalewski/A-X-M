@@ -86,6 +86,8 @@ export interface BrowseEntry {
   name: string;
   filePath: string;
   url?: string;
+  /** Play `url` through hls.js (an HLS playlist) instead of setting it as src. */
+  hls?: boolean;
 }
 
 export interface BrowseListing {
@@ -137,12 +139,44 @@ export interface JellyfinItem {
   isFolder: boolean;
   imageUrl?: string;
   streamUrl?: string;
+  hls?: boolean;
 }
 
 export interface ArtChoice {
   id: number;
   url: string;
   thumb: string;
+}
+
+export interface WifiStatus {
+  present: boolean;
+  connected: boolean;
+  ssid: string | null;
+  signal: number | null;
+}
+
+export interface BluetoothStatus {
+  present: boolean;
+  enabled: boolean;
+  connectedCount: number;
+}
+
+/** A drive with PHOTO / VIDEO / GAME folders at its root. */
+export interface MediaDrive {
+  drive: string;
+  photo: string | null;
+  video: string | null;
+  game: string | null;
+}
+
+export interface HardwareInfo {
+  deviceName: string;
+  model: string;
+  cpu: string;
+  cpuGhz: number;
+  ramGb: number;
+  gpu: string;
+  gpuGb: number | null;
 }
 
 export interface AnkerStatus {
@@ -195,9 +229,12 @@ export interface Settings {
   jellyfinLogins: Record<string, JellyfinLogin>;
   ankerDeviceName: string;
   navSoundsEnabled: boolean;
+  menuMusicEnabled: boolean;
   batteryPercentEnabled: boolean;
   steamInstallDrive: string;
   overlayHotkey: string;
+  fpsCounterEnabled: boolean;
+  hardwareInfoEnabled: boolean;
 }
 
 /** Artwork that landed after the initial scan. Either field may be absent. */
@@ -235,6 +272,14 @@ export interface AxmApi {
   jellyfinLibraries(login: JellyfinLogin): Promise<JellyfinItem[] | null>;
   jellyfinItems(login: JellyfinLogin, parentId: string): Promise<JellyfinItem[] | null>;
   getAnkerStatus(): Promise<AnkerStatus>;
+  getWifiStatus(): Promise<WifiStatus>;
+  getBluetoothStatus(): Promise<BluetoothStatus>;
+  getHardwareInfo(): Promise<HardwareInfo>;
+  getMediaDrives(): Promise<MediaDrive[]>;
+  browserOpen(url: string): Promise<void>;
+  browserClose(): Promise<void>;
+  browserInput(action: string): Promise<boolean>;
+  onBrowserClosed(callback: () => void): void;
   overlayClose(): Promise<void>;
   overlayToggle(): Promise<void>;
   overlayState(): Promise<{ active: boolean }>;

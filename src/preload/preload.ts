@@ -37,6 +37,16 @@ const api = {
   jellyfinLibraries: (login: unknown) => ipcRenderer.invoke("axm:jellyfinLibraries", login),
   jellyfinItems: (login: unknown, parentId: string) => ipcRenderer.invoke("axm:jellyfinItems", login, parentId),
   getAnkerStatus: () => ipcRenderer.invoke("axm:getAnkerStatus"),
+  getWifiStatus: () => ipcRenderer.invoke("axm:getWifiStatus"),
+  getBluetoothStatus: () => ipcRenderer.invoke("axm:getBluetoothStatus"),
+  getHardwareInfo: () => ipcRenderer.invoke("axm:getHardwareInfo"),
+  getMediaDrives: () => ipcRenderer.invoke("axm:getMediaDrives"),
+  browserOpen: (url: string) => ipcRenderer.invoke("axm:browserOpen", url),
+  browserClose: () => ipcRenderer.invoke("axm:browserClose"),
+  browserInput: (action: string) => ipcRenderer.invoke("axm:browserInput", action),
+  onBrowserClosed: (callback: () => void) => {
+    ipcRenderer.on("axm:browserClosed", () => callback());
+  },
   overlayClose: () => ipcRenderer.invoke("axm:overlayClose"),
   overlayToggle: () => ipcRenderer.invoke("axm:overlayToggle"),
   overlayState: () => ipcRenderer.invoke("axm:overlayState"),
