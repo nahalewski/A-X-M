@@ -16,6 +16,11 @@ From the [Releases](https://github.com/nahalewski/A-X-M/releases) page:
 
 - `A-X-M-Setup-<version>.exe` - installer (NSIS, per-user, no admin needed)
 - `A-X-M-<version>-portable.exe` - portable, runs from anywhere (a USB stick, a games drive)
+- `A-X-M-<version>-steamdeck-x64.AppImage` - **Steam Deck** (SteamOS / Linux x64): make it
+  executable, run it from Desktop Mode, or add it to Steam as a non-Steam game for Game
+  Mode. Steam library and SD-card `PHOTO` / `VIDEO` / `MUSIC` / `GAME` folders are found;
+  the Windows-only readouts (Wi-Fi / Bluetooth pairing, Xbox / Game Pass, the Anker
+  bank, XInput overlay button) stay empty there.
 
 **Runs on:** Windows 10 / 11, x64 (AMD Ryzen Z-series, Intel Core / Core Ultra, any 64-bit
 desktop or laptop CPU). ROG Xbox Ally, ROG Ally / Ally X, Legion Go, MSI Claw, Steam Deck on
