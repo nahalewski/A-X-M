@@ -49,6 +49,9 @@
       "shortcutName": "A-X-M",
       "artifactName": "A-X-M-Setup-${version}.${ext}",
       "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "A-X-M-${version}-portable.${ext}"
     }
   },
   "dependencies": {
