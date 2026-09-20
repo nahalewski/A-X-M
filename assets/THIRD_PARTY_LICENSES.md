@@ -91,3 +91,6 @@ SOFTWARE.
 - `icons/progress-sprite.webp` - the 20-frame progress ring, re-tiled from the supplied
   sheet. `icons/hdd-off.webp` - the grey ROG drive, for an unplugged drive's row.
 - `icons/epic.svg` - a plain badge drawn for the Epic Games Launcher row.
+- `icons/settings-theme.webp`, `settings-display.webp`, `settings-audio.webp`,
+  `settings-system.webp`, `settings-about.webp` - the Settings group icons, sliced from
+  the supplied sheet. `icons/app.png` - the app icon rendered from `app.ico` for Linux.

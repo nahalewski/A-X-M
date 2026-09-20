@@ -1,10 +1,12 @@
 import * as fs from "node:fs";
+import { isWindows, steamRootCandidates } from "../platform";
 import * as path from "node:path";
 import { execFileSync } from "node:child_process";
 import { parseVdf, VdfNode } from "../vdf";
 import { GameEntry } from "../types";
 
 export function getSteamInstallPath(): string | null {
+  if (!isWindows) return steamRootCandidates().find((p) => fs.existsSync(path.join(p, "steamapps"))) ?? null;
   try {
     const out = execFileSync(
       "reg",

@@ -1572,10 +1572,10 @@ async function main(): Promise<void> {
     const groupedRoot = (): MenuItem[] => {
       const all = allRootItems();
       const groups: MenuItem[] = [
-        { id: "group-display", title: "Display", subtitle: "Fullscreen, resolution, upscaling, refresh rate, readouts", iconGlyph: "▭", onConfirm: () => go("display") },
-        { id: "group-audio", title: "Audio", subtitle: "Volumes, menu music, sounds, shuffle, music folders", iconUrl: "assets/icons/music.png", onConfirm: () => go("audio") },
+        { id: "group-display", title: "Display", subtitle: "Fullscreen, resolution, upscaling, refresh rate, readouts", iconUrl: "assets/icons/settings-display.webp", onConfirm: () => go("display") },
+        { id: "group-audio", title: "Audio", subtitle: "Volumes, menu music, sounds, shuffle, music folders", iconUrl: "assets/icons/settings-audio.webp", onConfirm: () => go("audio") },
         { id: "group-network", title: "Network", subtitle: "Wi-Fi networks and Bluetooth pairing", iconGlyph: "⌔", onConfirm: () => { void netOpen(); } },
-        { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconGlyph: "▣", onConfirm: () => go("sys") },
+        { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconUrl: "assets/icons/settings-system.webp", onConfirm: () => go("sys") },
       ];
       const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
       // Theme first, then the groups, then whatever else is unfiled (About, Exit).
@@ -1589,7 +1589,7 @@ async function main(): Promise<void> {
         id: "theme",
         title: "Theme",
         subtitle: THEME_MODE_LABELS[settings.themeMode],
-        iconGlyph: "❖",
+        iconUrl: "assets/icons/settings-theme.webp",
         onConfirm: () => go("theme"),
       },
       {
@@ -1882,7 +1882,7 @@ async function main(): Promise<void> {
         id: "about",
         title: "About A-X-M",
         subtitle: "A passion project · developed with Naha0",
-        iconGlyph: "ⓘ",
+        iconUrl: "assets/icons/settings-about.webp",
         onConfirm: () => go("about"),
       },
       {

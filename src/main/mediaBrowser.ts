@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { listDriveRoots, driveLabel, isSystemRoot } from "./platform";
 import * as path from "node:path";
 import * as os from "node:os";
 import { pathToFileURL } from "node:url";
@@ -58,14 +59,14 @@ export interface MediaDrive {
 const DRIVE_FOLDERS = { photo: ["PHOTO", "PHOTOS"], video: ["VIDEO", "VIDEOS"], game: ["GAME", "GAMES"], music: ["MUSIC"] } as const;
 
 export function listMediaDrives(): MediaDrive[] {
-  const system = (process.env.SystemDrive ?? "C:").toUpperCase();
   const drives: MediaDrive[] = [];
-  for (let c = 65; c <= 90; c++) {
-    const drive = `${String.fromCharCode(c)}:`;
-    if (drive === system) continue;
+  for (const root of listDriveRoots()) {
+    if (isSystemRoot(root)) continue;
+    // "N:" on Windows; the mount point itself on Linux (path.join copes with both).
+    const drive = process.platform === "win32" ? root.slice(0, 2).toUpperCase() : root;
     let names: string[];
     try {
-      names = fs.readdirSync(drive + "\\");
+      names = fs.readdirSync(root);
     } catch {
       continue;
     }
@@ -73,14 +74,14 @@ export function listMediaDrives(): MediaDrive[] {
     const found = (key: keyof typeof DRIVE_FOLDERS): string | null => {
       const real = DRIVE_FOLDERS[key].map((n) => upper.get(n)).find(Boolean);
       if (!real) return null;
-      const full = path.join(drive + "\\", real);
+      const full = path.join(root, real);
       try {
         return fs.statSync(full).isDirectory() ? full : null;
       } catch {
         return null;
       }
     };
-    const entry = { drive, photo: found("photo"), video: found("video"), game: found("game"), music: found("music") };
+    const entry = { drive: process.platform === "win32" ? drive : driveLabel(root), photo: found("photo"), video: found("video"), game: found("game"), music: found("music") };
     if (entry.photo || entry.video || entry.game || entry.music) drives.push(entry);
   }
   return drives;

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { listDriveRoots, driveLabel } from "./platform";
 import * as path from "node:path";
 import * as os from "node:os";
 import { pathToFileURL } from "node:url";
@@ -30,14 +31,7 @@ export interface MusicListing {
   entries: MusicEntry[];
 }
 
-function listDrives(): string[] {
-  const drives: string[] = [];
-  for (let c = 65; c <= 90; c++) {
-    const root = `${String.fromCharCode(c)}:\\`;
-    if (fs.existsSync(root)) drives.push(root);
-  }
-  return drives;
-}
+const listDrives = listDriveRoots;
 
 /** Configured roots if set, otherwise the usual Windows music locations. */
 export function getMusicRoots(): string[] {
@@ -84,7 +78,7 @@ export function browseMusic(dirPath?: string | null): MusicListing {
       entries: roots.map((root) => ({
         kind: "folder" as const,
         // "MUSIC (N:)" rather than three folders all called MUSIC.
-        name: `${path.basename(root) || root} (${root.slice(0, 2).toUpperCase()})`,
+        name: `${path.basename(root) || root} (${driveLabel(path.dirname(root))})`,
         filePath: root,
       })),
     };

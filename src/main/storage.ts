@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { isWindows, listDriveRoots, driveLabel, isSystemRoot } from "./platform";
 import * as path from "node:path";
 import * as os from "node:os";
 import { execFile } from "node:child_process";
@@ -46,6 +47,7 @@ export interface TransferProgress {
 }
 
 export function listVolumes(): Promise<VolumeInfo[]> {
+  if (!isWindows) return listVolumesPosix();
   const script =
     "Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -in 2,3,4 } | " +
     "Select-Object DeviceID, VolumeName, Size, FreeSpace, DriveType | ConvertTo-Json -Compress";
@@ -83,10 +85,32 @@ export function listVolumes(): Promise<VolumeInfo[]> {
   });
 }
 
+/** Linux: statfs over every mount root the menu knows about. */
+async function listVolumesPosix(): Promise<VolumeInfo[]> {
+  const out: VolumeInfo[] = [];
+  for (const root of listDriveRoots()) {
+    const stats = await new Promise<fs.StatsFs | null>((resolve) => fs.statfs(root, (err, st) => resolve(err ? null : st)));
+    if (!stats) continue;
+    const total = stats.blocks * stats.bsize;
+    const free = stats.bavail * stats.bsize;
+    if (total <= 1e9) continue;
+    out.push({
+      drive: root,
+      label: driveLabel(root),
+      totalBytes: total,
+      freeBytes: free,
+      usedBytes: Math.max(0, total - free),
+      kind: root.startsWith("/run/media") || root.startsWith("/media") ? "removable" : "fixed",
+      system: isSystemRoot(root),
+    });
+  }
+  return out;
+}
+
 /** Where a copy of `kind` lands on `target`: a drive letter, or "home" for the user's own folder. */
 export function destinationFor(kind: MediaKind, target: string): string {
   if (target === "home") return path.join(os.homedir(), HOME_FOR[kind]);
-  const root = target.replace(/[\\/]+$/, "") + "\\";
+  const root = isWindows ? target.replace(/[\\/]+$/, "") + "\\" : target;
   // Reuse a folder the drive already has (PHOTOS, Music, ...) rather than adding a twin.
   try {
     const wanted = [FOLDER_FOR[kind], FOLDER_FOR[kind] + "S"];

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { listDriveRoots, driveLabel } from "../platform";
 import * as path from "node:path";
 import { GameEntry } from "../types";
 
@@ -32,15 +33,7 @@ const ROM_PLATFORM_FOLDERS = new Set(
 /** Container folders that group PC games one level down, e.g. Games\PC\<Game>. */
 const CONTAINER_FOLDERS = new Set(["pc", "windows", "installed", "steam", "epic", "gog"]);
 
-function listDrives(): string[] {
-  const drives: string[] = [];
-  for (let c = 65; c <= 90; c++) {
-    const letter = String.fromCharCode(c);
-    const root = `${letter}:\\`;
-    if (fs.existsSync(root)) drives.push(root);
-  }
-  return drives;
-}
+const listDrives = listDriveRoots;
 
 function findMainExe(dir: string, depth = 2): string | null {
   let entries: fs.Dirent[];
@@ -135,7 +128,7 @@ export function scanGenericGames(extraFolders: string[]): GameEntry[] {
 
   for (const root of roots) {
     if (!fs.existsSync(root)) continue;
-    const drive = root.slice(0, 2).toUpperCase();
+    const drive = process.platform === "win32" ? root.slice(0, 2).toUpperCase() : driveLabel(path.dirname(root));
     for (const g of scanRoot(root, drive)) {
       if (seen.has(g.installDir)) continue;
       seen.add(g.installDir);

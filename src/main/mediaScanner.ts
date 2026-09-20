@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { listDriveRoots } from "./platform";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -28,15 +29,7 @@ const DRIVE_FOLDER_NAMES: Record<MediaKind, string[]> = {
   music: ["Music"],
 };
 
-function listDrives(): string[] {
-  const drives: string[] = [];
-  for (let c = 65; c <= 90; c++) {
-    const letter = String.fromCharCode(c);
-    const root = `${letter}:\\`;
-    if (fs.existsSync(root)) drives.push(root);
-  }
-  return drives;
-}
+const listDrives = listDriveRoots;
 
 function scanFolder(dir: string, extensions: string[], depth = 1): MediaEntry[] {
   let entries: fs.Dirent[];
