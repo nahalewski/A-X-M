@@ -51,13 +51,13 @@ body {
 
 #category-bar {
   position: absolute;
-  top: 42%;
+  top: 30%;
   left: 0;
   right: 0;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 64px;
+  gap: 92px;
   transform: translateY(-50%);
 }
 
@@ -77,9 +77,9 @@ body {
 }
 
 .category-icon {
-  width: 46px;
-  height: 46px;
-  border-radius: 10px;
+  width: 76px;
+  height: 76px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -89,14 +89,14 @@ body {
 }
 
 .category-icon img {
-  width: 26px;
-  height: 26px;
+  width: 46px;
+  height: 46px;
   object-fit: contain;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
 }
 
 .category-label {
-  font-size: 13px;
+  font-size: 15px;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   opacity: 0;
@@ -129,24 +129,24 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 230px;
-  height: 64px;
+  gap: 6px;
+  width: 260px;
+  height: 86px;
   opacity: 0.3;
   transition: opacity 0.16s ease;
 }
 
 .item-row.selected {
-  height: 112px;
+  height: 150px;
   opacity: 1;
   background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.18) 60%, transparent 80%);
   border-radius: 16px;
 }
 
 .item-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
+  width: 58px;
+  height: 58px;
+  border-radius: 10px;
   object-fit: cover;
   background: rgba(255, 255, 255, 0.12);
   display: flex;
@@ -159,26 +159,26 @@ body {
 }
 
 .item-row.selected .item-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 10px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.5);
 }
 
 .item-title {
   flex-shrink: 0;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 210px;
+  max-width: 250px;
   text-align: center;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 2px 12px rgba(0, 0, 0, 0.8);
 }
 
 .item-row.selected .item-title {
-  font-size: 19px;
+  font-size: 23px;
   font-weight: 500;
 }
 

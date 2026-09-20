@@ -26,20 +26,38 @@ const SOURCE_GLYPH: Record<GameEntry["source"], string> = {
   generic: "G",
 };
 
-const VISIBLE_RADIUS = 3; // how many items above/below the selection to render
+// How many items to render on each side of the focus. More below than above,
+// since the list grows downward from the category row.
+const VISIBLE_ABOVE = 2;
+const VISIBLE_BELOW = 4;
 
-// Slot geometry, in px, measured from the category icon's centre (offset 0 is the
-// focused item sitting on the icon row). The focused slot is taller because its
-// icon and title are enlarged, so neighbours are pushed clear of it.
-const SELECTED_SLOT_HEIGHT = 112;
-const NEIGHBOUR_SLOT_HEIGHT = 64;
+// Slot geometry, in px, all measured from the category icon's centre. The focused
+// item sits directly *below* the category icon; items already scrolled past move
+// above it. The icon itself (and its label) occupy a dead zone that no slot enters,
+// so a selection can never overlap the category row.
+const SELECTED_SLOT_HEIGHT = 150;
+const NEIGHBOUR_SLOT_HEIGHT = 86;
 const SLOT_GAP = 12;
 
-function slotTop(offset: number): number {
-  if (offset === 0) return -SELECTED_SLOT_HEIGHT / 2;
-  const stepsFromSelected = Math.abs(offset) - 1;
-  const edge = SELECTED_SLOT_HEIGHT / 2 + SLOT_GAP + stepsFromSelected * (NEIGHBOUR_SLOT_HEIGHT + SLOT_GAP);
-  return offset > 0 ? edge : -edge - NEIGHBOUR_SLOT_HEIGHT;
+interface IconClearance {
+  above: number; // from icon centre up to the top of the label
+  below: number; // from icon centre down to the bottom of the icon
+}
+
+function slotTop(offset: number, clearance: IconClearance): number {
+  // Focused item hangs directly under the category icon.
+  if (offset === 0) return clearance.below;
+
+  if (offset > 0) {
+    // Below the focused item, stacked downward.
+    const below = clearance.below + SELECTED_SLOT_HEIGHT + SLOT_GAP;
+    return below + (offset - 1) * (NEIGHBOUR_SLOT_HEIGHT + SLOT_GAP);
+  }
+
+  // Items already scrolled past sit above the category icon, growing upward.
+  const stepsAbove = Math.abs(offset) - 1;
+  const bottomEdge = -clearance.above - stepsAbove * (NEIGHBOUR_SLOT_HEIGHT + SLOT_GAP);
+  return bottomEdge - NEIGHBOUR_SLOT_HEIGHT;
 }
 
 export class Xmb {
@@ -47,6 +65,7 @@ export class Xmb {
   private selectedIndex = new Map<string, number>();
   private modalGame: GameEntry | null = null;
   private modalSelection: 0 | 1 | 2 | 3 = 0;
+  private clearance: IconClearance = { above: 60, below: 44 };
 
   private categoryBarEl = document.getElementById("category-bar")!;
   private itemRailEl = document.getElementById("item-rail")!;
@@ -213,11 +232,22 @@ export class Xmb {
     // "crossing" lines up with the icon itself, not the icon+label block, which
     // would push the item text down into the label) - matching how the real XMB
     // scrolls items through the icon row rather than a screen-centered block.
-    const iconEl = (activeEl as HTMLElement | null)?.querySelector(".category-icon");
+    const active = activeEl as HTMLElement | null;
+    const iconEl = active?.querySelector(".category-icon");
     if (iconEl) {
       const rect = iconEl.getBoundingClientRect();
+      const centreY = rect.top + rect.height / 2;
       this.itemRailEl.style.left = `${rect.left + rect.width / 2}px`;
-      this.itemRailEl.style.top = `${rect.top + rect.height / 2}px`;
+      this.itemRailEl.style.top = `${centreY}px`;
+
+      // Measure the real dead zone rather than assuming icon sizes, so the items
+      // stay clear of the category row even as icon sizes or scaling change.
+      const labelEl = active?.querySelector(".category-label");
+      const labelTop = labelEl ? labelEl.getBoundingClientRect().top : rect.top;
+      this.clearance = {
+        above: centreY - labelTop + SLOT_GAP,
+        below: rect.height / 2 + SLOT_GAP,
+      };
     }
   }
 
@@ -229,23 +259,23 @@ export class Xmb {
     if (items.length === 0) {
       const empty = document.createElement("div");
       empty.className = "item-row selected";
-      empty.style.top = `${slotTop(0)}px`;
+      empty.style.top = `${slotTop(0, this.clearance)}px`;
       empty.innerHTML = `<div class="item-title">Nothing here yet</div>`;
       this.itemRailEl.appendChild(empty);
       return;
     }
 
-    // Each slot is positioned absolutely at an exact offset from the category icon,
-    // so the selected item always sits on the icon row (the "cross" in XrossMediaBar)
-    // and the list scrolls past it, with guaranteed clearance between neighbours.
-    for (let offset = -VISIBLE_RADIUS; offset <= VISIBLE_RADIUS; offset++) {
+    // Each slot is positioned absolutely at an exact offset from the category icon.
+    // The focused item hangs directly below the icon and items scrolled past move
+    // above it, so nothing ever lands on the category row itself.
+    for (let offset = -VISIBLE_ABOVE; offset <= VISIBLE_BELOW; offset++) {
       const item = items[selected + offset];
       if (!item) continue;
 
       const distance = Math.abs(offset);
       const row = document.createElement("div");
       row.className = "item-row" + (offset === 0 ? " selected" : "");
-      row.style.top = `${slotTop(offset)}px`;
+      row.style.top = `${slotTop(offset, this.clearance)}px`;
       row.style.opacity = offset === 0 ? "1" : String(Math.max(0.15, 0.55 - distance * 0.13));
 
       row.innerHTML = `
