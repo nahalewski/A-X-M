@@ -9,6 +9,7 @@ import { spriteEl, spriteHtml, progressRing } from "./sprites";
 import { playIntroSparkle } from "./intro";
 import { OptionsPopup, InfoCard, TextPanel, CenterMenu, PopupOption, InfoRow } from "./popups";
 import { Notifier } from "./notify";
+import { Assistant, Command } from "./assistant";
 import { setDictionary } from "./textEntry";
 import { MediaViewer } from "./mediaViewer";
 import { GridPicker, GridChoice } from "./gridPicker";
@@ -63,6 +64,10 @@ import {
   Achievement,
   ConnectionStatus,
   RemotePlayStatus,
+  AssistantStatus,
+  UpdateInfo,
+  TtsStatus,
+  ToolState,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -127,9 +132,10 @@ async function main(): Promise<void> {
     const changed = JSON.stringify(next) !== JSON.stringify(discs);
     discs = next;
     if (changed) {
-      for (const d of next) notifier.push(`${discLabel(d)} inserted: ${d.label}`);
+      for (const d of next) notifier.push(`${discLabel(d)} inserted: ${d.label}`, "general", discIcon(d));
       xmb.refresh();
     }
+    for (const d of next) void lookupDisc(d);
   };
   const discLabel = (d: Disc) => ({ "audio-cd": "Audio CD", dvd: "DVD", bluray: "Blu-ray Disc", ps1: "PlayStation disc", ps2: "PlayStation 2 disc", data: "Data disc", unknown: "Disc" })[d.kind];
   const discIcon = (d: Disc) => ({ "audio-cd": "assets/icons/disc-dvd.webp", dvd: "assets/icons/disc-dvd.webp", bluray: "assets/icons/disc-bluray.webp", ps1: "assets/icons/disc-ps1.webp", ps2: "assets/icons/disc-ps2.webp", data: "assets/icons/disc-dvd.webp", unknown: "assets/icons/disc-dvd.webp" })[d.kind];
@@ -137,27 +143,164 @@ async function main(): Promise<void> {
     { label: `${label} to this PC`, run: () => run("home") },
     ...volumes.filter((v) => !v.system).map((v) => ({ label: `${label} to ${v.label} (${v.drive})`, hint: `${fmtBytes(v.freeBytes)} free`, run: () => run(v.drive) })),
   ];
+  /**
+   * What a DVD / Blu-ray actually is: the label guessed into a title, then TMDB
+   * for the real name, year, poster and overview. Looked up once per disc.
+   */
+  interface DiscMeta {
+    title: string;
+    info: ScreenInfo | null;
+    backup: string | null;
+    pending: boolean;
+  }
+  const discMeta = new Map<string, DiscMeta>();
+  const discTitle = (d: Disc) => discMeta.get(d.drive + d.label)?.info?.title ?? discMeta.get(d.drive + d.label)?.title ?? (d.label !== d.drive ? d.label : discLabel(d));
+  const discPoster = (d: Disc) => discMeta.get(d.drive + d.label)?.info?.posterUrl ?? null;
+  const targetLabel = (t: string) => (t === "home" ? "this PC" : volumes.find((v) => v.drive === t)?.label ? `${volumes.find((v) => v.drive === t)!.label} (${t})` : t);
+  const lookupDisc = async (d: Disc) => {
+    const key = d.drive + d.label;
+    if (discMeta.has(key) || (d.kind !== "dvd" && d.kind !== "bluray")) return;
+    const guess = await window.axm.guessDiscTitle(d.label).catch(() => d.label);
+    const meta: DiscMeta = { title: guess, info: null, backup: null, pending: true };
+    discMeta.set(key, meta);
+    xmb.refresh();
+    const [info, backup] = await Promise.all([
+      window.axm.getScreenInfo(guess, "", "movie").catch(() => null),
+      window.axm.findDiscBackup(d, settings.discTarget, guess).catch(() => null),
+    ]);
+    meta.info = info;
+    meta.backup = backup ?? (info ? await window.axm.findDiscBackup(d, settings.discTarget, info.title).catch(() => null) : null);
+    meta.pending = false;
+    xmb.refresh();
+  };
+  const refreshDiscBackup = async (d: Disc) => {
+    const meta = discMeta.get(d.drive + d.label);
+    if (!meta) return;
+    meta.backup = await window.axm.findDiscBackup(d, settings.discTarget, discTitle(d)).catch(() => null);
+    xmb.refresh();
+  };
+
+  /** Rips in flight, for the notifications ("started", "50%", "done") and play-after. */
+  const ripJobs = new Map<string, { title: string; poster: string | null; announced: boolean; half: boolean; playAfter: boolean; disc: Disc; target: string }>();
+  const playVideoFile = (file: string, name: string) => {
+    musicPlayer.stop();
+    audio.fadeOutAmbient(400);
+    const url = "file:///" + encodeURI(file.replace(/\\/g, "/")).replace(/#/g, "%23");
+    const entry = { kind: "file" as const, name, filePath: file, url };
+    mediaViewer.open("video", entry, [entry]);
+    pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+  };
+  /** Starts a backup on the XMB's background thread of tools; the toast and pills follow it. */
+  const startRip = (d: Disc, target: string, playAfter = false): boolean => {
+    const id = `disc-${d.drive}`;
+    if (ripJobs.has(id)) {
+      notifier.push(`${discTitle(d)} is already being ripped`);
+      return false;
+    }
+    const title = discTitle(d);
+    ripJobs.set(id, { title, poster: discPoster(d), announced: false, half: false, playAfter, disc: d, target });
+    window.axm
+      .backupDisc(d, target, title)
+      .then((file) => {
+        const job = ripJobs.get(id);
+        ripJobs.delete(id);
+        void refreshDiscBackup(d);
+        if (job?.playAfter && file) playVideoFile(file, title);
+      })
+      .catch((e) => {
+        ripJobs.delete(id);
+        notifier.push(String(e.message ?? e));
+      });
+    return true;
+  };
+  const startCdImport = (d: Disc, target: string) => {
+    void window.axm.importAudioCd(d, target, settings.importFormat).catch((e) => notifier.push(String(e.message ?? e)));
+    notifier.push(`Importing ${d.label !== d.drive ? d.label : "Audio CD"} to ${targetLabel(target)} as ${settings.importFormat.toUpperCase()}`, "transfer", discIcon(d));
+  };
+  /**
+   * Play on a DVD / Blu-ray means the MKV copy: commercial discs are encrypted
+   * and the menu's player can't read them straight from the drive, so a disc
+   * that hasn't been ripped yet is ripped first and starts when it's done.
+   */
+  const playDisc = (d: Disc) => {
+    const meta = discMeta.get(d.drive + d.label);
+    if (meta?.backup) {
+      playVideoFile(meta.backup, discTitle(d));
+      return;
+    }
+    if (ripJobs.has(`disc-${d.drive}`)) {
+      const job = ripJobs.get(`disc-${d.drive}`)!;
+      job.playAfter = true;
+      notifier.push(`${job.title} will play as soon as the rip finishes`, "transfer", job.poster ?? discIcon(d));
+      return;
+    }
+    void refreshVolumes().then(() =>
+      showOptions(`${discTitle(d)} hasn't been ripped yet`, [
+        { label: `Rip to ${targetLabel(settings.discTarget)} and play when done`, hint: "MKV · H.265 10-bit · the disc stays in", run: () => void startRip(d, settings.discTarget, true) },
+        { label: "Rip only", children: discTargets("Rip", (t) => void startRip(d, t, false)) },
+        { label: "Not now" },
+      ])
+    );
+  };
+
   const discRows = (kinds: Disc["kind"][]): MenuItem[] =>
     discs
       .filter((d) => kinds.includes(d.kind))
-      .map((d) => ({
-        id: `disc-${d.drive}`,
-        title: d.label !== d.drive ? d.label : discLabel(d),
-        subtitle: `${discLabel(d)} · ${d.drive}${d.tracks ? ` · ${d.tracks} tracks` : ""}`,
-        iconUrl: discIcon(d),
-        iconClass: "disc",
-        contextHint: "options",
-        onContext: () => {
-          void refreshVolumes().then(() => {
-            const opts: PopupOption[] = [];
-            if (d.kind === "audio-cd") opts.push({ label: "Import", hint: `to ${settings.importFormat.toUpperCase()} · change in Settings › Audio`, children: discTargets("Import", (t) => void window.axm.importAudioCd(d, t, settings.importFormat).catch((e) => notifier.push(String(e.message ?? e)))) });
-            if (d.kind === "dvd" || d.kind === "bluray") opts.push({ label: "Backup", hint: "to MP4", children: discTargets("Backup", (t) => void window.axm.backupDisc(d, t).catch((e) => notifier.push(String(e.message ?? e)))) });
-            opts.push({ label: "Information", run: () => showInfo(d.label, discIcon(d), null, [{ label: "Sub-Title", value: discLabel(d) }, { label: "Drive", value: d.drive }, { label: "Tracks", value: d.tracks ? String(d.tracks) : "" }, { label: "Details", value: d.kind === "ps1" || d.kind === "ps2" ? "Playable through an emulator (DuckStation / PCSX2); the menu shows the disc, it doesn't run it" : d.kind === "audio-cd" ? "Import needs ffmpeg with libcdio" : d.kind === "dvd" ? "Backup needs HandBrakeCLI" : d.kind === "bluray" ? "Backup needs MakeMKV (and HandBrakeCLI for MP4)" : "" }]) });
-            showOptions(d.label, opts);
-          });
-          return true;
-        },
-      }));
+      .map((d) => {
+        const meta = discMeta.get(d.drive + d.label);
+        const video = d.kind === "dvd" || d.kind === "bluray";
+        const year = meta?.info?.year ? ` · ${meta.info.year}` : "";
+        const state = ripJobs.has(`disc-${d.drive}`) ? " · ripping…" : meta?.backup ? " · ripped, ready to play" : meta?.pending ? " · looking up…" : "";
+        return {
+          id: `disc-${d.drive}`,
+          title: video ? discTitle(d) : d.label !== d.drive ? d.label : discLabel(d),
+          subtitle: `${discLabel(d)}${year} · ${d.drive}${d.tracks ? ` · ${d.tracks} tracks` : ""}${state}`,
+          iconUrl: discIcon(d),
+          iconClass: "disc",
+          contextHint: "options",
+          onConfirm: video ? () => playDisc(d) : undefined,
+          onContext: () => {
+            void refreshVolumes().then(() => {
+              const opts: PopupOption[] = [];
+              if (d.kind === "audio-cd") {
+                opts.push({ label: `Import to ${targetLabel(settings.discTarget)}`, hint: `${settings.importFormat.toUpperCase()} · change in Settings › Audio`, run: () => startCdImport(d, settings.discTarget) });
+                opts.push({ label: "Import to…", children: discTargets("Import", (t) => startCdImport(d, t)) });
+              }
+              if (video) {
+                opts.push({ label: meta?.backup ? "Play" : "Rip and Play", run: () => playDisc(d) });
+                opts.push({ label: `Rip to ${targetLabel(settings.discTarget)}`, hint: "MKV · H.265 10-bit · original audio and subtitles", run: () => void startRip(d, settings.discTarget) });
+                opts.push({ label: "Rip to…", children: discTargets("Rip", (t) => void startRip(d, t)) });
+              }
+              opts.push({
+                label: "Information",
+                run: () => {
+                  const info = meta?.info;
+                  const rows: InfoRow[] = info
+                    ? [
+                        { label: "Sub-Title", value: `${discLabel(d)} · ${info.year}${info.tagline ? ` · ${info.tagline}` : ""}` },
+                        { label: "Genre", value: info.genres.join(", ") },
+                        { label: "Running time", value: info.runtimeMin ? `${info.runtimeMin} min` : "" },
+                        { label: "Rating", value: info.rating ? `${info.rating.toFixed(1)} / 10 · ${info.votes.toLocaleString()} votes` : "" },
+                        { label: "Drive", value: `${d.drive} · ${d.label}` },
+                        { label: "Copy", value: meta?.backup ?? "Not ripped yet" },
+                        { label: "Details", value: info.overview },
+                        { label: "Source", value: info.source },
+                      ]
+                    : [
+                        { label: "Sub-Title", value: discLabel(d) },
+                        { label: "Drive", value: d.drive },
+                        { label: "Tracks", value: d.tracks ? String(d.tracks) : "" },
+                        { label: "Details", value: d.kind === "audio-cd" ? "Import rips every track with ffmpeg." : video ? "Rip makes an MKV (H.265 10-bit, original audio, all subtitles) with MakeMKV and HandBrake." : "" },
+                      ];
+                  showInfo(video ? discTitle(d) : d.label, info?.posterUrl ?? discIcon(d), null, rows);
+                },
+              });
+              showOptions(video ? discTitle(d) : d.label, opts);
+            });
+            return true;
+          },
+        };
+      });
   void refreshDiscs();
   setInterval(() => void refreshDiscs(), 15_000);
 
@@ -272,6 +415,64 @@ async function main(): Promise<void> {
     pushOverlay((a) => centerMenu.handle(a as Parameters<CenterMenu["handle"]>[0]));
   };
   const notifier = new Notifier(document.body);
+  const assistant = new Assistant(document.body);
+  let assistantStatus: AssistantStatus = { modelReady: false, modelUrl: null, modelName: "", listening: false };
+  const applyAssistant = async () => {
+    assistantStatus = await window.axm.assistantStatus().catch(() => assistantStatus);
+    assistant.setPrefs({ ...settings.assistant, micId: settings.audioInputId });
+    if (settings.assistant.enabled && assistantStatus.modelReady && !assistantStatus.listening) await window.axm.startVoice(settings.audioInputId);
+    else if (!settings.assistant.enabled && assistantStatus.listening) await window.axm.stopVoice();
+    void refreshTts();
+  };
+  assistant.setOnStatus((text) => notifier.push(text, "general"));
+  window.axm.onVoice((m) => assistant.onVoice(m.event, m.payload));
+  // Menu music and the player drop while Ghost listens or talks.
+  assistant.setOnAwake((on) => {
+    audio.duck(on);
+    musicPlayer.duck(on);
+  });
+  // Ghost's replies come from the cloned voice on this machine - or not at all.
+  let ttsStatus: TtsStatus = { python: null, engineReady: false, engineRunning: false, device: null, voiceClip: "", installing: false, cacheCount: 0 };
+  let ghostAudio: HTMLAudioElement | null = null;
+  assistant.setSpeaker(async (text) => {
+    const file = await window.axm.speak(text).catch(() => null);
+    if (!file) return;
+    await new Promise<void>((resolve) => {
+      ghostAudio?.pause();
+      const el = new Audio("file:///" + encodeURI(file.replace(/\\/g, "/")).replace(/#/g, "%23"));
+      ghostAudio = el;
+      el.volume = Math.max(0.5, settings.sfxVolume);
+      if (settings.audioOutputId) void (el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId?.(settings.audioOutputId).catch(() => {});
+      el.onended = () => resolve();
+      el.onerror = () => resolve();
+      el.play().catch(() => resolve());
+    });
+  });
+  const refreshTts = async () => {
+    ttsStatus = await window.axm.ttsStatus().catch(() => ttsStatus);
+    if (settings.assistant.enabled && settings.assistant.voiceReplies && ttsStatus.engineReady && !ttsStatus.engineRunning) void window.axm.startTts().then(() => void window.axm.ttsStatus().then((t) => (ttsStatus = t)));
+  };
+  void refreshTts();
+  // The external tools (ffmpeg, HandBrakeCLI, MakeMKV, Python, the voice engine).
+  let toolsSummary = "Checking…";
+  const refreshTools = async () => {
+    const state = await window.axm.toolsState().catch(() => [] as ToolState[]);
+    const missing = state.filter((t) => !t.installed);
+    toolsSummary = state.length ? (missing.length ? `Missing: ${missing.map((t) => t.name).join(", ")}` : "ffmpeg, HandBrakeCLI, MakeMKV, Python and Ghost's voice are all installed") : "Couldn't check";
+    xmb.refresh();
+  };
+  const runToolsInstall = async () => {
+    notifier.push("Setting up disc and voice tools in the background");
+    await window.axm.installTools().catch((e) => notifier.push(`Tools: ${String(e.message ?? e)}`));
+    await refreshTools();
+    await refreshTts();
+    settings = await window.axm.setSettings({ toolsSetupDone: true });
+  };
+  void refreshTools().then(() => {
+    // First launch: get everything the disc rippers and Ghost need, unattended.
+    if (!settings.toolsSetupDone && toolsSummary.startsWith("Missing")) setTimeout(() => void runToolsInstall(), 20_000);
+    else if (!settings.toolsSetupDone) void window.axm.setSettings({ toolsSetupDone: true }).then((n) => (settings = n));
+  });
   notifier.setPrefs(settings.notifications);
   setDictionary(settings.dictionaryTerms, settings.learnedWords, (words) => {
     void window.axm.setSettings({ learnedWords: words }).then((next) => (settings = next));
@@ -374,9 +575,25 @@ async function main(): Promise<void> {
   const transferToast = document.getElementById("transfer-toast")!;
   const transfers = new Map<string, TransferProgress>();
   window.axm.onTransfer((p) => {
+    // Disc rips get the media pill with the poster: when they start, at half way, and when done.
+    const job = ripJobs.get(p.id);
+    if (job) {
+      const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
+      if (p.finished) {
+        if (p.error) notifier.push(`${job.title}: ${p.error}`, "transfer", job.poster ?? undefined);
+        else notifier.push(`${job.title} ripped to ${targetLabel(job.target)}${job.playAfter ? " · starting" : ""}`, "transfer", job.poster ?? undefined);
+      } else if (!job.announced) {
+        job.announced = true;
+        notifier.push(`Ripping ${job.title} to ${targetLabel(job.target)}`, "transfer", job.poster ?? undefined);
+      } else if (!job.half && pct >= 50) {
+        job.half = true;
+        notifier.push(`${job.title} is half way there · ${pct}%`, "transfer", job.poster ?? undefined);
+      }
+      xmb.refresh();
+    }
     if (p.finished) {
       transfers.delete(p.id);
-      notifier.push(p.error ? `${p.name}: ${p.error}` : `${p.id.startsWith("dl-") ? "Downloaded" : "Copied"} ${p.name}`, "transfer");
+      if (!job) notifier.push(p.error ? `${p.name}: ${p.error}` : `${p.id.startsWith("dl-") ? "Downloaded" : p.id.startsWith("cd-") ? "Imported" : p.id === "tools" || p.id === "ghost-voice" ? "Finished" : "Copied"} ${p.name}`, "transfer");
       if (p.error) {
         transfers.set(p.id + "-err", { ...p });
         setTimeout(() => {
@@ -392,7 +609,8 @@ async function main(): Promise<void> {
     transferToast.innerHTML = [...transfers.values()]
       .map((p) => {
         const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
-        const text = p.error ? `${p.name} — ${p.error}` : `${p.id.startsWith("dl-") ? "Downloading" : "Copying"} ${p.name} → ${p.destination} · ${pct}%`;
+        const verb = p.id.startsWith("dl-") ? "Downloading" : p.id.startsWith("disc-") ? "Ripping" : p.id.startsWith("cd-") ? "Importing" : p.id === "tools" || p.id === "ghost-voice" || p.id === "ghost-model" ? "Setting up" : "Copying";
+        const text = p.error ? `${p.name} — ${p.error}` : `${verb} ${p.name} → ${p.destination} · ${pct}%`;
         return `<div class="transfer${p.error ? " error" : ""}"><span class="ring" style="background-position:${(Math.round((pct / 100) * 16) * 100) / 16}% 0"></span><div class="transfer-text"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div></div>`;
       })
       .join("");
@@ -800,12 +1018,12 @@ async function main(): Promise<void> {
       if (!ok) notifier.push("Remote Play didn't start");
     };
     const rootItems = (): MenuItem[] => [
-      { id: "net-browsers", title: "Web Browser", subtitle: "Google, YouTube, Xbox Cloud Gaming, GeForce NOW, or any address", iconUrl: "assets/icons/browser.png", onConfirm: () => { view = "browsers"; xmb.resetSelection("browser"); xmb.refresh(); } },
+      { id: "net-browsers", title: "Web Browser", subtitle: "Google, YouTube, Xbox Cloud Gaming, GeForce NOW, or any address", iconUrl: "assets/icons/browser.png", onConfirm: () => { view = "browsers"; xmb.enterLevel("browser", "browsers"); xmb.refresh(); } },
       {
         id: "net-remote",
         title: "Remote Play",
         subtitle: remote?.running ? "Running" : remote?.installed ? `PS4 / PS5 · chiaki-ng ${remote.version ?? ""}` : "PS4 / PS5 · fetches chiaki-ng on first use",
-        iconGlyph: "▶",
+        iconUrl: "assets/icons/remote-play.webp",
         onConfirm: () => void launchRemote(),
       },
       { id: "net-manual", title: "Online Instructions", subtitle: "How the menu works and how to use every feature", iconUrl: "assets/icons/about.webp", onConfirm: async () => openInMenuBrowser(await window.axm.manualUrl()) },
@@ -817,7 +1035,7 @@ async function main(): Promise<void> {
       onBack: () => {
         if (view === "root") return false;
         view = "root";
-        xmb.resetSelection("browser");
+        xmb.enterLevel("browser", "root");
         xmb.refresh();
         return true;
       },
@@ -862,7 +1080,9 @@ async function main(): Promise<void> {
     const openFolder = async (dirPath: string | null) => {
       playlistView = null;
       musicListing = await window.axm.browseMusic(dirPath);
-      xmb.resetSelection("music");
+      // Keyed on the folder we landed in, so backing out restores the parent's
+      // cursor and opening the same folder again returns to where we were.
+      xmb.enterLevel("music", musicListing.path ?? "");
       xmb.refresh();
     };
     const asTrack = (entry: MusicEntry): MusicEntry => ({ kind: "track", name: entry.name, filePath: entry.filePath, url: entry.url ?? "" });
@@ -940,7 +1160,7 @@ async function main(): Promise<void> {
       onBack: () => {
         if (playlistView !== null) {
           playlistView = null;
-          xmb.resetSelection("music");
+          xmb.enterLevel("music", musicListing.path ?? "");
           xmb.refresh();
           return true;
         }
@@ -982,7 +1202,7 @@ async function main(): Promise<void> {
               iconGlyph: "▶≡",
               onConfirm: () => {
                 playlistView = i;
-                xmb.resetSelection("music");
+                xmb.enterLevel("music", `playlist:${i}`);
                 xmb.refresh();
               },
               contextHint: "options",
@@ -1200,7 +1420,8 @@ async function main(): Promise<void> {
 
     const go = (next: typeof view) => {
       view = next;
-      xmb.resetSelection("games");
+      // The drive browser is a different level per folder, so it gets the path too.
+      xmb.enterLevel("games", next === "drive" ? `drive:${driveFolder}` : next);
       xmb.refresh();
     };
 
@@ -1293,7 +1514,10 @@ async function main(): Promise<void> {
           iconGlyph: sourceGlyph(g.source),
           badge: g.losslessProfile ? `LS ${g.losslessProfile}` : undefined,
           contextGame: g,
-          onConfirm: () => window.axm.launchGame(g.id),
+          onConfirm: () => {
+            notifier.push(`Starting ${g.name}`, "general", g.iconPath);
+            return window.axm.launchGame(g.id);
+          },
         }));
 
     const rootItems = (): MenuItem[] => [
@@ -1456,7 +1680,7 @@ async function main(): Promise<void> {
   ): Category {
     const openFolder = async (dirPath: string | null) => {
       setListing(await window.axm.browseMedia(kind, dirPath));
-      xmb.resetSelection(kind);
+      xmb.enterLevel(kind, getListing().path ?? "");
       xmb.refresh();
     };
 
@@ -1583,7 +1807,8 @@ async function main(): Promise<void> {
   };
 
   const jfRefresh = () => {
-    xmb.resetSelection("video");
+    // Jellyfin keeps its own folder stack; the path through it identifies the level.
+    xmb.enterLevel("video", `jf:${jf.stack.map((f) => f.id).join("/")}`);
     xmb.refresh();
   };
 
@@ -1848,12 +2073,12 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | { month: number };
   /** Which group each root row files under; anything unlisted stays at the top level. */
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
     fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
-    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
+    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
     "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
@@ -1862,9 +2087,20 @@ async function main(): Promise<void> {
   function settingsCategory(): Category {
     let view: SettingsView = "root";
 
+    /**
+     * Identifies the settings level for the cursor memory. Network has a sub-view of
+     * its own, so it contributes too - otherwise coming back from Wi-Fi would look
+     * like the same level as Network itself and land on the wrong row.
+     */
+    const settingsLevelKey = (): string => {
+      // The month editor is a view per month, so each remembers its own row.
+      if (typeof view === "object") return `month:${view.month}`;
+      return view === "network" ? `network:${netView}` : view;
+    };
+
     const go = (next: SettingsView) => {
       view = next;
-      xmb.resetSelection("settings");
+      xmb.enterLevel("settings", settingsLevelKey());
       xmb.refresh();
     };
 
@@ -1985,19 +2221,74 @@ async function main(): Promise<void> {
     // The root shows the groups; every original row still exists and is filed into
     // one of them (or stays at the top level, like Theme and About).
     const groupedRoot = (): MenuItem[] => {
+      // Let Ghost know every settings row by name, and how to reach it.
+      settingLabels.length = 0;
+      for (const item of allRootItems()) {
+        const group = SETTINGS_GROUPS[item.id];
+        settingLabels.push({ name: item.title, go: () => { goCategory("settings"); if (group) go(group); else go("root"); xmb.refresh(); } });
+      }
+      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["theme settings", "theme"]] as const) {
+        settingLabels.push({ name, go: () => { goCategory("settings"); if (v === "network") void netOpen(); else go(v as SettingsView); } });
+      }
       const all = allRootItems();
       const groups: MenuItem[] = [
         { id: "group-display", title: "Display", subtitle: "Fullscreen, resolution, upscaling, refresh rate, readouts", iconUrl: "assets/icons/settings-display.webp", onConfirm: () => go("display") },
         { id: "group-audio", title: "Audio", subtitle: "Volumes, menu music, sounds, shuffle, music folders", iconUrl: "assets/icons/settings-audio.webp", onConfirm: () => go("audio") },
         { id: "group-network", title: "Network", subtitle: "Connection status, Wi-Fi, connection test, media server, Bluetooth", iconUrl: "assets/icons/network-settings.webp", onConfirm: () => { void netOpen(); } },
         { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconUrl: "assets/icons/settings-system.webp", onConfirm: () => go("sys") },
+        { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconGlyph: "◈", onConfirm: () => go("assistant") },
       ];
       const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
       // Theme first, then the groups, then whatever else is unfiled (About, Exit).
       const theme = top.filter((i) => i.id === "theme");
       const rest = top.filter((i) => i.id !== "theme");
-      return [...theme, ...groups, ...rest];
+      return [updateRow(), ...theme, ...groups, ...rest];
     };
+
+    // System Update: at the top, the way the PS3 kept it. Checks GitHub's releases.
+    let update: UpdateInfo | null = null;
+    let updateFile: string | null = null;
+    const updateRow = (): MenuItem => ({
+      id: "system-update",
+      title: "System Update",
+      subtitle: update
+        ? update.error
+          ? `Version ${update.current} · ${update.error}`
+          : update.newer
+            ? `${update.latest} is available · you have ${update.current}`
+            : `Up to date · ${update.current}`
+        : `Version ${settings.systemName ? "" : ""}${update === null ? "A to check for updates" : ""}`,
+      iconGlyph: "↻",
+      badge: update?.newer ? "UPDATE" : undefined,
+      onConfirm: async () => {
+        if (update?.newer && update.assetUrl && update.assetName) {
+          showOptions(`A-X-M ${update.latest}`, [
+            {
+              label: updateFile ? "Install now" : "Download and install",
+              hint: update.assetName,
+              run: async () => {
+                try {
+                  if (!updateFile) {
+                    notifier.push(`Downloading A-X-M ${update!.latest}…`);
+                    updateFile = await window.axm.downloadUpdate(update!.assetUrl!, update!.assetName!);
+                  }
+                  showOptions("Install the update?", [{ label: "Yes, close and install", run: () => void window.axm.openUpdate(updateFile!) }, { label: "Later" }]);
+                } catch (e) {
+                  notifier.push(`Update: ${String((e as Error).message ?? e)}`);
+                }
+              },
+            },
+            { label: "Release notes", run: () => showText(`A-X-M ${update!.latest}`, update!.notes.split(/\r?\n\r?\n/).filter(Boolean)) },
+            { label: "Not now" },
+          ]);
+          return;
+        }
+        notifier.push("Checking for updates…");
+        update = await window.axm.checkForUpdate();
+        notifier.push(update.error ? `Update check: ${update.error}` : update.newer ? `A-X-M ${update.latest} is available` : "A-X-M is up to date");
+        xmb.refresh();
+      },
+    });
 
     const allRootItems = (): MenuItem[] => [
       {
@@ -2181,6 +2472,47 @@ async function main(): Promise<void> {
           ]),
       },
       {
+        id: "installTools",
+        title: "Install Tools",
+        subtitle: toolsSummary,
+        iconGlyph: "⇩",
+        onConfirm: async () => {
+          const state = await window.axm.toolsState();
+          const missing = state.filter((t) => !t.installed);
+          showOptions("Install Tools", [
+            ...(missing.length
+              ? [{ label: `Install ${missing.map((t) => t.name).join(", ")}`, hint: "winget on Windows · the voice engine is a few GB", run: runToolsInstall }]
+              : [{ label: "Everything is installed" }]),
+            ...state.map((t) => ({ label: `${t.installed ? "✓" : "✕"} ${t.name}`, hint: t.detail })),
+          ]);
+        },
+      },
+      {
+        id: "discTarget",
+        title: "Disc Backup Location",
+        subtitle: `${targetLabel(settings.discTarget)} · rips, CD imports and Ghost's "copy the disc" go here`,
+        iconUrl: "assets/icons/disc-dvd.webp",
+        onConfirm: async () => {
+          await refreshVolumes();
+          showOptions("Disc Backup Location", [
+            { label: "This PC", hint: "VIDEO and MUSIC in your user folder", selected: settings.discTarget === "home", run: async () => { settings = await window.axm.setSettings({ discTarget: "home" }); xmb.refresh(); } },
+            ...volumes.filter((v) => !v.system).map((v) => ({ label: `${v.label} (${v.drive})`, hint: `${fmtBytes(v.freeBytes)} free`, selected: settings.discTarget === v.drive, run: async () => { settings = await window.axm.setSettings({ discTarget: v.drive }); xmb.refresh(); } })),
+          ]);
+        },
+      },
+      {
+        id: "makemkvKey",
+        title: "MakeMKV Key",
+        subtitle: settings.makemkvKey ? `Set · ${settings.makemkvKey.slice(0, 6)}… · Blu-ray reading is licensed by MakeMKV` : "Not set · the beta key is posted on makemkv.com's forum; Blu-rays need it",
+        iconUrl: "assets/icons/disc-bluray.webp",
+        onConfirm: async () => {
+          const answers = await askText("MakeMKV Key", [{ label: "Key", value: settings.makemkvKey, secret: true }]);
+          if (!answers) return;
+          settings = await window.axm.setSettings({ makemkvKey: answers[0].trim() });
+          xmb.refresh();
+        },
+      },
+      {
         id: "discTools",
         title: "Disc Tools",
         subtitle: "ffmpeg (CD import), HandBrakeCLI (DVD), MakeMKV (Blu-ray)",
@@ -2250,9 +2582,9 @@ async function main(): Promise<void> {
       {
         id: "importFormat",
         title: "CD Import Format",
-        subtitle: { mp3: "MP3 · 320 kbps", aac: "AAC · 256 kbps (M4A)", opus: "Opus · 160 kbps" }[settings.importFormat],
+        subtitle: { mp3: "MP3 · 320 kbps", aac: "AAC · 256 kbps (M4A)", opus: "Opus · 160 kbps", flac: "FLAC · lossless" }[settings.importFormat],
         iconUrl: "assets/icons/disc-dvd.webp",
-        onConfirm: () => showOptions("CD Import Format", (["mp3", "aac", "opus"] as const).map((f) => ({ label: f.toUpperCase(), selected: settings.importFormat === f, run: async () => { settings = await window.axm.setSettings({ importFormat: f }); xmb.refresh(); } }))),
+        onConfirm: () => showOptions("CD Import Format", (["mp3", "aac", "opus", "flac"] as const).map((f) => ({ label: f.toUpperCase(), selected: settings.importFormat === f, run: async () => { settings = await window.axm.setSettings({ importFormat: f }); xmb.refresh(); } }))),
       },
       {
         id: "musicShuffle",
@@ -2606,6 +2938,109 @@ async function main(): Promise<void> {
       return rows;
     };
 
+    // ---- Assistant (Ghost) -----------------------------------------------------------------
+    const saveAssistant = async (partial: Partial<Settings["assistant"]>) => {
+      settings = await window.axm.setSettings({ assistant: { ...settings.assistant, ...partial } });
+      await applyAssistant();
+      xmb.refresh();
+    };
+    const assistantItems = (): MenuItem[] => [
+      {
+        id: "as-enable",
+        title: "Voice Assistant",
+        subtitle: settings.assistant.enabled ? (assistantStatus.modelReady ? (assistant.isListening() ? "On · listening on this device, nothing is sent anywhere" : "On · starting…") : "On · voice model not ready") : "Off",
+        iconGlyph: "◈",
+        onConfirm: async () => {
+          if (!settings.assistant.enabled && !assistantStatus.modelReady) {
+            showOptions("Ghost needs a voice model", [
+              {
+                label: "Download the model",
+                hint: "Vosk small English · about 40 MB, once",
+                run: async () => {
+                  try {
+                    assistantStatus = await window.axm.installAssistantModel();
+                    await saveAssistant({ enabled: true });
+                    notifier.push('Ghost is ready - say "hey ghost"');
+                  } catch (e) {
+                    notifier.push(`Voice model: ${String((e as Error).message ?? e)}`);
+                  }
+                },
+              },
+              { label: "Not now" },
+            ]);
+            return;
+          }
+          await saveAssistant({ enabled: !settings.assistant.enabled });
+        },
+      },
+      { id: "as-wake", title: "Wake Word", subtitle: settings.assistant.wakeWord ? 'On · "hey ghost"' : "Off · Ghost only answers the Assistant button", iconGlyph: "◉", onConfirm: () => saveAssistant({ wakeWord: !settings.assistant.wakeWord }) },
+      { id: "as-voice", title: "Voice Replies", subtitle: settings.assistant.voiceReplies ? (ttsStatus.engineReady ? "On · Ghost speaks in its cloned voice" : "On · text only until the voice engine is installed") : "Off · text only", iconGlyph: "♫", onConfirm: () => saveAssistant({ voiceReplies: !settings.assistant.voiceReplies }) },
+      {
+        id: "as-engine",
+        title: "Ghost's Voice",
+        subtitle: ttsStatus.installing ? "Installing…" : ttsStatus.engineReady ? `Chatterbox on this ${ttsStatus.device === "cuda" ? "GPU" : ttsStatus.device === "cpu" ? "CPU" : "device"} · ${ttsStatus.cacheCount} phrases remembered` : ttsStatus.python ? "Not installed · Chatterbox (MIT) clones the voice from one clip, all on this device" : "Needs Python 3.11 · Settings › System › Install Tools",
+        iconGlyph: "◈",
+        onConfirm: async () => {
+          if (ttsStatus.engineReady || ttsStatus.installing) {
+            showOptions("Ghost's Voice", [
+              { label: "Hear it", run: () => assistant.sayNow("Hello. I'm Ghost. Say hey ghost, then tell me what to launch, play, or open.") },
+              { label: "Remove the voice engine", hint: "frees a few GB", run: async () => { await window.axm.removeTts(); await refreshTts(); xmb.refresh(); } },
+            ]);
+            return;
+          }
+          showOptions("Install Ghost's voice?", [
+            {
+              label: "Install",
+              hint: "Python packages + model · a few GB, once · runs offline",
+              run: async () => {
+                try {
+                  ttsStatus = await window.axm.installTts();
+                  notifier.push("Ghost's voice is ready");
+                } catch (e) {
+                  notifier.push(`Ghost's voice: ${String((e as Error).message ?? e)}`);
+                }
+                await refreshTts();
+                xmb.refresh();
+              },
+            },
+            { label: "Not now" },
+          ]);
+        },
+      },
+      {
+        id: "as-clip",
+        title: "Voice Clip",
+        subtitle: ttsStatus.voiceClip.replace(/\\/g, "/").includes("/assets/voice/") ? "The clip that ships with the menu" : `Your clip · ${ttsStatus.voiceClip.split(/[\\/]/).pop()}`,
+        iconGlyph: "◎",
+        onConfirm: () =>
+          showOptions("Voice Clip", [
+            { label: "Choose a clip…", hint: "3-15 seconds of one voice, any audio file", run: async () => { const f = await window.axm.pickVoiceClip().catch((e) => { notifier.push(String(e.message ?? e)); return null; }); if (f) notifier.push("Ghost has a new voice"); await refreshTts(); xmb.refresh(); } },
+            { label: "Use the built-in clip", run: async () => { await window.axm.resetVoiceClip(); await refreshTts(); xmb.refresh(); } },
+          ]),
+      },
+      {
+        id: "as-size",
+        title: "Chat Bubble Size",
+        subtitle: { small: "Small", medium: "Medium", large: "Large" }[settings.assistant.bubbleSize],
+        iconGlyph: "▭",
+        onConfirm: () => showOptions("Chat Bubble Size", (["small", "medium", "large"] as const).map((b) => ({ label: { small: "Small", medium: "Medium", large: "Large" }[b], selected: settings.assistant.bubbleSize === b, run: () => saveAssistant({ bubbleSize: b }) }))),
+      },
+      { id: "as-mic", title: "Microphone", subtitle: "Chosen in Settings › System › Chat › Input Device", iconGlyph: "◎", onConfirm: async () => { await refreshAudioDevices(); go("chat"); } },
+      { id: "as-try", title: "Try It", subtitle: 'Wakes Ghost now - then say "launch" and a game, "play" a playlist, "go to settings"…', iconGlyph: "▶", onConfirm: () => (assistant.isListening() ? assistant.wake() : notifier.push("Turn the assistant on first")) },
+      {
+        id: "as-remove",
+        title: "Delete Voice Model",
+        subtitle: assistantStatus.modelReady ? `${assistantStatus.modelName} · frees about 40 MB` : "Not downloaded",
+        iconGlyph: "✕",
+        onConfirm: async () => {
+          if (!assistantStatus.modelReady) return;
+          await window.axm.removeAssistantModel();
+          await saveAssistant({ enabled: false });
+        },
+      },
+      { id: "as-note", title: "What Ghost understands", subtitle: "launch <game> · play <playlist or song> · go to <column or setting> · next track · stop music · quit game · turn off · help", iconGlyph: "ⓘ" },
+    ];
+
     // ---- Date and Time ----------------------------------------------------------------
     let clock: ClockInfo | null = null;
     let sysHostName = "";
@@ -2871,7 +3306,7 @@ async function main(): Promise<void> {
     };
     const netSub = (v: typeof netView) => {
       netView = v;
-      xmb.resetSelection("settings");
+      xmb.enterLevel("settings", settingsLevelKey());
       xmb.refresh();
     };
     const networkItems = (): MenuItem[] => {
@@ -3083,7 +3518,7 @@ async function main(): Promise<void> {
         if (view === "root") return false;
         if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
         else if (view === "network" && netView !== "root") netSub("root");
-        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network") go("root");
+        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -3099,6 +3534,7 @@ async function main(): Promise<void> {
         if (view === "audio") return "Settings › Audio";
         if (view === "sys") return "Settings › System";
         if (view === "network") return net.busy || net.status || (netView === "wifi" ? "Settings › Network › Internet Connection Settings" : netView === "register" ? "Settings › Network › Register Device" : netView === "registered" ? "Settings › Network › Registered Device List" : "Settings › Network");
+        if (view === "assistant") return "Settings › Assistant";
         if (view === "datetime") return "Settings › System › Date and Time";
         if (view === "power") return "Settings › System › Power Save";
         if (view === "chat") return "Settings › System › Chat";
@@ -3118,6 +3554,7 @@ async function main(): Promise<void> {
           return allRootItems().filter((i) => SETTINGS_GROUPS[i.id] === group);
         }
         if (view === "network") return networkItems();
+        if (view === "assistant") return assistantItems();
         if (view === "datetime") return dateTimeItems();
         if (view === "power") return powerItems();
         if (view === "chat") return chatItems();
@@ -3330,6 +3767,68 @@ async function main(): Promise<void> {
   gamepad.setDeadZone(settings.gamepadDeadZone);
   gamepad.setSwapConfirm(settings.gamepadProfile === "swapped");
   gamepad.setVibration(settings.gamepadVibration);
+  // ---- Ghost: what it can be asked to do ------------------------------------------
+  //
+  // Built fresh on every utterance so new games, playlists and settings count.
+  const settingLabels: { name: string; go: () => void }[] = [];
+  const goCategory = (id: string) => {
+    xmb.setActiveCategory(id);
+    xmb.refresh();
+  };
+  assistant.setCommands((): Command[] => {
+    const cmds: Command[] = [];
+    for (const g of games.filter((x) => !x.hidden)) {
+      cmds.push({ verbs: ["launch", "start", "play", "open", "run"], name: g.name, reply: `Launching ${g.name}`, weight: 0.2, run: () => { notifier.push(`Starting ${g.name}`, "general", g.iconPath); void window.axm.launchGame(g.id); } });
+    }
+    for (const pl of settings.playlists) {
+      cmds.push({ verbs: ["play", "shuffle", "start"], name: `playlist ${pl.name}`, reply: `Playing ${pl.name}`, weight: 0.3, run: () => {
+        const tracks: MusicEntry[] = pl.tracks.map((t) => ({ kind: "track", name: t.name, filePath: t.filePath, url: t.url }));
+        if (tracks.length) musicPlayer.play(tracks[0], tracks, settings.musicVolume);
+      } });
+      cmds.push({ verbs: ["play", "start"], name: pl.name, reply: `Playing ${pl.name}`, run: () => {
+        const tracks: MusicEntry[] = pl.tracks.map((t) => ({ kind: "track", name: t.name, filePath: t.filePath, url: t.url }));
+        if (tracks.length) musicPlayer.play(tracks[0], tracks, settings.musicVolume);
+      } });
+    }
+    for (const entry of musicListing.entries.filter((e) => e.kind === "track")) {
+      cmds.push({ verbs: ["play"], name: entry.name, reply: `Playing ${entry.name}`, run: () => musicPlayer.play(entry, musicListing.entries, settings.musicVolume) });
+    }
+    const columns: [string, string][] = [["users", "users"], ["settings", "settings"], ["photo", "photo"], ["music", "music"], ["video", "video"], ["games", "game"], ["browser", "network"]];
+    for (const [id, name] of columns) {
+      cmds.push({ verbs: ["go to", "open", "show", "navigate to", "navigate"], name, reply: `Opening ${name}`, run: () => goCategory(id) });
+    }
+    for (const sl of settingLabels) cmds.push({ verbs: ["go to", "open", "show", "navigate to", "change", "set"], name: sl.name, reply: `Opening ${sl.name}`, run: sl.go });
+    // Discs in the drive: "copy the blu-ray to storage", "rip the dvd", "import the cd", "play the disc".
+    for (const d of discs) {
+      const where = targetLabel(settings.discTarget);
+      const names = d.kind === "audio-cd" ? ["cd", "audio cd", "compact disc", "disc"] : d.kind === "bluray" ? ["blu ray", "bluray", "blue ray", "disc", "movie"] : d.kind === "dvd" ? ["dvd", "disc", "movie"] : [];
+      if (d.kind === "dvd" || d.kind === "bluray") names.push(discTitle(d));
+      for (const n of names) {
+        if (d.kind === "audio-cd") cmds.push({ verbs: ["copy", "import", "rip", "back up", "backup", "save"], name: n, reply: `Importing the CD to ${where} as ${settings.importFormat.toUpperCase()}`, weight: 0.3, run: () => startCdImport(d, settings.discTarget) });
+        else if (d.kind === "dvd" || d.kind === "bluray") {
+          cmds.push({ verbs: ["copy", "rip", "back up", "backup", "save", "import"], name: n, reply: `Ripping ${discTitle(d)} to ${where}`, weight: 0.3, run: () => void startRip(d, settings.discTarget) });
+          cmds.push({ verbs: ["play", "watch", "start"], name: n, reply: discMeta.get(d.drive + d.label)?.backup ? `Playing ${discTitle(d)}` : `${discTitle(d)} isn't ripped yet - rip it first`, weight: 0.25, run: () => playDisc(d) });
+        }
+      }
+    }
+    cmds.push(
+      { verbs: ["stop", "pause"], name: "music", reply: musicPlayer.current() ? "Pausing" : "Nothing is playing", weight: 0.4, run: () => musicPlayer.togglePause() },
+      { verbs: ["next", "skip"], name: "track", reply: "Next track", run: () => musicPlayer.next() },
+      { verbs: ["previous", "back"], name: "track", reply: "Previous track", run: () => musicPlayer.previous() },
+      { verbs: ["open", "start"], name: "visualizer", reply: "Opening the visualizer", run: () => { if (musicPlayer.current()) enterStage(); } },
+      { verbs: ["open", "start", "launch"], name: "remote play", reply: "Starting Remote Play", run: () => goCategory("browser") },
+      { verbs: ["open", "show"], name: "browser", reply: "Opening the browser", run: () => goCategory("browser") },
+      { verbs: ["quit", "close", "exit"], name: "game", reply: "Quitting the game", run: () => void window.axm.quitRunningGame() },
+      { verbs: ["turn off", "shut down", "shutdown"], name: "system", reply: "Turning off - are you sure?", run: () => confirmPower("Turn Off System", "shutdown") },
+      { verbs: ["go to", "put", "enter"], name: "sleep", reply: "Going to sleep", run: () => confirmPower("Sleep", "sleep") },
+      { verbs: ["volume", "turn volume", "set volume"], name: "up", reply: "Louder", run: () => void window.axm.setSettings({ musicVolume: Math.min(1, settings.musicVolume + 0.25) }).then((n) => { settings = n; audio.setVolumes(n.musicVolume, n.sfxVolume); musicPlayer.setVolume(n.musicVolume); }) },
+      { verbs: ["volume", "turn volume", "set volume"], name: "down", reply: "Quieter", run: () => void window.axm.setSettings({ musicVolume: Math.max(0, settings.musicVolume - 0.25) }).then((n) => { settings = n; audio.setVolumes(n.musicVolume, n.sfxVolume); musicPlayer.setVolume(n.musicVolume); }) },
+      { verbs: ["what can you do", "help"], name: "help", reply: "Say launch and a game, play and a playlist, go to a column or a setting, copy the disc to storage, next track, quit game, or turn off.", run: () => {} }
+    );
+    return cmds;
+  });
+  void applyAssistant();
+
   gamepad.setOnControllerType((type) => {
     for (const t of ["ps", "switch", "kishi"]) document.body.classList.toggle(`pad-${t}`, type === t);
     notifier.push(`${{ ps: "PlayStation", switch: "Nintendo Switch", kishi: "Razer Kishi", xbox: "Xbox" }[type]} controller connected`, "controller");
