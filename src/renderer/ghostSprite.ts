@@ -63,6 +63,15 @@ function frameStyle(url: string, count: number, index: number): string {
   );
 }
 
+/** What the sprite needs from the menu's audio, kept this narrow so it can be
+ *  left out entirely in a preview or a test. */
+export interface GhostSounds {
+  /** True while Ghost is on screen, so the hover loop runs only then. */
+  setHover(on: boolean): void;
+  /** One-shot as he unfolds into battle mode. */
+  playTransform(): void;
+}
+
 export class GhostSprite {
   readonly el: HTMLElement;
 
@@ -89,7 +98,7 @@ export class GhostSprite {
   /** Seconds since battle mode began, so the three phases can be timed off it. */
   private battleTime = 0;
 
-  constructor() {
+  constructor(private sounds?: GhostSounds) {
     const root = document.createElement("div");
     root.className = "ghost-body";
 
@@ -128,7 +137,10 @@ export class GhostSprite {
     this.el.dataset.mood = mood;
     this.spinning = mood === "happy";
     this.battling = mood === "battle";
-    if (this.battling) this.battleTime = 0;
+    if (this.battling) {
+      this.battleTime = 0;
+      this.sounds?.playTransform();
+    }
     this.el.classList.toggle("spinning", this.spinning);
     this.el.classList.toggle("battling", this.battling);
 
@@ -145,12 +157,16 @@ export class GhostSprite {
   start(): void {
     if (this.running) return;
     this.running = true;
+    // The hover loop is tied to the animation loop, which only runs while he is
+    // on screen - so he never hums away at a menu the user has left.
+    this.sounds?.setHover(true);
     this.lastFrame = performance.now();
     this.raf = requestAnimationFrame(this.tick);
   }
 
   stop(): void {
     this.running = false;
+    this.sounds?.setHover(false);
     cancelAnimationFrame(this.raf);
     this.raf = 0;
   }

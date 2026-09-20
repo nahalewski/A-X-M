@@ -17,7 +17,7 @@
  * command lands, and the eye ramps to red when he can't place what was said.
  */
 
-import { GhostSprite } from "./ghostSprite";
+import { GhostSprite, GhostSounds } from "./ghostSprite";
 
 export interface Command {
   /** What the user might say, e.g. "launch", "play", "open", "go to". */
@@ -62,11 +62,11 @@ export class Assistant {
   private onAwake: (awake: boolean) => void = () => {};
   private speaking = false;
 
-  constructor(parent: HTMLElement) {
+  constructor(parent: HTMLElement, sounds?: GhostSounds) {
     this.root = document.createElement("div");
     this.root.id = "ghost";
     this.root.className = "hidden";
-    this.sprite = new GhostSprite();
+    this.sprite = new GhostSprite(sounds);
     this.root.appendChild(this.sprite.el);
     this.bubble = document.createElement("div");
     this.bubble.className = "ghost-bubble";

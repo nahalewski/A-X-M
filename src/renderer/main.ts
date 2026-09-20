@@ -415,7 +415,10 @@ async function main(): Promise<void> {
     pushOverlay((a) => centerMenu.handle(a as Parameters<CenterMenu["handle"]>[0]));
   };
   const notifier = new Notifier(document.body);
-  const assistant = new Assistant(document.body);
+  const assistant = new Assistant(document.body, {
+    setHover: (on) => audio.setGhostHover(on),
+    playTransform: () => audio.playGhostTransform(),
+  });
   let assistantStatus: AssistantStatus = { modelReady: false, modelUrl: null, modelName: "", listening: false };
   const applyAssistant = async () => {
     assistantStatus = await window.axm.assistantStatus().catch(() => assistantStatus);

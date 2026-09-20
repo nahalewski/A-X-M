@@ -38,6 +38,7 @@ export class AudioManager {
   private ambientTrack: AmbientTrackId = "xmb";
   private musicVolume = 0.6;
   private sfxVolume = 0.8;
+  private ghostHover: HTMLAudioElement | null = null;
   private sfxEnabled = true;
   private ambientEnabled = true;
   private sinkId = "";
@@ -91,7 +92,27 @@ export class AudioManager {
   setVolumes(music: number, sfx: number): void {
     this.musicVolume = clamp01(music);
     this.sfxVolume = clamp01(sfx);
-    if (this.ambient && !this.ambientFadeRaf) this.ambient.volume = this.musicVolume;
+    if (this.ambient && !this.ambientFadeRaf) this.ambient.volume = this.musicVolume * this.duckFactor;
+  }
+
+  private duckFactor = 1;
+
+  /** Pulls the menu loop down (0.2 of its level) while Ghost listens or speaks, and back up after. */
+  duck(on: boolean): void {
+    const target = on ? 0.2 : 1;
+    if (target === this.duckFactor) return;
+    this.duckFactor = target;
+    if (!this.ambient || this.ambientFadeRaf) return;
+    const el = this.ambient;
+    const from = el.volume;
+    const to = this.musicVolume * target;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = clamp01((now - start) / 350);
+      el.volume = clamp01(from + (to - from) * t);
+      if (t < 1 && this.duckFactor === target) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   /** Plays boot.ogg once, then fades the ambient loop in once it actually finishes. */
@@ -135,7 +156,7 @@ export class AudioManager {
 
     cancelAnimationFrame(this.ambientFadeRaf);
     const start = performance.now();
-    const target = this.musicVolume;
+    const target = this.musicVolume * this.duckFactor;
     const step = (now: number) => {
       // rAF hands back the frame's start time, which can predate `start` - clamp both ends.
       const t = clamp01((now - start) / durationMs);
@@ -189,6 +210,34 @@ export class AudioManager {
 
   playContextOpen(): void {
     this.sfx("assets/sounds/context-open.ogg");
+  }
+
+  /** One-shot, for Ghost unfolding into battle mode. */
+  playGhostTransform(): void {
+    this.sfx("assets/sounds/ghost-transform.mp3");
+  }
+
+  /**
+   * Ghost's hover loop, running only while he is actually on screen. Faded in and
+   * out rather than cut, and it rides the menu-sound volume like every other cue.
+   */
+  setGhostHover(on: boolean): void {
+    if (on) {
+      if (!this.sfxEnabled) return;
+      if (!this.ghostHover) {
+        this.ghostHover = new Audio("assets/sounds/ghost-hover.mp3");
+        this.ghostHover.loop = true;
+      }
+      // Quieter than a one-shot cue: it sits under everything else continuously.
+      this.ghostHover.volume = clamp01(this.sfxVolume * 0.45);
+      this.ghostHover.play().catch(() => {
+        /* asset missing or blocked - stay silent */
+      });
+      return;
+    }
+    if (!this.ghostHover) return;
+    this.ghostHover.pause();
+    this.ghostHover.currentTime = 0;
   }
 
   playContextClose(): void {
