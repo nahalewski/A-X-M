@@ -1,7 +1,7 @@
 // Polls the Gamepad API each frame and emits edge-triggered (just-pressed) actions,
 // with dpad/stick repeat-on-hold for navigation.
 
-export type PadAction = "up" | "down" | "left" | "right" | "confirm" | "back" | "context";
+export type PadAction = "up" | "down" | "left" | "right" | "confirm" | "back" | "context" | "guide";
 
 const REPEAT_DELAY_MS = 380;
 const REPEAT_RATE_MS = 110;
@@ -11,6 +11,9 @@ const STICK_DEADZONE = 0.5;
 const BUTTON_A = 0;
 const BUTTON_B = 1;
 const BUTTON_Y = 3;
+// Xbox / PS button. Only delivered while this window is focused, so it can close
+// the overlay; opening it from a game is the main process's XInput poll.
+const BUTTON_GUIDE = 16;
 const BUTTON_DPAD_UP = 12;
 const BUTTON_DPAD_DOWN = 13;
 const BUTTON_DPAD_LEFT = 14;
@@ -42,6 +45,7 @@ export class GamepadNav {
       if (cur[BUTTON_A] && !prev[BUTTON_A]) this.onAction("confirm");
       if (cur[BUTTON_B] && !prev[BUTTON_B]) this.onAction("back");
       if (cur[BUTTON_Y] && !prev[BUTTON_Y]) this.onAction("context");
+      if (cur[BUTTON_GUIDE] && !prev[BUTTON_GUIDE]) this.onAction("guide");
 
       const axisX = pad.axes[0] ?? 0;
       const axisY = pad.axes[1] ?? 0;

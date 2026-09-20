@@ -37,6 +37,12 @@ const api = {
   jellyfinLibraries: (login: unknown) => ipcRenderer.invoke("axm:jellyfinLibraries", login),
   jellyfinItems: (login: unknown, parentId: string) => ipcRenderer.invoke("axm:jellyfinItems", login, parentId),
   getAnkerStatus: () => ipcRenderer.invoke("axm:getAnkerStatus"),
+  overlayClose: () => ipcRenderer.invoke("axm:overlayClose"),
+  overlayToggle: () => ipcRenderer.invoke("axm:overlayToggle"),
+  overlayState: () => ipcRenderer.invoke("axm:overlayState"),
+  onOverlay: (callback: (state: { active: boolean }) => void) => {
+    ipcRenderer.on("axm:overlay", (_e, state) => callback(state));
+  },
   getSteamLibrary: () => ipcRenderer.invoke("axm:getSteamLibrary"),
   installSteamGame: (appid: number) => ipcRenderer.invoke("axm:installSteamGame", appid),
   launchSteamApp: (appid: number) => ipcRenderer.invoke("axm:launchSteamApp", appid),

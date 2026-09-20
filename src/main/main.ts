@@ -16,14 +16,15 @@ import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
 import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
+import { OverlayHotkey } from "./overlayHotkey";
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 
-// Let the compositor track the display's native refresh rate (120Hz on the Ally) via
-// vsync-synced requestAnimationFrame - just remove Chromium's internal 60fps throttle
-// rather than disabling vsync, which would tear and waste battery on a handheld.
-app.commandLine.appendSwitch("disable-frame-rate-limit");
+// requestAnimationFrame already follows the display's native refresh rate, 120Hz on
+// the Ally included. An earlier build added --disable-frame-rate-limit believing it
+// lifted a 60fps cap; what it actually does is unhook rAF from vsync entirely, which
+// had the ribbon redrawing ~4000 times a second and starving everything else. Don't.
 app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("high-dpi-support", "1");
 
@@ -34,18 +35,27 @@ function createWindow(): void {
   const settings = loadSettings();
   const display = screen.getPrimaryDisplay();
 
+  // Not true fullscreen: the in-game overlay needs a transparent window so the
+  // game shows through, and Windows won't do transparency on a fullscreen surface.
+  // A frameless window sized to the display looks identical and allows it.
   mainWindow = new BrowserWindow({
-    width: settings.windowed ? 1280 : display.size.width,
-    height: settings.windowed ? 800 : display.size.height,
-    fullscreen: !settings.windowed,
+    x: settings.windowed ? undefined : display.bounds.x,
+    y: settings.windowed ? undefined : display.bounds.y,
+    width: settings.windowed ? 1280 : display.bounds.width,
+    height: settings.windowed ? 800 : display.bounds.height,
+    fullscreen: false,
     autoHideMenuBar: true,
-    backgroundColor: "#050814",
+    transparent: !settings.windowed,
+    backgroundColor: settings.windowed ? "#050814" : "#00000000",
     frame: settings.windowed,
+    resizable: settings.windowed,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      backgroundThrottling: false,
+      // Let Chromium pause rendering while a game is in front; otherwise the ribbon
+      // keeps drawing at full rate behind it and eats into the game's frame budget.
+      backgroundThrottling: true,
     },
   });
 
@@ -64,23 +74,57 @@ function createWindow(): void {
 function applyWindowMode(windowed: boolean): void {
   if (!mainWindow) return;
   const display = screen.getPrimaryDisplay();
-  mainWindow.setFullScreen(!windowed);
   mainWindow.setMenuBarVisibility(false);
   if (windowed) {
     mainWindow.setSize(1280, 800);
     mainWindow.center();
   } else {
-    mainWindow.setSize(display.size.width, display.size.height);
+    mainWindow.setBounds(display.bounds);
   }
+}
+
+// ---- In-game overlay ---------------------------------------------------------------
+//
+// The Guide button toggles the menu over whatever's running, like the PS button and
+// the XMB. Shown: the window comes to the front, always-on-top, and the renderer
+// drops the ribbons and goes translucent so the game stays visible behind it.
+// Hidden: the window hides and focus returns to the game.
+
+let overlayActive = false;
+let overlayHotkey: OverlayHotkey | null = null;
+
+function setOverlay(active: boolean): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  overlayActive = active;
+  if (active) {
+    mainWindow.show();
+    mainWindow.setAlwaysOnTop(true, "screen-saver");
+    mainWindow.focus();
+  } else {
+    mainWindow.setAlwaysOnTop(false);
+    mainWindow.hide();
+  }
+  mainWindow.webContents.send("axm:overlay", { active });
+}
+
+function toggleOverlay(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Visible and in front already? Then this press means "back to the game".
+  const inFront = mainWindow.isVisible() && mainWindow.isFocused() && !mainWindow.isMinimized();
+  setOverlay(!inFront);
 }
 
 app.whenReady().then(() => {
   createWindow();
+  overlayHotkey = new OverlayHotkey(toggleOverlay);
+  overlayHotkey.start(loadSettings().overlayHotkey);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on("will-quit", () => overlayHotkey?.stop());
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -93,8 +137,13 @@ ipcMain.handle("axm:getSettings", (): Settings => loadSettings());
 ipcMain.handle("axm:setSettings", (_e, partial: Partial<Settings>): Settings => {
   const updated = saveSettings(partial);
   if (partial.windowed !== undefined) applyWindowMode(partial.windowed);
+  if (partial.overlayHotkey !== undefined) overlayHotkey?.setShortcut(partial.overlayHotkey);
   return updated;
 });
+
+ipcMain.handle("axm:overlayClose", (): void => setOverlay(false));
+ipcMain.handle("axm:overlayToggle", (): void => toggleOverlay());
+ipcMain.handle("axm:overlayState", (): { active: boolean } => ({ active: overlayActive }));
 
 ipcMain.handle("axm:toggleFullscreen", (): Settings => {
   const settings = loadSettings();
@@ -329,7 +378,7 @@ ipcMain.handle(
     jellyfin.getItems(login, parentId)
 );
 
-ipcMain.handle("axm:getAnkerStatus", (): AnkerStatus => readAnkerStatus());
+ipcMain.handle("axm:getAnkerStatus", (): Promise<AnkerStatus> => readAnkerStatus());
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 

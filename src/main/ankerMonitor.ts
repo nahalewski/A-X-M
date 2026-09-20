@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { loadSettings } from "./settingsStore";
 
 /**
@@ -45,22 +45,44 @@ $out = foreach ($d in $devs) {
 `;
 }
 
-export function readAnkerStatus(): AnkerStatus {
+/**
+ * Runs the PowerShell query off the main thread. Get-PnpDevice can take several
+ * seconds; doing it synchronously froze the whole main process - every IPC call
+ * from the menu stalled behind it - on every poll.
+ */
+function queryDevices(pattern: string): Promise<{ Name: string; Battery: number | null; Connected: boolean }[]> {
+  return new Promise((resolve) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script(pattern)],
+      { encoding: "utf-8", timeout: 15_000, windowsHide: true },
+      (err, stdout) => {
+        if (err || !stdout.trim()) return resolve([]);
+        try {
+          const parsed = JSON.parse(stdout.trim());
+          resolve(Array.isArray(parsed) ? parsed : [parsed]);
+        } catch {
+          resolve([]);
+        }
+      }
+    );
+  });
+}
+
+let inFlight: Promise<AnkerStatus> | null = null;
+
+export function readAnkerStatus(): Promise<AnkerStatus> {
+  // Coalesce overlapping polls so a slow query never stacks PowerShell processes.
+  if (inFlight) return inFlight;
+  inFlight = readAnkerStatusUncached().finally(() => {
+    inFlight = null;
+  });
+  return inFlight;
+}
+
+async function readAnkerStatusUncached(): Promise<AnkerStatus> {
   const pattern = loadSettings().ankerDeviceName || "Anker";
-  let rows: { Name: string; Battery: number | null; Connected: boolean }[] = [];
-  try {
-    const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script(pattern)], {
-      encoding: "utf-8",
-      timeout: 15_000,
-      windowsHide: true,
-    }).trim();
-    if (out) {
-      const parsed = JSON.parse(out);
-      rows = Array.isArray(parsed) ? parsed : [parsed];
-    }
-  } catch {
-    // PowerShell unavailable or the query failed - report nothing rather than stale data
-  }
+  const rows = await queryDevices(pattern);
 
   // Prefer a connected device with a reading; fall back to any match so the name
   // still shows up while it's out of range.

@@ -134,12 +134,19 @@ class Indicator {
 export class BatteryIndicators {
   private ally: Indicator;
   private anker: Indicator;
+  private parent: HTMLElement;
   private allyCharging = false;
   private allyLevel = 1;
 
   constructor(parent: HTMLElement) {
+    this.parent = parent;
     this.anker = new Indicator(parent, "anker");
     this.ally = new Indicator(parent, "ally");
+  }
+
+  /** Show or hide the percentage text beside each icon. */
+  setPercentVisible(visible: boolean): void {
+    this.parent.classList.toggle("no-percent", !visible);
   }
 
   async start(): Promise<void> {

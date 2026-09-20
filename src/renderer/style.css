@@ -255,6 +255,10 @@ body {
   50% { opacity: 0.55; }
 }
 
+#batteries.no-percent .battery-label {
+  display: none;
+}
+
 .battery.low .battery-icon {
   background-color: #ff6a6a;
   animation: low-blink 1.2s steps(1) infinite;
@@ -300,9 +304,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(6px);
+  /* No backdrop-filter: blurring a live WebGL canvas behind seven tiles costs a
+     re-rasterisation every frame, which is exactly what 120Hz can't afford. */
 }
 
 .category-icon img {
@@ -479,6 +484,10 @@ body {
 #context-modal.hidden {
   opacity: 0;
   pointer-events: none;
+  /* A transparent full-screen backdrop-filter layer still gets composited; take it
+     out of the render entirely when closed rather than paying for it every frame. */
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0s linear 0.15s;
 }
 
 #context-panel {
@@ -626,9 +635,8 @@ body {
   gap: 14px;
   padding: 12px 20px 14px;
   border-radius: 14px;
-  background: rgba(8, 12, 24, 0.62);
+  background: rgba(8, 12, 24, 0.78);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(8px);
   min-width: 340px;
   max-width: 46vw;
   transition: opacity 0.25s ease;
@@ -1001,4 +1009,20 @@ body {
 /* The row of the game options view that isn't focused. */
 .context-option.dim {
   opacity: 0.35;
+}
+
+
+/* In-game overlay: the window is transparent, so with the ribbons off and the
+   backdrop cleared the game shows through. A dark wash down the left keeps the
+   menu legible, and the menu itself is drawn translucent like the XMB over a game. */
+body.overlay {
+  background: linear-gradient(to right, rgba(3, 5, 12, 0.78) 0%, rgba(3, 5, 12, 0.55) 45%, rgba(3, 5, 12, 0.25) 100%);
+}
+
+body.overlay #app {
+  opacity: 0.92;
+}
+
+body.overlay #game-bg {
+  display: none;
 }

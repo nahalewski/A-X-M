@@ -35,6 +35,16 @@ export class AudioManager {
   private ambientTrack: AmbientTrackId = "xmb";
   private musicVolume = 0.6;
   private sfxVolume = 0.8;
+  private sfxEnabled = true;
+
+  /** Menu navigation/confirm/back blips on or off. The ambient loop is separate. */
+  setSfxEnabled(enabled: boolean): void {
+    this.sfxEnabled = enabled;
+  }
+
+  private sfx(path: string): void {
+    if (this.sfxEnabled) safePlay(path, this.sfxVolume);
+  }
 
   /**
    * Switches the menu loop. If a loop is already playing it's faded out and the new
@@ -136,26 +146,26 @@ export class AudioManager {
   }
 
   playMoveUp(): void {
-    safePlay(NAV_SOUND, this.sfxVolume);
+    this.sfx(NAV_SOUND);
   }
 
   playMoveDown(): void {
-    safePlay(NAV_SOUND, this.sfxVolume);
+    this.sfx(NAV_SOUND);
   }
 
   playConfirm(): void {
-    safePlay("assets/sounds/confirm.ogg", this.sfxVolume);
+    this.sfx("assets/sounds/confirm.ogg");
   }
 
   playBack(): void {
-    safePlay("assets/sounds/back.ogg", this.sfxVolume);
+    this.sfx("assets/sounds/back.ogg");
   }
 
   playContextOpen(): void {
-    safePlay("assets/sounds/context-open.ogg", this.sfxVolume);
+    this.sfx("assets/sounds/context-open.ogg");
   }
 
   playContextClose(): void {
-    safePlay("assets/sounds/context-close.ogg", this.sfxVolume);
+    this.sfx("assets/sounds/context-close.ogg");
   }
 }

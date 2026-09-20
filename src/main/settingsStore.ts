@@ -109,6 +109,14 @@ export interface Settings {
   jellyfinLogins: Record<string, JellyfinLogin>;
   /** Regex matched against paired Bluetooth device names to find the power bank. */
   ankerDeviceName: string;
+  /** Navigation / confirm / back blips. */
+  navSoundsEnabled: boolean;
+  /** Show the percentage next to the battery icons. */
+  batteryPercentEnabled: boolean;
+  /** Preferred drive for Steam installs, e.g. "N:", or "" to leave it to Steam. */
+  steamInstallDrive: string;
+  /** Keyboard fallback for the controller Guide button, in Electron accelerator syntax. */
+  overlayHotkey: string;
 }
 
 const DEFAULTS: Settings = {
@@ -132,6 +140,10 @@ const DEFAULTS: Settings = {
   profile: null,
   jellyfinLogins: {},
   ankerDeviceName: "Anker",
+  navSoundsEnabled: true,
+  batteryPercentEnabled: true,
+  steamInstallDrive: "",
+  overlayHotkey: "Alt+Home",
 };
 
 let cache: Settings | null = null;

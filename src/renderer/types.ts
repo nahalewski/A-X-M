@@ -194,6 +194,10 @@ export interface Settings {
   profile: UserProfile | null;
   jellyfinLogins: Record<string, JellyfinLogin>;
   ankerDeviceName: string;
+  navSoundsEnabled: boolean;
+  batteryPercentEnabled: boolean;
+  steamInstallDrive: string;
+  overlayHotkey: string;
 }
 
 /** Artwork that landed after the initial scan. Either field may be absent. */
@@ -231,6 +235,10 @@ export interface AxmApi {
   jellyfinLibraries(login: JellyfinLogin): Promise<JellyfinItem[] | null>;
   jellyfinItems(login: JellyfinLogin, parentId: string): Promise<JellyfinItem[] | null>;
   getAnkerStatus(): Promise<AnkerStatus>;
+  overlayClose(): Promise<void>;
+  overlayToggle(): Promise<void>;
+  overlayState(): Promise<{ active: boolean }>;
+  onOverlay(callback: (state: { active: boolean }) => void): void;
   getSteamLibrary(): Promise<SteamLibrary>;
   installSteamGame(appid: number): Promise<void>;
   launchSteamApp(appid: number): Promise<void>;

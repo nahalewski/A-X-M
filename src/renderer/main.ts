@@ -103,6 +103,9 @@ async function main(): Promise<void> {
   let saves: SaveEntry[] = [];
   let launchers: LauncherEntry[] = await window.axm.getLaunchers();
   let steamLibrary: SteamLibrary = { account: null, games: [] };
+  let steamInstallHint = "";
+  const steamDrives = (): string[] =>
+    Array.from(new Set(games.filter((g) => g.source === "steam").map((g) => g.drive))).sort();
 
   const musicPlayer = new MusicPlayer(audio);
   const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
@@ -233,6 +236,28 @@ async function main(): Promise<void> {
   applyTheme();
   ribbon.start();
 
+  // ---- In-game overlay mode -----------------------------------------------------
+  //
+  // Toggled from the main process on the Guide button. Over a game the ribbons go,
+  // the backdrop goes transparent so the game shows through the window, and the
+  // menu itself is drawn translucent, the way the XMB sits over a PS3 game.
+  let overlayActive = false;
+  const setOverlayMode = (active: boolean) => {
+    overlayActive = active;
+    document.body.classList.toggle("overlay", active);
+    if (active) {
+      ribbon.setRibbonsVisible(false);
+      ribbon.setBackdrop("none");
+      // Menu music over a game would fight the game's own audio.
+      void audio.fadeOutAmbient(300);
+    } else {
+      applyTheme();
+      if (!musicPlayer.current()) audio.fadeInAmbient(800);
+    }
+    xmb.refresh();
+  };
+  window.axm.onOverlay(({ active }) => setOverlayMode(active));
+
   // A monthly theme should roll over at midnight on the 1st without a restart.
   setInterval(() => {
     if (settings.themeMode === "monthly" && themeManager.monthChanged()) applyTheme();
@@ -246,7 +271,10 @@ async function main(): Promise<void> {
   updateClock();
   setInterval(updateClock, 15_000);
 
-  void new BatteryIndicators(document.getElementById("batteries")!).start();
+  const batteries = new BatteryIndicators(document.getElementById("batteries")!);
+  batteries.setPercentVisible(settings.batteryPercentEnabled);
+  void batteries.start();
+  audio.setSfxEnabled(settings.navSoundsEnabled);
 
   // ---- Visualizer lifecycle -------------------------------------------------------
   //
@@ -508,8 +536,11 @@ async function main(): Promise<void> {
             if (g.state === "installing") return;
             // Steam takes it from here in the background; flip the badge straight
             // away rather than waiting for the first poll to notice the manifest.
+            // Steam always shows its own location dialog and offers no way to preset
+            // it, so the preferred drive is surfaced here as the reminder.
             await window.axm.installSteamGame(g.appid);
             g.state = "installing";
+            if (settings.steamInstallDrive) steamInstallHint = `Choose ${settings.steamInstallDrive} in Steam's install window`;
             xmb.refresh();
             watchInstalls();
           },
@@ -533,6 +564,17 @@ async function main(): Promise<void> {
         }));
 
     const rootItems = (): MenuItem[] => [
+      ...(overlayActive
+        ? [
+            {
+              id: "return-to-game",
+              title: "Return to Game",
+              subtitle: "Or press the Xbox / PS button",
+              iconUrl: "assets/icons/games.svg",
+              onConfirm: () => window.axm.overlayClose(),
+            } as MenuItem,
+          ]
+        : []),
       {
         id: "saved-data-utility",
         title: "Saved Data Utility",
@@ -607,6 +649,7 @@ async function main(): Promise<void> {
         if (view === "saves") return "Saved Data Utility";
         if (view === "gamedata") return "Game Data Utility";
         if (view === "steam") {
+          if (steamInstallHint) return steamInstallHint;
           const installed = steamLibrary.games.filter((g) => g.state === "installed").length;
           return `Steam · ${installed} of ${steamLibrary.games.length} installed`;
         }
@@ -1099,6 +1142,48 @@ async function main(): Promise<void> {
         },
       },
       {
+        id: "navSounds",
+        title: "Navigation Sounds",
+        subtitle: settings.navSoundsEnabled ? "On" : "Off",
+        iconGlyph: "♫",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ navSoundsEnabled: !settings.navSoundsEnabled });
+          audio.setSfxEnabled(settings.navSoundsEnabled);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "batteryPercent",
+        title: "Battery Percentage",
+        subtitle: settings.batteryPercentEnabled ? "Shown" : "Hidden",
+        iconGlyph: "▮",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ batteryPercentEnabled: !settings.batteryPercentEnabled });
+          batteries.setPercentVisible(settings.batteryPercentEnabled);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "steamInstallDrive",
+        title: "Steam Install Drive",
+        subtitle: settings.steamInstallDrive ? `${settings.steamInstallDrive} · reminder at install` : "Let Steam decide",
+        iconUrl: "assets/icons/steam.svg",
+        onConfirm: async () => {
+          // Cycle: none -> each drive that holds a Steam library -> none
+          const drives = steamDrives();
+          const i = drives.indexOf(settings.steamInstallDrive);
+          const next = i >= drives.length - 1 ? "" : drives[i + 1];
+          settings = await window.axm.setSettings({ steamInstallDrive: next });
+          xmb.refresh();
+        },
+      },
+      {
+        id: "overlayHotkey",
+        title: "In-Game Menu Button",
+        subtitle: `Xbox / PS button · keyboard ${settings.overlayHotkey}`,
+        iconGlyph: "⌂",
+      },
+      {
         id: "addFolder",
         title: "Add Game Folder…",
         subtitle: `${settings.extraGameFolders.length} added`,
@@ -1401,7 +1486,13 @@ async function main(): Promise<void> {
     xmb.refresh();
   });
 
-  const gamepad = new GamepadNav((action) => xmb.handleAction(action));
+  const gamepad = new GamepadNav((action) => {
+    if (action === "guide") {
+      void window.axm.overlayToggle();
+      return;
+    }
+    xmb.handleAction(action);
+  });
   const pollGamepad = (now: number) => {
     gamepad.poll(now);
     requestAnimationFrame(pollGamepad);
