@@ -17,6 +17,12 @@ export interface Category {
   label: string;
   iconUrl: string;
   getItems: () => MenuItem[];
+  /** Handle B within the category (e.g. go up a folder). Return true if consumed. */
+  onBack?: () => boolean;
+  /** Handle Y within the category (e.g. play/pause). Return true if consumed. */
+  onContext?: () => boolean;
+  /** Extra hint text for the footer, e.g. the current folder. */
+  footerHint?: () => string | undefined;
 }
 
 const SOURCE_GLYPH: Record<GameEntry["source"], string> = {
@@ -82,6 +88,11 @@ export class Xmb {
 
   constructor(private categories: Category[], private audio: AudioManager) {}
 
+  setActiveCategory(categoryId: string): void {
+    const index = this.categories.findIndex((c) => c.id === categoryId);
+    if (index >= 0) this.activeCategory = index;
+  }
+
   init(): void {
     this.render();
     document.addEventListener("keydown", (e) => this.handleKey(e));
@@ -139,14 +150,26 @@ export class Xmb {
         }
         break;
       }
-      case "back":
+      case "back": {
+        const category = this.categories[this.activeCategory];
+        if (category.onBack?.()) {
+          this.audio.playBack();
+          this.render();
+          break;
+        }
         this.audio.playBack();
         break;
+      }
       case "context": {
         const item = this.currentItems()[this.currentSelectedIndex()];
         if (item?.contextGame) {
           this.audio.playContextOpen();
           this.openModal(item.contextGame);
+          break;
+        }
+        if (this.categories[this.activeCategory].onContext?.()) {
+          this.audio.playContextOpen();
+          this.render();
         }
         break;
       }
@@ -213,6 +236,11 @@ export class Xmb {
 
   refresh(): void {
     this.render();
+  }
+
+  /** Puts the cursor back at the top, e.g. after descending into a new folder. */
+  resetSelection(categoryId: string): void {
+    this.selectedIndex.set(categoryId, 0);
   }
 
   private render(): void {
@@ -345,11 +373,17 @@ export class Xmb {
       this.footerEl.innerHTML = `<span>◀ ▶ change profile</span><span>A apply &middot; B cancel</span>`;
       return;
     }
+    const category = this.categories[this.activeCategory];
     const item = this.currentItems()[this.currentSelectedIndex()];
-    const hasContext = !!item?.contextGame;
-    this.footerEl.innerHTML = `<span>◀ ▶ category &middot; ▲ ▼ select</span><span>A select${
-      hasContext ? " &middot; Y scaling profile" : ""
-    }</span>`;
+    const extra = category.footerHint?.();
+    const left = extra
+      ? `<span>${extra}</span>`
+      : `<span>◀ ▶ category &middot; ▲ ▼ select</span>`;
+    const hints = ["A select"];
+    if (item?.contextGame) hints.push("Y scaling profile");
+    if (category.onBack) hints.push("B back");
+    if (category.onContext) hints.push("Y play/pause");
+    this.footerEl.innerHTML = `${left}<span>${hints.join(" &middot; ")}</span>`;
   }
 }
 

@@ -17,6 +17,8 @@ export interface Settings {
   gameOverrides: Record<string, GameOverride>;
   /** SteamGridDB key for box-art lookup. Lives here (in userData), never in the repo. */
   gameArtApiKey: string;
+  /** Music library roots. Empty falls back to the usual Windows music folders. */
+  musicFolders: string[];
 }
 
 const DEFAULTS: Settings = {
@@ -28,6 +30,7 @@ const DEFAULTS: Settings = {
   extraGameFolders: [],
   gameOverrides: {},
   gameArtApiKey: "",
+  musicFolders: [],
 };
 
 let cache: Settings | null = null;

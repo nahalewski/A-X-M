@@ -20,6 +20,20 @@ export interface MediaEntry {
   filePath: string;
 }
 
+export interface MusicEntry {
+  kind: "folder" | "track";
+  name: string;
+  filePath: string;
+  url?: string;
+}
+
+export interface MusicListing {
+  path: string | null;
+  parent: string | null;
+  title: string;
+  entries: MusicEntry[];
+}
+
 export interface Settings {
   windowed: boolean;
   targetHz: number;
@@ -29,6 +43,7 @@ export interface Settings {
   extraGameFolders: string[];
   gameOverrides: Record<string, { hidden?: boolean; losslessProfile?: 1 | 2 | 3 | null }>;
   gameArtApiKey: string;
+  musicFolders: string[];
 }
 
 export interface AxmApi {
@@ -43,6 +58,9 @@ export interface AxmApi {
   pickGameFolder(): Promise<Settings>;
   getMedia(kind: "photo" | "video" | "music"): Promise<MediaEntry[]>;
   openMedia(filePath: string): Promise<void>;
+  browseMusic(dirPath: string | null): Promise<MusicListing>;
+  pickMusicFolder(): Promise<Settings>;
+  openBrowser(url: string): Promise<void>;
   onArtUpdated(callback: (update: { gameId: string; iconPath: string }) => void): void;
   quit(): Promise<void>;
 }

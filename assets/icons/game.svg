@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Game">
+  <!-- Gamepad silhouette with the d-pad and face buttons knocked out, to match the
+       flat white-on-transparent style of the rest of the XMB icon set. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="
+    M30 34
+    h68
+    a26 26 0 0 1 26 26
+    v20
+    a20 20 0 0 1 -36 12
+    l-7 -10
+    h-34
+    l-7 10
+    a20 20 0 0 1 -36 -12
+    v-20
+    a26 26 0 0 1 26 -26
+    z
+    M38 52
+    h11 v11 h11 v11 h-11 v11 h-11 v-11 h-11 v-11 h11 z
+    M88 54
+    a9 9 0 1 0 0.01 0 z
+    M104 76
+    a9 9 0 1 0 0.01 0 z
+  "/>
+</svg>

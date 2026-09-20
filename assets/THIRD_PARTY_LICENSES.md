@@ -15,7 +15,13 @@ built as a RetroArch XMB overlay. A-X-M uses:
 - `sounds/confirm.ogg` (from `ok.ogg`), `sounds/back.ogg` (from `cancel.ogg`)
 - `sounds/context-open.ogg`, `sounds/context-close.ogg` (from `notice.ogg`/`notice_back.ogg`)
 - `icons/settings.png`, `icons/power.png`, `icons/games.png` (from `disc.png`), `icons/folder.png`
-- `icons/video.png` (from `movie.png`), `icons/photo.png` (from `image.png`), `icons/music.png`
+- `icons/video.png` (from `movie.png`), `icons/photo.png` (from `images.png`), `icons/music.png`
+- `icons/user.png` (from `menu_user.png`), `icons/browser.png` (from `wifi.png`)
+
+## Original to this project
+
+- `icons/game.svg` - the gamepad category icon, drawn for A-X-M because the pack
+  above has no controller icon. Matches its flat white-on-transparent style.
 - `fonts/xmb-font.ttf`
 
 ```

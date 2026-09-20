@@ -3,7 +3,8 @@ import { WaveBackground } from "./wave";
 import { AudioManager } from "./audio";
 import { GamepadNav } from "./gamepad";
 import { Xmb, Category, sourceGlyph } from "./xmb";
-import { GameEntry, MediaEntry, Settings } from "./types";
+import { MusicPlayer } from "./musicPlayer";
+import { GameEntry, MediaEntry, MusicListing, Settings } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
 const VOLUME_PRESETS = [0, 0.25, 0.5, 0.75, 1];
@@ -16,7 +17,9 @@ async function main(): Promise<void> {
   let games: GameEntry[] = await window.axm.getGames();
   let photos: MediaEntry[] = [];
   let videos: MediaEntry[] = [];
-  let music: MediaEntry[] = [];
+  let musicListing: MusicListing = { path: null, parent: null, title: "Music", entries: [] };
+
+  const musicPlayer = new MusicPlayer(audio);
 
   wave.setCycleSeconds(settings.waveColorCycleSeconds);
   audio.setVolumes(settings.musicVolume, settings.sfxVolume);
@@ -30,11 +33,101 @@ async function main(): Promise<void> {
   updateClock();
   setInterval(updateClock, 15_000);
 
+  function usersCategory(): Category {
+    return {
+      id: "users",
+      label: "Users",
+      iconUrl: "assets/icons/user.png",
+      getItems: () => [
+        {
+          id: "current-user",
+          title: navigator.userAgent.includes("Windows") ? "Signed in" : "User",
+          subtitle: "A-X-M",
+          iconUrl: "assets/icons/user.png",
+        },
+      ],
+    };
+  }
+
+  function browserCategory(): Category {
+    return {
+      id: "browser",
+      label: "Browser",
+      iconUrl: "assets/icons/browser.png",
+      getItems: () => [
+        {
+          id: "open-browser",
+          title: "Open Web Browser",
+          iconUrl: "assets/icons/browser.png",
+          onConfirm: () => window.axm.openBrowser("https://www.google.com"),
+        },
+      ],
+    };
+  }
+
+  function musicCategory(): Category {
+    const openFolder = async (dirPath: string | null) => {
+      musicListing = await window.axm.browseMusic(dirPath);
+      xmb.resetSelection("music");
+      xmb.refresh();
+    };
+
+    return {
+      id: "music",
+      label: "Music",
+      iconUrl: "assets/icons/music.png",
+      onBack: () => {
+        if (!musicListing.parent) return false;
+        void openFolder(musicListing.parent);
+        return true;
+      },
+      onContext: () => {
+        if (!musicPlayer.current()) return false;
+        musicPlayer.togglePause();
+        return true;
+      },
+      footerHint: () => (musicListing.path ? musicListing.title : undefined),
+      getItems: () => {
+        if (musicListing.entries.length === 0) {
+          return [
+            {
+              id: "music-empty",
+              title: "No music found",
+              subtitle: "Add a music folder in Settings",
+              iconUrl: "assets/icons/music.png",
+            },
+          ];
+        }
+        return musicListing.entries.map((entry) => {
+          if (entry.kind === "folder") {
+            return {
+              id: entry.filePath,
+              title: entry.name,
+              iconUrl: "assets/icons/folder.png",
+              onConfirm: () => openFolder(entry.filePath),
+            };
+          }
+          const playing = musicPlayer.current()?.filePath === entry.filePath;
+          return {
+            id: entry.filePath,
+            title: entry.name,
+            iconUrl: "assets/icons/music.png",
+            badge: playing ? (musicPlayer.isPlaying() ? "PLAYING" : "PAUSED") : undefined,
+            onConfirm: () => {
+              musicPlayer.play(entry, musicListing.entries, settings.musicVolume);
+              xmb.refresh();
+            },
+          };
+        });
+      },
+    };
+  }
+
   function gamesCategory(): Category {
     return {
       id: "games",
       label: "Game",
-      iconUrl: "assets/icons/games.png",
+      iconUrl: "assets/icons/game.svg",
       getItems: () =>
         games
           .filter((g) => !g.hidden)
@@ -160,6 +253,17 @@ async function main(): Promise<void> {
           },
         },
         {
+          id: "addMusicFolder",
+          title: "Add Music Folder…",
+          subtitle: `${settings.musicFolders.length} added`,
+          iconUrl: "assets/icons/music.png",
+          onConfirm: async () => {
+            settings = await window.axm.pickMusicFolder();
+            musicListing = await window.axm.browseMusic(null);
+            xmb.refresh();
+          },
+        },
+        {
           id: "rescan",
           title: "Rescan Game Library",
           subtitle: `${games.length} games found`,
@@ -182,15 +286,53 @@ async function main(): Promise<void> {
     };
   }
 
+  // Matches the real XMB running order: Users, Settings, Photo, Music, Video, Game, Network.
   const categories: Category[] = [
-    gamesCategory(),
-    mediaCategory("video", "Video", "assets/icons/video.png", () => videos),
-    mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photos),
-    mediaCategory("music", "Music", "assets/icons/music.png", () => music),
+    usersCategory(),
     settingsCategory(),
+    mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photos),
+    musicCategory(),
+    mediaCategory("video", "Video", "assets/icons/video.png", () => videos),
+    gamesCategory(),
+    browserCategory(),
   ];
   const xmb = new Xmb(categories, audio);
+  // Start on Game - it's a game hub first, whatever the XMB running order is.
+  xmb.setActiveCategory("games");
   xmb.init();
+
+  // Now-playing bar, driven by the player's own state changes.
+  const npEl = document.getElementById("now-playing")!;
+  const npTitle = document.getElementById("np-title")!;
+  const npFolder = document.getElementById("np-folder")!;
+  const npState = document.getElementById("np-state")!;
+  const npFill = document.getElementById("np-progress-fill")!;
+  let lastTrackPath: string | null = null;
+
+  musicPlayer.setOnChange(() => {
+    const track = musicPlayer.current();
+    if (!track) {
+      npEl.classList.add("hidden");
+      lastTrackPath = null;
+      xmb.refresh();
+      return;
+    }
+    npEl.classList.remove("hidden");
+    npTitle.textContent = track.name;
+    npFolder.textContent = track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-2).join(" - ");
+    npState.textContent = musicPlayer.isPlaying() ? "PLAYING" : "PAUSED";
+    npFill.style.width = `${musicPlayer.progress() * 100}%`;
+
+    // Only re-render the menu when the track itself changes, not on every tick.
+    if (track.filePath !== lastTrackPath) {
+      lastTrackPath = track.filePath;
+      xmb.refresh();
+    }
+  });
+
+  const bootLogoImg = document.getElementById("boot-logo-img") as HTMLImageElement;
+  bootLogoImg.addEventListener("load", () => bootLogoImg.classList.add("loaded"));
+  bootLogoImg.addEventListener("error", () => bootLogoImg.remove());
 
   // Box art arrives asynchronously in the background - patch it in as it lands.
   window.axm.onArtUpdated(({ gameId, iconPath }) => {
@@ -215,16 +357,16 @@ async function main(): Promise<void> {
   // Background rescan shortly after boot to pick up anything the first pass missed,
   // and to fill in the media categories without blocking startup on slow drives.
   setTimeout(async () => {
-    const [scannedGames, scannedVideos, scannedPhotos, scannedMusic] = await Promise.all([
+    const [scannedGames, scannedVideos, scannedPhotos, listing] = await Promise.all([
       window.axm.scanGames(),
       window.axm.getMedia("video"),
       window.axm.getMedia("photo"),
-      window.axm.getMedia("music"),
+      window.axm.browseMusic(null),
     ]);
     games = scannedGames;
     videos = scannedVideos;
     photos = scannedPhotos;
-    music = scannedMusic;
+    musicListing = listing;
     xmb.refresh();
   }, 3000);
 }

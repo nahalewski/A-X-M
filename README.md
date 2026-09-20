@@ -38,6 +38,23 @@ Output goes to `release/`.
 - Runs uncapped by Chromium's internal frame limiter so it tracks the display's native
   refresh rate (120Hz on the Ally) through normal vsync - no tearing hacks.
 
+## Music
+
+The Music category browses the library folder-by-folder, mirroring however it's laid
+out on disk (e.g. `Artist / Album / tracks`) rather than flattening everything into one
+list. A descends into a folder or plays a track, B goes back up a level, and Y toggles
+play/pause. Playing a track queues the rest of its folder so it advances automatically,
+and the ambient menu loop fades out while music plays and returns when it stops.
+
+Roots come from `musicFolders` in settings (add one via Settings > Add Music Folder),
+falling back to the usual Windows music locations. FLAC, MP3, WAV, OGG, M4A, AAC, WMA
+and Opus all play natively.
+
+## Boot logo
+
+The boot splash loads `assets/icons/boot-logo.png` and falls back to plain "A-X-M" text
+if that file isn't present.
+
 ## Box art
 
 Steam titles pull their art from Steam's CDN. Everything else (Epic, loose exes,

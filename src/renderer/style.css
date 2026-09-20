@@ -297,12 +297,97 @@ body {
   pointer-events: none;
 }
 
+/* The wordmark image is the real logo; the text below is only a fallback for when
+   assets/icons/boot-logo.png isn't present, and JS hides it once the image loads. */
+#boot-logo-img {
+  max-width: 54vw;
+  max-height: 40vh;
+  object-fit: contain;
+  opacity: 0;
+  animation: boot-fade 1.6s ease forwards;
+}
+
+#boot-logo-img.loaded + #boot-logo {
+  display: none;
+}
+
 #boot-logo {
   font-size: 56px;
   font-weight: 200;
   letter-spacing: 10px;
   opacity: 0;
   animation: boot-fade 1.6s ease forwards;
+}
+
+#now-playing {
+  position: absolute;
+  bottom: 74px;
+  left: 42px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px 14px;
+  border-radius: 14px;
+  background: rgba(8, 12, 24, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  min-width: 340px;
+  max-width: 46vw;
+  transition: opacity 0.25s ease;
+}
+
+#now-playing.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#np-icon {
+  font-size: 22px;
+  opacity: 0.85;
+}
+
+#np-text {
+  flex: 1;
+  min-width: 0;
+}
+
+#np-title {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#np-folder {
+  font-size: 12px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#np-state {
+  font-size: 12px;
+  opacity: 0.7;
+  letter-spacing: 0.5px;
+}
+
+#np-progress {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 7px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+}
+
+#np-progress-fill {
+  height: 100%;
+  width: 0;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 999px;
 }
 
 @keyframes boot-fade {

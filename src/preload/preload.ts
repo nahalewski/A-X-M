@@ -12,6 +12,9 @@ const api = {
   losslessScalingStatus: () => ipcRenderer.invoke("axm:losslessScalingStatus"),
   pickGameFolder: () => ipcRenderer.invoke("axm:pickGameFolder"),
   getMedia: (kind: "photo" | "video" | "music") => ipcRenderer.invoke("axm:getMedia", kind),
+  browseMusic: (dirPath: string | null) => ipcRenderer.invoke("axm:browseMusic", dirPath),
+  pickMusicFolder: () => ipcRenderer.invoke("axm:pickMusicFolder"),
+  openBrowser: (url: string) => ipcRenderer.invoke("axm:openBrowser", url),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),
   onArtUpdated: (callback: (update: { gameId: string; iconPath: string }) => void) => {
     ipcRenderer.on("axm:artUpdated", (_e, update) => callback(update));

@@ -7,6 +7,7 @@ import { GameEntry } from "./types";
 import { isLosslessScalingConfigPresent } from "./losslessScaling";
 import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
 import { resolveArt, isGameArtConfigured } from "./gameArt";
+import { browseMusic, MusicListing } from "./musicLibrary";
 
 // Let the compositor track the display's native refresh rate (120Hz on the Ally) via
 // vsync-synced requestAnimationFrame - just remove Chromium's internal 60fps throttle
@@ -156,8 +157,24 @@ ipcMain.handle("axm:quit", (): void => {
 
 ipcMain.handle("axm:getMedia", (_e, kind: MediaKind): MediaEntry[] => scanMedia(kind));
 
+ipcMain.handle("axm:browseMusic", (_e, dirPath: string | null): MusicListing => browseMusic(dirPath));
+
+ipcMain.handle("axm:pickMusicFolder", async (): Promise<Settings> => {
+  if (!mainWindow) return loadSettings();
+  const result = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory"] });
+  if (result.canceled || result.filePaths.length === 0) return loadSettings();
+  const settings = loadSettings();
+  const musicFolders = Array.from(new Set([...settings.musicFolders, result.filePaths[0]]));
+  return saveSettings({ musicFolders });
+});
+
 ipcMain.handle("axm:openMedia", (_e, filePath: string): void => {
   shell.openPath(filePath);
+});
+
+ipcMain.handle("axm:openBrowser", (_e, url: string): void => {
+  // Only ever hand http(s) to the shell - never a local path or other protocol.
+  if (/^https?:\/\//i.test(url)) shell.openExternal(url);
 });
 
 ipcMain.handle("axm:pickGameFolder", async (): Promise<Settings> => {
