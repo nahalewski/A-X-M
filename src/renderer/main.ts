@@ -5,6 +5,7 @@ import { GamepadNav } from "./gamepad";
 import { Xmb, Category, MenuItem, sourceGlyph } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
 import { MusicVisualizer } from "./visualizer";
+import { MediaViewer } from "./mediaViewer";
 import { GameBackground } from "./background";
 import {
   ThemeManager,
@@ -17,6 +18,7 @@ import {
 } from "./theme";
 import {
   BackgroundQuality,
+  BrowseListing,
   DEFAULT_MONTH_THEMES,
   GameEntry,
   LauncherEntry,
@@ -26,6 +28,7 @@ import {
   MONTH_NAMES,
   MusicListing,
   Settings,
+  SteamLibrary,
   ThemeMode,
 } from "./types";
 
@@ -81,14 +84,23 @@ async function main(): Promise<void> {
   });
 
   let games: GameEntry[] = await window.axm.getGames();
-  let photos: MediaEntry[] = [];
-  let videos: MediaEntry[] = [];
+  const emptyListing = (kind: "photo" | "video"): BrowseListing => ({
+    kind,
+    path: "",
+    parent: null,
+    title: kind === "photo" ? "Pictures" : "Videos",
+    entries: [],
+  });
+  let photoListing: BrowseListing = emptyListing("photo");
+  let videoListing: BrowseListing = emptyListing("video");
   let musicListing: MusicListing = { path: null, parent: null, title: "Music", entries: [] };
   let saves: SaveEntry[] = [];
   let launchers: LauncherEntry[] = await window.axm.getLaunchers();
+  let steamLibrary: SteamLibrary = { account: null, games: [] };
 
   const musicPlayer = new MusicPlayer(audio);
   const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
+  const mediaViewer = new MediaViewer(document.getElementById("media-viewer")!);
   const themeManager = new ThemeManager(ribbon, backgroundLayer);
 
   /**
@@ -270,7 +282,7 @@ async function main(): Promise<void> {
    * descends into it the same way the music library does; B comes back out.
    */
   function gamesCategory(): Category {
-    let view: "root" | "saves" | "gamedata" = "root";
+    let view: "root" | "saves" | "gamedata" | "steam" = "root";
 
     const go = (next: typeof view) => {
       view = next;
@@ -281,6 +293,71 @@ async function main(): Promise<void> {
     const openSaves = async () => {
       saves = await window.axm.getSaves();
       go("saves");
+    };
+
+    const openSteam = async () => {
+      steamLibrary = await window.axm.getSteamLibrary();
+      go("steam");
+    };
+
+    /**
+     * After an install is requested, Steam downloads on its own. Poll the manifests
+     * until nothing is mid-download any more, then rescan so the game shows up in
+     * the main list alongside everything else. Kept to one timer however many
+     * installs are queued.
+     */
+    let installPoll = 0;
+    const watchInstalls = () => {
+      if (installPoll) return;
+      installPoll = window.setInterval(async () => {
+        const before = steamLibrary.games.filter((g) => g.state === "installing").length;
+        steamLibrary = await window.axm.getSteamLibrary();
+        const now = steamLibrary.games.filter((g) => g.state === "installing").length;
+        // Something finished: refresh the installed games so it appears in the list.
+        if (now < before) games = await window.axm.scanGames();
+        if (now === 0) {
+          window.clearInterval(installPoll);
+          installPoll = 0;
+        }
+        xmb.refresh();
+      }, 15_000);
+    };
+
+    const steamItems = (): MenuItem[] => {
+      if (steamLibrary.games.length === 0) {
+        return [
+          {
+            id: "steam-empty",
+            title: steamLibrary.account ? "No games in this library" : "Steam not found",
+            subtitle: steamLibrary.account ? undefined : "Install Steam and sign in once",
+            iconUrl: "assets/icons/steam.svg",
+          },
+        ];
+      }
+      return steamLibrary.games.map((g): MenuItem => {
+        const badge = g.state === "installed" ? "INSTALLED" : g.state === "installing" ? "INSTALLING…" : undefined;
+        return {
+          id: `steam-lib-${g.appid}`,
+          title: g.name,
+          subtitle: g.state === "not-installed" ? "Not installed · A to install" : undefined,
+          iconUrl: g.coverUrl,
+          iconGlyph: "S",
+          badge,
+          onConfirm: async () => {
+            if (g.state === "installed") {
+              window.axm.launchSteamApp(g.appid);
+              return;
+            }
+            if (g.state === "installing") return;
+            // Steam takes it from here in the background; flip the badge straight
+            // away rather than waiting for the first poll to notice the manifest.
+            await window.axm.installSteamGame(g.appid);
+            g.state = "installing";
+            xmb.refresh();
+            watchInstalls();
+          },
+        };
+      });
     };
 
     const gameRows = (): MenuItem[] =>
@@ -312,6 +389,13 @@ async function main(): Promise<void> {
         subtitle: "Installed game files",
         iconUrl: "assets/icons/folder.png",
         onConfirm: () => go("gamedata"),
+      },
+      {
+        id: "steam-library",
+        title: "Steam",
+        subtitle: steamLibrary.account ? `${steamLibrary.account}'s library` : "Your Steam library",
+        iconUrl: "assets/icons/steam.svg",
+        onConfirm: () => openSteam(),
       },
       ...launchers
         .filter((l) => l.installed)
@@ -365,51 +449,106 @@ async function main(): Promise<void> {
       footerHint: () => {
         if (view === "saves") return "Saved Data Utility";
         if (view === "gamedata") return "Game Data Utility";
+        if (view === "steam") {
+          const installed = steamLibrary.games.filter((g) => g.state === "installed").length;
+          return `Steam · ${installed} of ${steamLibrary.games.length} installed`;
+        }
         return undefined;
       },
       getItems: () => {
         if (view === "saves") return savesItems();
         if (view === "gamedata") return gameDataItems();
+        if (view === "steam") return steamItems();
         return rootItems();
       },
     };
   }
 
+  /**
+   * Photo and Video browse the user's own Pictures / Videos folder a level at a
+   * time, and open files in the in-app viewer rather than handing off to Windows.
+   * A descends into a folder or opens a file, B goes back up.
+   */
   function mediaCategory(
-    id: "video" | "photo" | "music",
+    kind: "photo" | "video",
     label: string,
     iconUrl: string,
-    getList: () => MediaEntry[],
+    getListing: () => BrowseListing,
+    setListing: (l: BrowseListing) => void,
     leading: MenuItem[] = []
   ): Category {
+    const openFolder = async (dirPath: string | null) => {
+      setListing(await window.axm.browseMedia(kind, dirPath));
+      xmb.resetSelection(kind);
+      xmb.refresh();
+    };
+
+    const openFile = (entry: BrowseListing["entries"][number]) => {
+      // Video takes the audio channel; a photo doesn't need to interrupt anything.
+      if (kind === "video") {
+        musicPlayer.stop();
+        audio.fadeOutAmbient(400);
+      }
+      mediaViewer.open(kind, entry, getListing().entries);
+      xmb.setExternalHandler((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+    };
+
     return {
-      id,
+      id: kind,
       label,
       iconUrl,
+      onBack: () => {
+        const listing = getListing();
+        if (!listing.parent) return false;
+        void openFolder(listing.parent);
+        return true;
+      },
+      footerHint: () => {
+        const listing = getListing();
+        return listing.parent ? listing.title : undefined;
+      },
       getItems: () => {
-        const list = getList();
-        if (list.length === 0 && leading.length === 0) {
+        const listing = getListing();
+        if (listing.entries.length === 0 && leading.length === 0) {
           return [
             {
-              id: `${id}-empty`,
-              title: `No ${label.toLowerCase()} found`,
-              subtitle: "Add files to your Windows " + label + " folder",
+              id: `${kind}-empty`,
+              title: `No ${label.toLowerCase()}s found`,
+              subtitle: `Add files to your Windows ${listing.title} folder`,
               iconUrl,
             },
           ];
         }
         return [
-          ...leading,
-          ...list.map((m) => ({
-            id: m.id,
-            title: m.name,
-            iconUrl,
-            onConfirm: () => window.axm.openMedia(m.filePath),
-          })),
+          ...(listing.parent ? [] : leading),
+          ...listing.entries.map((entry): MenuItem =>
+            entry.kind === "folder"
+              ? {
+                  id: entry.filePath,
+                  title: entry.name,
+                  iconUrl: "assets/icons/folder.png",
+                  onConfirm: () => openFolder(entry.filePath),
+                }
+              : {
+                  id: entry.filePath,
+                  title: entry.name,
+                  // Photos preview as their own thumbnail; the tile crops to square.
+                  iconUrl: kind === "photo" ? entry.url : iconUrl,
+                  onConfirm: () => openFile(entry),
+                }
+          ),
         ];
       },
     };
   }
+
+  // Leaving either viewer hands input back to the menu and brings the menu music
+  // back if a video had taken it.
+  mediaViewer.setOnClose(() => {
+    xmb.setExternalHandler(null);
+    audio.playBack();
+    if (!musicPlayer.current()) audio.fadeInAmbient(1200);
+  });
 
   // Jellyfin's web client, on its default port. Sits at the top of Video, ahead of
   // the local files, since a media server is where most of the video actually is.
@@ -787,9 +926,11 @@ async function main(): Promise<void> {
   const categories: Category[] = [
     usersCategory(),
     settingsCategory(),
-    mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photos),
+    mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photoListing, (l) => (photoListing = l)),
     musicCategory(),
-    mediaCategory("video", "Video", "assets/icons/video.png", () => videos, [jellyfinEntry]),
+    mediaCategory("video", "Video", "assets/icons/video.png", () => videoListing, (l) => (videoListing = l), [
+      jellyfinEntry,
+    ]),
     gamesCategory(),
     browserCategory(),
   ];
@@ -883,16 +1024,18 @@ async function main(): Promise<void> {
   // Background rescan shortly after boot to pick up anything the first pass missed,
   // and to fill in the media categories without blocking startup on slow drives.
   setTimeout(async () => {
-    const [scannedGames, scannedVideos, scannedPhotos, listing] = await Promise.all([
+    const [scannedGames, videos, photos, listing, steam] = await Promise.all([
       window.axm.scanGames(),
-      window.axm.getMedia("video"),
-      window.axm.getMedia("photo"),
+      window.axm.browseMedia("video", null),
+      window.axm.browseMedia("photo", null),
       window.axm.browseMusic(null),
+      window.axm.getSteamLibrary(),
     ]);
     games = scannedGames;
-    videos = scannedVideos;
-    photos = scannedPhotos;
+    videoListing = videos;
+    photoListing = photos;
     musicListing = listing;
+    steamLibrary = steam;
     xmb.refresh();
   }, 3000);
 }

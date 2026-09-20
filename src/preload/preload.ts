@@ -18,6 +18,11 @@ const api = {
   openBrowser: (url: string) => ipcRenderer.invoke("axm:openBrowser", url),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),
   getSaves: () => ipcRenderer.invoke("axm:getSaves"),
+  browseMedia: (kind: "photo" | "video", dirPath: string | null) =>
+    ipcRenderer.invoke("axm:browseMedia", kind, dirPath),
+  getSteamLibrary: () => ipcRenderer.invoke("axm:getSteamLibrary"),
+  installSteamGame: (appid: number) => ipcRenderer.invoke("axm:installSteamGame", appid),
+  launchSteamApp: (appid: number) => ipcRenderer.invoke("axm:launchSteamApp", appid),
   openFolder: (dirPath: string) => ipcRenderer.invoke("axm:openFolder", dirPath),
   getLaunchers: () => ipcRenderer.invoke("axm:getLaunchers"),
   openLauncher: (id: string) => ipcRenderer.invoke("axm:openLauncher", id),

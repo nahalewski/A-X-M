@@ -10,6 +10,8 @@ import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
 import { resolveArt, isGameArtConfigured } from "./gameArt";
 import { browseMusic, MusicListing } from "./musicLibrary";
 import { scanSaves, SaveEntry } from "./saveScanner";
+import { browseMedia, BrowseKind, BrowseListing } from "./mediaBrowser";
+import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 
@@ -207,6 +209,18 @@ ipcMain.handle("axm:pickBackgroundImage", async (): Promise<Settings> => {
 
 ipcMain.handle("axm:openMedia", (_e, filePath: string): void => {
   shell.openPath(filePath);
+});
+
+ipcMain.handle("axm:browseMedia", (_e, kind: BrowseKind, dirPath: string | null): BrowseListing =>
+  browseMedia(kind, dirPath)
+);
+
+ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
+
+ipcMain.handle("axm:installSteamGame", (_e, appid: number): void => installSteamGame(appid));
+
+ipcMain.handle("axm:launchSteamApp", (_e, appid: number): void => {
+  if (Number.isInteger(appid) && appid > 0) shell.openExternal(`steam://rungameid/${appid}`);
 });
 
 /** Saved Data Utility: where games keep their saves, named via the game scan where possible. */

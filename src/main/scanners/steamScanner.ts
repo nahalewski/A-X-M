@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { parseVdf, VdfNode } from "../vdf";
 import { GameEntry } from "../types";
 
-function getSteamInstallPath(): string | null {
+export function getSteamInstallPath(): string | null {
   try {
     const out = execFileSync(
       "reg",
@@ -25,7 +25,7 @@ function normalizePath(p: string): string {
   return p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
 }
 
-function getLibraryFolders(steamPath: string): string[] {
+export function getLibraryFolders(steamPath: string): string[] {
   const libs = [steamPath];
   const seen = new Set([normalizePath(steamPath)]);
   const vdfPath = path.join(steamPath, "steamapps", "libraryfolders.vdf");
@@ -81,7 +81,7 @@ export function scanSteamGames(): GameEntry[] {
 
         // Skip redistributables / drivers / tools that show up alongside real games
         if (
-          /steamworks common redistributables|steam controller configs|steam linux runtime|dts audio|proton|steamvr|redistributable/i.test(
+          /steamworks common redistributables|steam controller configs|steam linux runtime|dts audio|proton|steamvr|redistributable|lossless scaling/i.test(
             name
           )
         ) {

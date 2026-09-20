@@ -81,6 +81,36 @@ export interface MusicEntry {
   url?: string;
 }
 
+export interface BrowseEntry {
+  kind: "folder" | "file";
+  name: string;
+  filePath: string;
+  url?: string;
+}
+
+export interface BrowseListing {
+  kind: "photo" | "video";
+  path: string;
+  parent: string | null;
+  title: string;
+  entries: BrowseEntry[];
+}
+
+export type SteamInstallState = "installed" | "installing" | "not-installed";
+
+export interface SteamLibraryEntry {
+  appid: number;
+  name: string;
+  state: SteamInstallState;
+  lastPlayed: number;
+  coverUrl: string;
+}
+
+export interface SteamLibrary {
+  account: string | null;
+  games: SteamLibraryEntry[];
+}
+
 export interface SaveEntry {
   id: string;
   name: string;
@@ -142,6 +172,10 @@ export interface AxmApi {
   getMedia(kind: "photo" | "video" | "music"): Promise<MediaEntry[]>;
   openMedia(filePath: string): Promise<void>;
   getSaves(): Promise<SaveEntry[]>;
+  browseMedia(kind: "photo" | "video", dirPath: string | null): Promise<BrowseListing>;
+  getSteamLibrary(): Promise<SteamLibrary>;
+  installSteamGame(appid: number): Promise<void>;
+  launchSteamApp(appid: number): Promise<void>;
   openFolder(dirPath: string): Promise<void>;
   getLaunchers(): Promise<LauncherEntry[]>;
   openLauncher(id: string): Promise<void>;

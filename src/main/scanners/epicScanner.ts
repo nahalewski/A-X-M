@@ -11,6 +11,9 @@ interface EpicManifest {
   AppName?: string;
   bIsIncompleteInstall?: boolean;
   bIsApplication?: boolean;
+  /** Set on DLC and add-ons, pointing at the game they belong to. Empty on a base game. */
+  MainGameAppName?: string;
+  AppCategories?: string[];
 }
 
 const MANIFEST_DIR = "C:\\ProgramData\\Epic\\EpicGamesLauncher\\Data\\Manifests";
@@ -29,6 +32,12 @@ export function scanEpicGames(): GameEntry[] {
       const raw = fs.readFileSync(path.join(MANIFEST_DIR, file), "utf-8");
       const m: EpicManifest = JSON.parse(raw);
       if (m.bIsIncompleteInstall) continue;
+      // DLC, expansion packs and add-ons carry their parent's AppName; soundtracks,
+      // art books and the like are tagged digitalextras and launch a script rather
+      // than an executable. None of them belong in a games list.
+      if (m.MainGameAppName) continue;
+      if (m.AppCategories?.includes("digitalextras")) continue;
+      if (!m.LaunchExecutable || !/\.exe$/i.test(m.LaunchExecutable)) continue;
       if (!m.DisplayName || !m.InstallLocation || !m.CatalogNamespace || !m.CatalogItemId || !m.AppName) continue;
 
       games.push({

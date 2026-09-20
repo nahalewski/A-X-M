@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Steam">
+  <!-- Disc with the two linked pistons, after Steam's mark, in the flat white style of
+       the rest of the icon set. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="
+    M64 12 a52 52 0 1 1 0 104 A52 52 0 0 1 12 66 L38 77 a16 16 0 0 0 30 -6 l17 -13 a20 20 0 1 0 -20 -19 L52 52 a16 16 0 0 0 -20 4 L13 48 A52 52 0 0 1 64 12 Z
+    M85 25 a12 12 0 1 0 0 24 a12 12 0 0 0 0 -24 Z
+    M46 62 a9 9 0 1 0 0 18 a9 9 0 0 0 0 -18 Z
+  "/>
+</svg>
