@@ -47,6 +47,8 @@ export class RibbonFallbackRenderer {
   private pulseAmount = 0;
 
   private colorRgb: [number, number, number];
+  private ribbonWidth = 1;
+  private ribbonsVisible = true;
 
   constructor(container: HTMLElement, options: RibbonOptions, level: QualityLevel) {
     this.options = options;
@@ -78,6 +80,8 @@ export class RibbonFallbackRenderer {
     ctx.clearRect(0, 0, this.width, this.height);
 
     this.drawBackdrop();
+
+    if (!this.ribbonsVisible) return;
 
     const count = Math.max(1, Math.min(this.options.layers, this.profile.maxLayers, LAYER_SPECS.length));
     ctx.lineJoin = "round";
@@ -120,7 +124,7 @@ export class RibbonFallbackRenderer {
     const scaleY = this.height * 0.5;
     const centreY = this.height * 0.5 - spec.yOffset * scaleY;
     const amplitudePx = amplitude * scaleY;
-    const thicknessPx = spec.thickness * scaleY * 0.5;
+    const thicknessPx = spec.thickness * this.ribbonWidth * scaleY * 0.5;
 
     const alpha = spec.opacity * (this.options.opacity / REFERENCE_OPACITY);
     const [r, g, b] = this.colorRgb;
@@ -175,6 +179,19 @@ export class RibbonFallbackRenderer {
 
   setWaveStrength(strength: number): void {
     this.options.waveStrength = strength;
+  }
+
+  setRibbonWidth(width: number): void {
+    this.ribbonWidth = width;
+  }
+
+  setRibbonsVisible(visible: boolean): void {
+    this.ribbonsVisible = visible;
+  }
+
+  setBackdrop(mode: RibbonOptions["backdrop"], colors?: [string, string]): void {
+    this.options.backdrop = mode;
+    if (colors) this.options.backdropColors = colors;
   }
 
   /** The fallback has no bloom term; accepted and ignored so the API matches. */

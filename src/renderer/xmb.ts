@@ -11,6 +11,10 @@ export interface MenuItem {
   iconGlyph?: string;
   badge?: string;
   onConfirm?: () => void | Promise<void>;
+  /** Handles Y for this row. Return true if consumed, ahead of the category's. */
+  onContext?: () => boolean;
+  /** Footer text for this row's Y action. */
+  contextHint?: string;
   contextGame?: GameEntry;
 }
 
@@ -26,6 +30,14 @@ export interface Category {
   /** Extra hint text for the footer, e.g. the current folder. */
   footerHint?: () => string | undefined;
 }
+
+/** Spelled out in the game options view, where there's room for it. */
+const SOURCE_LABEL: Record<GameEntry["source"], string> = {
+  steam: "Steam",
+  epic: "Epic Games",
+  xbox: "Xbox / Microsoft Store",
+  generic: "Installed program",
+};
 
 const SOURCE_GLYPH: Record<GameEntry["source"], string> = {
   steam: "S",
@@ -89,12 +101,14 @@ export class Xmb {
   private clearance: IconClearance = { above: 60, below: 44 };
 
   private onSelectionChange: (item: MenuItem | null) => void = () => {};
+  private externalHandler: ((action: string) => boolean) | null = null;
 
   private categoryBarEl = document.getElementById("category-bar")!;
   private itemRailEl = document.getElementById("item-rail")!;
   private modalEl = document.getElementById("context-modal")!;
   private modalTitleEl = document.getElementById("context-title")!;
   private modalOptionsEl = document.getElementById("context-options")!;
+  private modalDetailsEl = document.getElementById("context-details")!;
   private footerEl = document.getElementById("footer-hints")!;
 
   constructor(private categories: Category[], private audio: AudioManager) {}
@@ -102,6 +116,11 @@ export class Xmb {
   /** Fired after every render with whatever is currently focused, or null if nothing is. */
   setOnSelectionChange(callback: (item: MenuItem | null) => void): void {
     this.onSelectionChange = callback;
+  }
+
+  /** Installs an overlay that consumes input before the menu. Null removes it. */
+  setExternalHandler(handler: ((action: string) => boolean) | null): void {
+    this.externalHandler = handler;
   }
 
   activeCategoryId(): string {
@@ -136,6 +155,10 @@ export class Xmb {
   }
 
   handleAction(action: "up" | "down" | "left" | "right" | "confirm" | "back" | "context"): void {
+    // A full-screen overlay gets first refusal on every button, so the menu doesn't
+    // scroll underneath something the user is actually looking at.
+    if (this.externalHandler?.(action)) return;
+
     if (this.modalGame) {
       this.handleModalAction(action);
       return;
@@ -182,6 +205,11 @@ export class Xmb {
       }
       case "context": {
         const item = this.currentItems()[this.currentSelectedIndex()];
+        if (item?.onContext?.()) {
+          this.audio.playContextOpen();
+          this.render();
+          break;
+        }
         if (item?.contextGame) {
           this.audio.playContextOpen();
           this.openModal(item.contextGame);
@@ -387,20 +415,47 @@ export class Xmb {
       this.modalEl.classList.add("hidden");
       return;
     }
+    const game = this.modalGame;
     this.modalEl.classList.remove("hidden");
-    this.modalTitleEl.textContent = `${this.modalGame.name} — Lossless Scaling Profile`;
+    this.modalTitleEl.textContent = game.name;
+
+    // Where the game lives used to sit under every row in the list, which crowded
+    // the menu; it belongs here, with the rest of the per-game detail.
+    this.modalDetailsEl.innerHTML = "";
+    const rows: [string, string][] = [
+      ["Source", SOURCE_LABEL[game.source]],
+      ["Drive", game.drive || "-"],
+      ["Location", game.installDir || game.launchTarget || "-"],
+    ];
+    for (const [label, value] of rows) {
+      const row = document.createElement("div");
+      row.className = "context-detail";
+      row.innerHTML = `<span class="context-detail-label"></span><span class="context-detail-value"></span>`;
+      (row.firstElementChild as HTMLElement).textContent = label;
+      (row.lastElementChild as HTMLElement).textContent = value;
+      this.modalDetailsEl.appendChild(row);
+    }
+
+    const heading = document.createElement("div");
+    heading.className = "context-section";
+    heading.textContent = "Lossless Scaling Profile";
     this.modalOptionsEl.innerHTML = "";
+    this.modalOptionsEl.appendChild(heading);
+
+    const choices = document.createElement("div");
+    choices.className = "context-choices";
     ["None", "Profile 1", "Profile 2", "Profile 3"].forEach((label, i) => {
       const opt = document.createElement("div");
       opt.className = "context-option" + (i === this.modalSelection ? " selected" : "");
       opt.textContent = label;
-      this.modalOptionsEl.appendChild(opt);
+      choices.appendChild(opt);
     });
+    this.modalOptionsEl.appendChild(choices);
   }
 
   private renderFooter(): void {
     if (this.modalGame) {
-      this.footerEl.innerHTML = `<span>◀ ▶ change profile</span><span>A apply &middot; B cancel</span>`;
+      this.footerEl.innerHTML = `<span>◀ ▶ scaling profile</span><span>A apply &middot; B close</span>`;
       return;
     }
     const category = this.categories[this.activeCategory];
@@ -410,9 +465,10 @@ export class Xmb {
       ? `<span>${extra}</span>`
       : `<span>◀ ▶ category &middot; ▲ ▼ select</span>`;
     const hints = ["A select"];
-    if (item?.contextGame) hints.push("Y scaling profile");
+    if (item?.contextHint) hints.push(`Y ${item.contextHint}`);
+    else if (item?.contextGame) hints.push("Y game options");
     if (category.onBack) hints.push("B back");
-    if (category.onContext) hints.push("Y play/pause");
+    if (!item?.contextHint && !item?.contextGame && category.onContext) hints.push("Y play/pause");
     this.footerEl.innerHTML = `${left}<span>${hints.join(" &middot; ")}</span>`;
   }
 }

@@ -74,6 +74,9 @@ export class RibbonRenderer {
   private scratchBottom = new THREE.Color();
   private scratchMix = new THREE.Color();
 
+  /** Multiplier on every band's thickness, from the active theme. */
+  private ribbonWidth = 1;
+
   /** Advanced by delta * speed * boost each frame, so a speed or boost change
    *  accelerates the motion instead of jumping its phase. */
   private ribbonTime = 0;
@@ -146,7 +149,7 @@ export class RibbonRenderer {
           uPhase: { value: spec.phase },
           uWaveStrength: { value: this.options.waveStrength },
           uTwist: { value: TWIST },
-          uThickness: { value: spec.thickness },
+          uThickness: { value: spec.thickness * this.ribbonWidth },
           uColor: { value: new THREE.Vector3(baseColor[0], baseColor[1], baseColor[2]) },
           uOpacity: { value: this.layerAlpha(spec.opacity) },
           uGlow: { value: this.glowValue() },
@@ -302,6 +305,29 @@ export class RibbonRenderer {
 
   setWaveStrength(strength: number): void {
     this.options.waveStrength = strength;
+  }
+
+  /** Scales band thickness. The taper in the shader still rides on top of this. */
+  setRibbonWidth(width: number): void {
+    this.ribbonWidth = width;
+    for (let i = 0; i < this.layers.length; i++) {
+      this.layers[i].material.uniforms.uThickness.value = LAYER_SPECS[i].thickness * width;
+    }
+  }
+
+  /** Hides the bands while leaving the themed backdrop drawing. */
+  setRibbonsVisible(visible: boolean): void {
+    for (const layer of this.layers) layer.mesh.visible = visible;
+  }
+
+  /**
+   * Switches how the area behind the ribbons is painted. Passing colours with
+   * "static" is what the theme system uses; "cycle" restores the drifting palette.
+   */
+  setBackdrop(mode: RibbonOptions["backdrop"], colors?: [string, string]): void {
+    this.options.backdrop = mode;
+    if (colors) this.options.backdropColors = colors;
+    if (this.backdropMesh) this.backdropMesh.visible = mode !== "none";
   }
 
   setGlow(glow: boolean): void {

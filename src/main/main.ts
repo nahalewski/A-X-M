@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
+import { pathToFileURL } from "node:url";
 import * as path from "node:path";
 import { loadSettings, saveSettings, setGameOverride, Settings } from "./settingsStore";
 import { scanAllGames } from "./gameScanner";
@@ -186,6 +187,19 @@ ipcMain.handle("axm:pickMusicFolder", async (): Promise<Settings> => {
   const settings = loadSettings();
   const musicFolders = Array.from(new Set([...settings.musicFolders, result.filePaths[0]]));
   return saveSettings({ musicFolders });
+});
+
+/** Picks a picture to use as the menu background, stored as a file:// URL. */
+ipcMain.handle("axm:pickBackgroundImage", async (): Promise<Settings> => {
+  if (!mainWindow) return loadSettings();
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp"] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return loadSettings();
+  // The renderer puts this straight into a CSS url(), so hand it a real URL -
+  // a raw Windows path with backslashes and spaces would not resolve.
+  return saveSettings({ customImageUrl: pathToFileURL(result.filePaths[0]).href, themeMode: "image" });
 });
 
 ipcMain.handle("axm:openMedia", (_e, filePath: string): void => {

@@ -22,6 +22,15 @@ export class MusicPlayer {
     });
   }
 
+  /**
+   * The single <audio> element every track plays through. The visualizer taps this
+   * once; because it's reused for the whole queue, the analyser survives track
+   * changes without being rewired.
+   */
+  element(): HTMLAudioElement {
+    return this.el;
+  }
+
   setOnChange(callback: () => void): void {
     this.onChange = callback;
   }

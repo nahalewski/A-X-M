@@ -14,6 +14,7 @@ const api = {
   getMedia: (kind: "photo" | "video" | "music") => ipcRenderer.invoke("axm:getMedia", kind),
   browseMusic: (dirPath: string | null) => ipcRenderer.invoke("axm:browseMusic", dirPath),
   pickMusicFolder: () => ipcRenderer.invoke("axm:pickMusicFolder"),
+  pickBackgroundImage: () => ipcRenderer.invoke("axm:pickBackgroundImage"),
   openBrowser: (url: string) => ipcRenderer.invoke("axm:openBrowser", url),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),
   onArtUpdated: (callback: (update: { gameId: string; iconPath?: string; heroPath?: string }) => void) => {

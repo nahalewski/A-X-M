@@ -2,10 +2,30 @@ import "./types";
 import { RibbonBackground } from "../background/RibbonBackground";
 import { AudioManager, AMBIENT_TRACKS, AMBIENT_TRACK_IDS } from "./audio";
 import { GamepadNav } from "./gamepad";
-import { Xmb, Category, sourceGlyph } from "./xmb";
+import { Xmb, Category, MenuItem, sourceGlyph } from "./xmb";
 import { MusicPlayer } from "./musicPlayer";
+import { MusicVisualizer } from "./visualizer";
 import { GameBackground } from "./background";
-import { BackgroundQuality, GameEntry, MediaEntry, MusicListing, Settings } from "./types";
+import {
+  ThemeManager,
+  RIBBON_SPEED_PRESETS,
+  RIBBON_WIDTH_PRESETS,
+  RIBBON_COLOR_PRESETS,
+  BACKGROUND_COLOR_PRESETS,
+  currentMonthIndex,
+  labelForColor,
+} from "./theme";
+import {
+  BackgroundQuality,
+  DEFAULT_MONTH_THEMES,
+  GameEntry,
+  MediaEntry,
+  MonthTheme,
+  MONTH_NAMES,
+  MusicListing,
+  Settings,
+  ThemeMode,
+} from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
 const VOLUME_PRESETS = [0, 0.25, 0.5, 0.75, 1];
@@ -16,6 +36,27 @@ const QUALITY_LABELS: Record<BackgroundQuality, string> = {
   medium: "Medium",
   high: "High",
 };
+const THEME_MODES: ThemeMode[] = ["monthly", "fixed", "cycle", "image"];
+const THEME_MODE_LABELS: Record<ThemeMode, string> = {
+  monthly: "Changes each month",
+  fixed: "One look all year",
+  cycle: "Drifting palette",
+  image: "Custom picture",
+};
+
+/** Steps through a preset list, snapping to the nearest entry if the value isn't in it. */
+function nextPreset(presets: number[], value: number): number {
+  let closest = 0;
+  for (let i = 1; i < presets.length; i++) {
+    if (Math.abs(presets[i] - value) < Math.abs(presets[closest] - value)) closest = i;
+  }
+  return presets[(closest + 1) % presets.length];
+}
+
+function nextColor(presets: { value: string }[], value: string): string {
+  const i = presets.findIndex((p) => p.value.toLowerCase() === value.toLowerCase());
+  return presets[(i + 1) % presets.length].value;
+}
 
 async function main(): Promise<void> {
   const audio = new AudioManager();
@@ -25,15 +66,14 @@ async function main(): Promise<void> {
   // Renderer-process only: the ribbon touches WebGL, the DOM and rAF, so none of it
   // may move to the main process. It needs no Node APIs, so it runs as-is under
   // contextIsolation: true / nodeIntegration: false.
-  const ribbon = new RibbonBackground(document.getElementById("background-layer")!, {
+  const backgroundLayer = document.getElementById("background-layer")!;
+  const ribbon = new RibbonBackground(backgroundLayer, {
     color: "#ffffff",
     opacity: 0.22,
     speed: 0.25,
     layers: 4,
     quality: settings.backgroundQuality,
     glow: true,
-    // The menu's existing colour-speed setting drives the backdrop the ribbons
-    // sit on; the ribbons themselves stay white.
     backdrop: "cycle",
     backdropCycleSeconds: settings.waveColorCycleSeconds,
   });
@@ -44,10 +84,28 @@ async function main(): Promise<void> {
   let musicListing: MusicListing = { path: null, parent: null, title: "Music", entries: [] };
 
   const musicPlayer = new MusicPlayer(audio);
+  const visualizer = new MusicVisualizer(document.getElementById("visualizer")!);
+  const themeManager = new ThemeManager(ribbon, backgroundLayer);
+
+  /**
+   * The one place the ribbon's look is set from settings. While the visualizer is
+   * standing in for the ribbons it wins over the theme's own ribbon toggle, which is
+   * why every theme change routes through here rather than calling apply() directly.
+   */
+  const applyTheme = () => {
+    themeManager.apply(settings);
+    if (visualizer.currentMode() !== "off") ribbon.setRibbonsVisible(false);
+  };
 
   audio.setVolumes(settings.musicVolume, settings.sfxVolume);
   audio.setAmbientTrack(settings.ambientTrack);
+  applyTheme();
   ribbon.start();
+
+  // A monthly theme should roll over at midnight on the 1st without a restart.
+  setInterval(() => {
+    if (settings.themeMode === "monthly" && themeManager.monthChanged()) applyTheme();
+  }, 60_000);
 
   const clockEl = document.getElementById("clock")!;
   const updateClock = () => {
@@ -56,6 +114,51 @@ async function main(): Promise<void> {
   };
   updateClock();
   setInterval(updateClock, 15_000);
+
+  // ---- Visualizer lifecycle -------------------------------------------------------
+  //
+  // Y on a track brings the full-screen "stage" up. B drops back to the menu and the
+  // visualizer moves behind it, taking the ribbons' place, where it stays across
+  // track changes. It only clears when playback actually stops.
+
+  const stageHandler = (action: string): boolean => {
+    switch (action) {
+      case "back":
+        leaveStage();
+        return true;
+      case "confirm":
+      case "context":
+        musicPlayer.togglePause();
+        return true;
+      default:
+        // Swallow navigation so the menu doesn't scroll behind the stage.
+        return true;
+    }
+  };
+
+  const enterStage = () => {
+    if (!visualizer.isAvailable()) visualizer.attach(musicPlayer.element());
+    visualizer.setTrackName(musicPlayer.current()?.name ?? null);
+    visualizer.setMode("stage");
+    ribbon.setRibbonsVisible(false);
+    xmb.setExternalHandler(stageHandler);
+  };
+
+  const leaveStage = () => {
+    xmb.setExternalHandler(null);
+    visualizer.setMode("background");
+    audio.playBack();
+    xmb.refresh();
+  };
+
+  const clearVisualizer = () => {
+    xmb.setExternalHandler(null);
+    visualizer.setMode("off");
+    visualizer.setTrackName(null);
+    applyTheme();
+  };
+
+  // ---- Categories ------------------------------------------------------------------
 
   function usersCategory(): Category {
     return {
@@ -122,7 +225,7 @@ async function main(): Promise<void> {
             },
           ];
         }
-        return musicListing.entries.map((entry) => {
+        return musicListing.entries.map((entry): MenuItem => {
           if (entry.kind === "folder") {
             return {
               id: entry.filePath,
@@ -141,6 +244,16 @@ async function main(): Promise<void> {
               musicPlayer.play(entry, musicListing.entries, settings.musicVolume);
               xmb.refresh();
             },
+            // Y opens the visualizer on this track, starting it if it isn't the one
+            // playing. When the visualizer is switched off in settings this returns
+            // false so Y falls through to the category's plain play/pause.
+            contextHint: settings.visualizerEnabled ? "visualizer" : undefined,
+            onContext: () => {
+              if (!settings.visualizerEnabled) return false;
+              if (!playing) musicPlayer.play(entry, musicListing.entries, settings.musicVolume);
+              enterStage();
+              return true;
+            },
           };
         });
       },
@@ -158,7 +271,7 @@ async function main(): Promise<void> {
           .map((g) => ({
             id: g.id,
             title: g.name,
-            subtitle: g.drive,
+            // Drive and folder live in the Y options view now, not under every row.
             iconUrl: g.iconPath,
             backgroundUrl: g.heroPath,
             iconGlyph: sourceGlyph(g.source),
@@ -201,142 +314,364 @@ async function main(): Promise<void> {
     };
   }
 
+  // ---- Settings, with the Theme sub-views ------------------------------------------
+
+  type SettingsView = "root" | "theme" | "months" | { month: number };
+
   function settingsCategory(): Category {
+    let view: SettingsView = "root";
+
+    const go = (next: SettingsView) => {
+      view = next;
+      xmb.resetSelection("settings");
+      xmb.refresh();
+    };
+
+    const save = async (partial: Partial<Settings>) => {
+      settings = await window.axm.setSettings(partial);
+      applyTheme();
+      xmb.refresh();
+    };
+
     const cycleIdx = () => {
       const i = WAVE_CYCLE_PRESETS.indexOf(settings.waveColorCycleSeconds);
       return i === -1 ? 2 : i;
     };
-    const musicIdx = () => {
-      const i = VOLUME_PRESETS.findIndex((v) => Math.abs(v - settings.musicVolume) < 0.01);
-      return i === -1 ? 2 : i;
-    };
-    const sfxIdx = () => {
-      const i = VOLUME_PRESETS.findIndex((v) => Math.abs(v - settings.sfxVolume) < 0.01);
+    const volumeIdx = (value: number) => {
+      const i = VOLUME_PRESETS.findIndex((v) => Math.abs(v - value) < 0.01);
       return i === -1 ? 2 : i;
     };
 
-    return {
-      id: "settings",
-      label: "Settings",
-      iconUrl: "assets/icons/settings.png",
-      getItems: () => [
+    /**
+     * Which MonthTheme the ribbon controls in the Theme view edit. In monthly mode
+     * that's this month's entry (so a tweak shows immediately); fixed and image
+     * modes share the single fixed entry.
+     */
+    const themeTarget = (): { theme: MonthTheme; write: (t: MonthTheme) => Partial<Settings> } => {
+      if (settings.themeMode === "monthly") {
+        const month = currentMonthIndex();
+        return {
+          theme: settings.monthlyThemes[month],
+          write: (t) => {
+            const monthlyThemes = settings.monthlyThemes.map((m, i) => (i === month ? t : m));
+            return { monthlyThemes };
+          },
+        };
+      }
+      return { theme: settings.fixedTheme, write: (t) => ({ fixedTheme: t }) };
+    };
+
+    const monthTarget = (month: number): { theme: MonthTheme; write: (t: MonthTheme) => Partial<Settings> } => ({
+      theme: settings.monthlyThemes[month],
+      write: (t) => ({ monthlyThemes: settings.monthlyThemes.map((m, i) => (i === month ? t : m)) }),
+    });
+
+    /** The four per-theme controls, shared by the Theme view and each month editor. */
+    const ribbonControls = (
+      target: () => { theme: MonthTheme; write: (t: MonthTheme) => Partial<Settings> },
+      idPrefix: string,
+      includeBackground: boolean
+    ): MenuItem[] => {
+      const items: MenuItem[] = [
         {
-          id: "windowMode",
-          title: "Display Mode",
-          subtitle: settings.windowed ? "Windowed" : "Fullscreen",
-          iconGlyph: "▢",
-          onConfirm: async () => {
-            settings = await window.axm.toggleFullscreen();
-            xmb.refresh();
+          id: `${idPrefix}-speed`,
+          title: "Ribbon Speed",
+          subtitle: `${target().theme.ribbonSpeed.toFixed(2)}×`,
+          iconGlyph: "»",
+          onConfirm: () => {
+            const { theme, write } = target();
+            return save(write({ ...theme, ribbonSpeed: nextPreset(RIBBON_SPEED_PRESETS, theme.ribbonSpeed) }));
           },
         },
         {
-          id: "waveSpeed",
-          title: "Background Color Speed",
-          subtitle: `${settings.waveColorCycleSeconds}s / color`,
+          id: `${idPrefix}-width`,
+          title: "Ribbon Width",
+          subtitle: `${target().theme.ribbonWidth.toFixed(1)}×`,
+          iconGlyph: "≡",
+          onConfirm: () => {
+            const { theme, write } = target();
+            return save(write({ ...theme, ribbonWidth: nextPreset(RIBBON_WIDTH_PRESETS, theme.ribbonWidth) }));
+          },
+        },
+        {
+          id: `${idPrefix}-color`,
+          title: "Ribbon Color",
+          subtitle: labelForColor(RIBBON_COLOR_PRESETS, target().theme.ribbonColor),
+          iconGlyph: "◐",
+          onConfirm: () => {
+            const { theme, write } = target();
+            return save(write({ ...theme, ribbonColor: nextColor(RIBBON_COLOR_PRESETS, theme.ribbonColor) }));
+          },
+        },
+      ];
+      if (includeBackground) {
+        items.push({
+          id: `${idPrefix}-bg`,
+          title: "Background Color",
+          subtitle: labelForColor(BACKGROUND_COLOR_PRESETS, target().theme.backgroundColor),
+          iconGlyph: "■",
+          onConfirm: () => {
+            const { theme, write } = target();
+            return save(
+              write({ ...theme, backgroundColor: nextColor(BACKGROUND_COLOR_PRESETS, theme.backgroundColor) })
+            );
+          },
+        });
+      }
+      return items;
+    };
+
+    const rootItems = (): MenuItem[] => [
+      {
+        id: "theme",
+        title: "Theme",
+        subtitle: THEME_MODE_LABELS[settings.themeMode],
+        iconGlyph: "❖",
+        onConfirm: () => go("theme"),
+      },
+      {
+        id: "windowMode",
+        title: "Display Mode",
+        subtitle: settings.windowed ? "Windowed" : "Fullscreen",
+        iconGlyph: "▢",
+        onConfirm: async () => {
+          settings = await window.axm.toggleFullscreen();
+          xmb.refresh();
+        },
+      },
+      {
+        id: "backgroundQuality",
+        title: "Background Quality",
+        subtitle:
+          settings.backgroundQuality === "auto"
+            ? `Auto (${ribbon.activeQuality()})`
+            : QUALITY_LABELS[settings.backgroundQuality],
+        iconGlyph: "◈",
+        onConfirm: async () => {
+          const i = QUALITY_PRESETS.indexOf(settings.backgroundQuality);
+          const next = QUALITY_PRESETS[(i + 1) % QUALITY_PRESETS.length];
+          settings = await window.axm.setSettings({ backgroundQuality: next });
+          ribbon.setQuality(next);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "musicVolume",
+        title: "Music Volume",
+        subtitle: `${Math.round(settings.musicVolume * 100)}%`,
+        iconGlyph: "♪",
+        onConfirm: async () => {
+          const next = VOLUME_PRESETS[(volumeIdx(settings.musicVolume) + 1) % VOLUME_PRESETS.length];
+          settings = await window.axm.setSettings({ musicVolume: next });
+          audio.setVolumes(settings.musicVolume, settings.sfxVolume);
+          musicPlayer.setVolume(settings.musicVolume);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "ambientTrack",
+        title: "Menu Music",
+        subtitle: AMBIENT_TRACKS[settings.ambientTrack].label,
+        iconUrl: "assets/icons/music.png",
+        onConfirm: async () => {
+          const i = AMBIENT_TRACK_IDS.indexOf(settings.ambientTrack);
+          const next = AMBIENT_TRACK_IDS[(i + 1) % AMBIENT_TRACK_IDS.length];
+          settings = await window.axm.setSettings({ ambientTrack: next });
+          audio.setAmbientTrack(settings.ambientTrack);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "sfxVolume",
+        title: "Menu Sound Volume",
+        subtitle: `${Math.round(settings.sfxVolume * 100)}%`,
+        iconGlyph: "♫",
+        onConfirm: async () => {
+          const next = VOLUME_PRESETS[(volumeIdx(settings.sfxVolume) + 1) % VOLUME_PRESETS.length];
+          settings = await window.axm.setSettings({ sfxVolume: next });
+          audio.setVolumes(settings.musicVolume, settings.sfxVolume);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "addFolder",
+        title: "Add Game Folder…",
+        subtitle: `${settings.extraGameFolders.length} added`,
+        iconUrl: "assets/icons/folder.png",
+        onConfirm: async () => {
+          settings = await window.axm.pickGameFolder();
+          games = await window.axm.scanGames();
+          xmb.refresh();
+        },
+      },
+      {
+        id: "addMusicFolder",
+        title: "Add Music Folder…",
+        subtitle: `${settings.musicFolders.length} added`,
+        iconUrl: "assets/icons/music.png",
+        onConfirm: async () => {
+          settings = await window.axm.pickMusicFolder();
+          musicListing = await window.axm.browseMusic(null);
+          xmb.refresh();
+        },
+      },
+      {
+        id: "rescan",
+        title: "Rescan Game Library",
+        subtitle: `${games.length} games found`,
+        iconGlyph: "↻",
+        onConfirm: async () => {
+          games = await window.axm.scanGames();
+          xmb.refresh();
+        },
+      },
+      {
+        id: "quit",
+        title: "Quit A-X-M",
+        iconUrl: "assets/icons/power.png",
+        onConfirm: async () => {
+          await audio.fadeOutAmbient(800);
+          window.axm.quit();
+        },
+      },
+    ];
+
+    const themeItems = (): MenuItem[] => {
+      const items: MenuItem[] = [
+        {
+          id: "theme-mode",
+          title: "Theme Mode",
+          subtitle: THEME_MODE_LABELS[settings.themeMode],
+          iconGlyph: "❖",
+          onConfirm: () => {
+            const i = THEME_MODES.indexOf(settings.themeMode);
+            return save({ themeMode: THEME_MODES[(i + 1) % THEME_MODES.length] });
+          },
+        },
+        {
+          id: "theme-ribbons",
+          title: "Ribbons",
+          subtitle: settings.ribbonEnabled ? "On" : "Off",
           iconGlyph: "〰",
+          onConfirm: () => save({ ribbonEnabled: !settings.ribbonEnabled }),
+        },
+      ];
+
+      if (settings.themeMode === "cycle") {
+        items.push({
+          id: "waveSpeed",
+          title: "Palette Speed",
+          subtitle: `${settings.waveColorCycleSeconds}s / color`,
+          iconGlyph: "◐",
           onConfirm: async () => {
             const next = WAVE_CYCLE_PRESETS[(cycleIdx() + 1) % WAVE_CYCLE_PRESETS.length];
             settings = await window.axm.setSettings({ waveColorCycleSeconds: next });
             ribbon.setBackdropCycleSeconds(settings.waveColorCycleSeconds);
             xmb.refresh();
           },
-        },
+        });
+      } else {
+        items.push(...ribbonControls(themeTarget, "theme", settings.themeMode !== "image"));
+      }
+
+      items.push(
         {
-          id: "backgroundQuality",
-          title: "Background Quality",
-          subtitle:
-            settings.backgroundQuality === "auto"
-              ? `Auto (${ribbon.activeQuality()})`
-              : QUALITY_LABELS[settings.backgroundQuality],
-          iconGlyph: "◈",
+          id: "theme-image",
+          title: "Background Picture…",
+          subtitle: settings.customImageUrl
+            ? decodeURIComponent(settings.customImageUrl.split("/").pop() ?? "")
+            : "None chosen",
+          iconUrl: "assets/icons/photo.png",
           onConfirm: async () => {
-            const i = QUALITY_PRESETS.indexOf(settings.backgroundQuality);
-            const next = QUALITY_PRESETS[(i + 1) % QUALITY_PRESETS.length];
-            settings = await window.axm.setSettings({ backgroundQuality: next });
-            ribbon.setQuality(next);
+            settings = await window.axm.pickBackgroundImage();
+            applyTheme();
             xmb.refresh();
           },
         },
         {
-          id: "musicVolume",
-          title: "Music Volume",
-          subtitle: `${Math.round(settings.musicVolume * 100)}%`,
-          iconGlyph: "♪",
+          id: "theme-months",
+          title: "Month Colors…",
+          subtitle: `Now: ${MONTH_NAMES[currentMonthIndex()]}`,
+          iconGlyph: "▦",
+          onConfirm: () => go("months"),
+        },
+        {
+          id: "theme-visualizer",
+          title: "Music Visualizer",
+          subtitle: settings.visualizerEnabled ? "On" : "Off",
+          iconGlyph: "▮",
           onConfirm: async () => {
-            const next = VOLUME_PRESETS[(musicIdx() + 1) % VOLUME_PRESETS.length];
-            settings = await window.axm.setSettings({ musicVolume: next });
-            audio.setVolumes(settings.musicVolume, settings.sfxVolume);
-            xmb.refresh();
+            const next = !settings.visualizerEnabled;
+            await save({ visualizerEnabled: next });
+            if (!next && visualizer.currentMode() !== "off") clearVisualizer();
           },
         },
         {
-          id: "ambientTrack",
-          title: "Menu Music",
-          subtitle: AMBIENT_TRACKS[settings.ambientTrack].label,
-          iconUrl: "assets/icons/music.png",
-          onConfirm: async () => {
-            const i = AMBIENT_TRACK_IDS.indexOf(settings.ambientTrack);
-            const next = AMBIENT_TRACK_IDS[(i + 1) % AMBIENT_TRACK_IDS.length];
-            settings = await window.axm.setSettings({ ambientTrack: next });
-            audio.setAmbientTrack(settings.ambientTrack);
-            xmb.refresh();
-          },
-        },
-        {
-          id: "sfxVolume",
-          title: "Menu Sound Volume",
-          subtitle: `${Math.round(settings.sfxVolume * 100)}%`,
-          iconGlyph: "♫",
-          onConfirm: async () => {
-            const next = VOLUME_PRESETS[(sfxIdx() + 1) % VOLUME_PRESETS.length];
-            settings = await window.axm.setSettings({ sfxVolume: next });
-            audio.setVolumes(settings.musicVolume, settings.sfxVolume);
-            xmb.refresh();
-          },
-        },
-        {
-          id: "addFolder",
-          title: "Add Game Folder…",
-          subtitle: `${settings.extraGameFolders.length} added`,
-          iconUrl: "assets/icons/folder.png",
-          onConfirm: async () => {
-            settings = await window.axm.pickGameFolder();
-            games = await window.axm.scanGames();
-            xmb.refresh();
-          },
-        },
-        {
-          id: "addMusicFolder",
-          title: "Add Music Folder…",
-          subtitle: `${settings.musicFolders.length} added`,
-          iconUrl: "assets/icons/music.png",
-          onConfirm: async () => {
-            settings = await window.axm.pickMusicFolder();
-            musicListing = await window.axm.browseMusic(null);
-            xmb.refresh();
-          },
-        },
-        {
-          id: "rescan",
-          title: "Rescan Game Library",
-          subtitle: `${games.length} games found`,
-          iconGlyph: "↻",
-          onConfirm: async () => {
-            games = await window.axm.scanGames();
-            xmb.refresh();
-          },
-        },
-        {
-          id: "quit",
-          title: "Quit A-X-M",
-          iconUrl: "assets/icons/power.png",
-          onConfirm: async () => {
-            await audio.fadeOutAmbient(800);
-            window.axm.quit();
-          },
-        },
-      ],
+          id: "theme-reset",
+          title: "Reset Theme to Defaults",
+          iconGlyph: "↺",
+          onConfirm: () =>
+            save({
+              themeMode: "monthly",
+              monthlyThemes: DEFAULT_MONTH_THEMES.map((t) => ({ ...t })),
+              fixedTheme: { ...DEFAULT_MONTH_THEMES[11] },
+              customImageUrl: "",
+              ribbonEnabled: true,
+            }),
+        }
+      );
+      return items;
+    };
+
+    const monthsItems = (): MenuItem[] =>
+      MONTH_NAMES.map((name, month) => {
+        const theme = settings.monthlyThemes[month];
+        const isNow = month === currentMonthIndex();
+        return {
+          id: `month-${month}`,
+          title: isNow ? `${name} (now)` : name,
+          subtitle: `${labelForColor(RIBBON_COLOR_PRESETS, theme.ribbonColor)} on ${labelForColor(
+            BACKGROUND_COLOR_PRESETS,
+            theme.backgroundColor
+          )}`,
+          iconGlyph: String(month + 1),
+          onConfirm: () => go({ month }),
+        };
+      });
+
+    const monthEditorItems = (month: number): MenuItem[] => [
+      ...ribbonControls(() => monthTarget(month), `month-${month}`, true),
+      {
+        id: `month-${month}-reset`,
+        title: "Reset This Month",
+        iconGlyph: "↺",
+        onConfirm: () => save(monthTarget(month).write({ ...DEFAULT_MONTH_THEMES[month] })),
+      },
+    ];
+
+    return {
+      id: "settings",
+      label: "Settings",
+      iconUrl: "assets/icons/settings.png",
+      onBack: () => {
+        if (view === "root") return false;
+        if (view === "theme") go("root");
+        else if (view === "months") go("theme");
+        else go("months");
+        return true;
+      },
+      footerHint: () => {
+        if (view === "root") return undefined;
+        if (view === "theme") return "Settings › Theme";
+        if (view === "months") return "Settings › Theme › Months";
+        return `Settings › Theme › ${MONTH_NAMES[view.month]}`;
+      },
+      getItems: () => {
+        if (view === "root") return rootItems();
+        if (view === "theme") return themeItems();
+        if (view === "months") return monthsItems();
+        return monthEditorItems(view.month);
+      },
     };
   }
 
@@ -370,6 +705,10 @@ async function main(): Promise<void> {
     if (!track) {
       npEl.classList.add("hidden");
       lastTrackPath = null;
+      // Playback has genuinely stopped (end of queue, or the user stopped it) - this
+      // is the only point the background visualizer clears. Track-to-track changes
+      // keep it up.
+      if (visualizer.currentMode() !== "off") clearVisualizer();
       xmb.refresh();
       return;
     }
@@ -382,6 +721,7 @@ async function main(): Promise<void> {
     // Only re-render the menu when the track itself changes, not on every tick.
     if (track.filePath !== lastTrackPath) {
       lastTrackPath = track.filePath;
+      visualizer.setTrackName(track.name);
       xmb.refresh();
     }
   });

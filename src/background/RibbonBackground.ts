@@ -44,6 +44,9 @@ interface RendererLike {
   setLayerCount(count: number): void;
   setBackdropCycleSeconds(seconds: number): void;
   setQuality(level: QualityLevel): void;
+  setRibbonWidth(width: number): void;
+  setRibbonsVisible(visible: boolean): void;
+  setBackdrop(mode: RibbonOptions["backdrop"], colors?: [string, string]): void;
   setParallax(x: number): void;
   nudge(strength?: number): void;
   pulse(strength?: number): void;
@@ -244,6 +247,23 @@ export class RibbonBackground {
   setGlow(glow: boolean): void {
     this.options.glow = glow;
     this.renderer.setGlow(glow);
+  }
+
+  /** Scales band thickness; 1 is the tuned default. */
+  setRibbonWidth(width: number): void {
+    this.renderer.setRibbonWidth(Math.max(0.1, width));
+  }
+
+  /** Hides the bands but keeps the themed backdrop, for "ribbon off" themes. */
+  setRibbonsVisible(visible: boolean): void {
+    this.renderer.setRibbonsVisible(visible);
+  }
+
+  /** Switches the backdrop between the drifting palette, a fixed pair, or nothing. */
+  setBackdrop(mode: RibbonOptions["backdrop"], colors?: [string, string]): void {
+    this.options.backdrop = mode;
+    if (colors) this.options.backdropColors = colors;
+    this.renderer.setBackdrop(mode, colors);
   }
 
   setLayers(count: number): void {
