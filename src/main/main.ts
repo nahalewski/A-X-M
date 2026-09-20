@@ -17,6 +17,11 @@ import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
+import { listDiscs, findDiscTools, importAudioCd, backupDisc, Disc, ImportFormat } from "./discs";
+import { remotePlayStatus, installRemotePlay, launchRemotePlay } from "./remotePlay";
+import { steamTrophyGames, steamAchievements, raTrophyGames, raAchievements, raVerify } from "./trophies";
+import { noteLaunched, runningGame, quitRunningGame } from "./runningGame";
+import { connectionStatus, setWifiEnabled, connectionTest } from "./network";
 import { getPowerSettings, setPowerPlan, setPowerTimeout, powerAction, getClock, syncClock, listTimeZones, setTimeZone, fileInfo, hostName } from "./system";
 import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairBluetooth, unpairBluetooth, WifiNetwork, BluetoothDevice } from "./network";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
@@ -291,7 +296,10 @@ ipcMain.handle("axm:getGames", async (): Promise<GameEntry[]> => {
 
 ipcMain.handle("axm:launchGame", (_e, gameId: string): void => {
   const game = cachedGames.find((g) => g.id === gameId);
-  if (game) launchGame(game);
+  if (game) {
+    noteLaunched(game);
+    launchGame(game);
+  }
 });
 
 ipcMain.handle("axm:setLosslessProfile", (_e, gameId: string, profile: 1 | 2 | 3 | null): Settings => {
@@ -490,6 +498,34 @@ ipcMain.handle("axm:listTimeZones", () => listTimeZones());
 ipcMain.handle("axm:setTimeZone", (_e, id: string) => setTimeZone(id));
 ipcMain.handle("axm:fileInfo", (_e, filePath: string) => fileInfo(filePath));
 ipcMain.handle("axm:hostName", () => hostName());
+ipcMain.handle("axm:listDiscs", () => listDiscs());
+ipcMain.handle("axm:discTools", () => findDiscTools());
+ipcMain.handle("axm:importAudioCd", (_e, disc: Disc, target: string, format: ImportFormat) => importAudioCd(disc, target, format));
+ipcMain.handle("axm:backupDisc", (_e, disc: Disc, target: string) => backupDisc(disc, target));
+ipcMain.handle("axm:remotePlayStatus", () => remotePlayStatus());
+ipcMain.handle("axm:installRemotePlay", () =>
+  installRemotePlay((done, total, note) => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:transfer", { id: "remoteplay", name: `Remote Play · ${note}`, destination: "A-X-M tools", done, total, finished: done >= total && note !== "downloading chiaki-ng" });
+  })
+);
+ipcMain.handle("axm:launchRemotePlay", () => {
+  const ok = launchRemotePlay(() => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:remotePlayExit");
+  });
+  if (ok) mainWindow?.hide();
+  return ok;
+});
+ipcMain.handle("axm:steamTrophyGames", () => steamTrophyGames());
+ipcMain.handle("axm:steamAchievements", (_e, appid: string) => steamAchievements(appid));
+ipcMain.handle("axm:raTrophyGames", () => raTrophyGames());
+ipcMain.handle("axm:raAchievements", (_e, gameId: string) => raAchievements(gameId));
+ipcMain.handle("axm:raVerify", (_e, username: string, apiKey: string) => raVerify(username, apiKey));
+ipcMain.handle("axm:runningGame", () => runningGame());
+ipcMain.handle("axm:quitRunningGame", () => quitRunningGame());
+ipcMain.handle("axm:connectionStatus", () => connectionStatus());
+ipcMain.handle("axm:setWifiEnabled", (_e, enabled: boolean) => setWifiEnabled(enabled));
+ipcMain.handle("axm:connectionTest", () => connectionTest());
+ipcMain.handle("axm:manualUrl", () => pathToFileURL(path.join(__dirname, "..", "renderer", "assets", "manual.html")).href);
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
 

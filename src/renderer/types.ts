@@ -270,6 +270,16 @@ export interface MediaDrive {
   music: string | null;
 }
 
+export type DiscKind = "audio-cd" | "dvd" | "bluray" | "ps1" | "ps2" | "data" | "unknown";
+export interface Disc { drive: string; label: string; kind: DiscKind; tracks?: number; photo?: string | null; video?: string | null; music?: string | null }
+export interface DiscTools { ffmpeg: string | null; ffmpegCdio: boolean; handbrake: string | null; makemkv: string | null }
+export interface RemotePlayStatus { installed: boolean; exe: string | null; version: string | null; running: boolean }
+export interface Achievement { id: string; name: string; description: string; unlocked: boolean; unlockedAt: string | null; icon: string | null; points?: number }
+export interface TrophyGame { id: string; name: string; unlocked: number; total: number; icon: string | null; source: "steam" | "ra" }
+export interface RunningGame { id: string; name: string; pids: number[] }
+export interface ConnectionStatus { adapter: string; connected: boolean; ssid: string | null; signal: number | null; ip: string | null; gateway: string | null; dns: string[]; mac: string | null; wifiEnabled: boolean }
+export interface ConnectionTest { adapter: string; ip: string | null; gateway: "ok" | "failed" | "none"; internet: "ok" | "failed"; dns: "ok" | "failed"; mbps: number | null }
+
 export interface PowerPlan { guid: string; name: string; active: boolean }
 export interface PowerSettings { plans: PowerPlan[]; screenOffBattery: number; screenOffPlugged: number; sleepBattery: number; sleepPlugged: number }
 export interface ClockInfo { now: string; timeZone: string; timeZoneOffsetMin: number; autoTime: boolean | null }
@@ -376,6 +386,14 @@ export interface Settings {
   audioInputId: string;
   menuDimMinutes: number;
   playlists: { name: string; tracks: MusicEntry[] }[];
+  /** Trophy Collection sources. */
+  steamWebApiKey: string;
+  raUsername: string;
+  raApiKey: string;
+  /** Audio CD import format. */
+  importFormat: "mp3" | "aac" | "opus";
+  /** Jellyfin discovery on the LAN ("Media Server Connection"). */
+  mediaServerEnabled: boolean;
   playlist: MusicEntry[];
   wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
   knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
@@ -449,6 +467,25 @@ export interface AxmApi {
   setTimeZone(id: string): Promise<boolean>;
   fileInfo(filePath: string): Promise<FileInfo>;
   hostName(): Promise<string>;
+  listDiscs(): Promise<Disc[]>;
+  discTools(): Promise<DiscTools>;
+  importAudioCd(disc: Disc, target: string, format: "mp3" | "aac" | "opus"): Promise<string>;
+  backupDisc(disc: Disc, target: string): Promise<string>;
+  remotePlayStatus(): Promise<RemotePlayStatus>;
+  installRemotePlay(): Promise<RemotePlayStatus>;
+  launchRemotePlay(): Promise<boolean>;
+  onRemotePlayExit(callback: () => void): void;
+  steamTrophyGames(): Promise<{ games: TrophyGame[]; error: string | null }>;
+  steamAchievements(appid: string): Promise<{ list: Achievement[]; error: string | null }>;
+  raTrophyGames(): Promise<{ games: TrophyGame[]; error: string | null }>;
+  raAchievements(gameId: string): Promise<{ list: Achievement[]; error: string | null }>;
+  raVerify(username: string, apiKey: string): Promise<{ ok: boolean; message: string }>;
+  runningGame(): Promise<RunningGame | null>;
+  quitRunningGame(): Promise<boolean>;
+  connectionStatus(): Promise<ConnectionStatus>;
+  setWifiEnabled(enabled: boolean): Promise<{ ok: boolean; message: string }>;
+  connectionTest(): Promise<ConnectionTest>;
+  manualUrl(): Promise<string>;
   createMediaFolder(parentDir: string, name: string): Promise<string>;
   getSongInfo(filePath: string): Promise<SongInfo | null>;
   getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;

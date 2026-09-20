@@ -94,3 +94,14 @@ SOFTWARE.
 - `icons/settings-theme.webp`, `settings-display.webp`, `settings-audio.webp`,
   `settings-system.webp`, `settings-about.webp` - the Settings group icons, sliced from
   the supplied sheet. `icons/app.png` - the app icon rendered from `app.ico` for Linux.
+- `icons/network-settings.webp`, `about.webp`, `store.webp`, `trophy.webp`, `disc-dvd.webp`,
+  `disc-bluray.webp`, `disc-ps2.webp`, `disc-ps1.webp` - sliced from the supplied sheet.
+  The Blu-ray, PS1 and PS2 marks on them belong to their owners.
+
+## External tools driven from the menu (not bundled)
+
+- [chiaki-ng](https://github.com/streetpea/chiaki-ng) - GPL-3.0 - Remote Play client,
+  downloaded into the app's tools folder on first use, with the user's say-so.
+- [HandBrakeCLI](https://handbrake.fr) - GPL-2.0 - DVD / MKV to MP4 for Backup.
+- [MakeMKV](https://www.makemkv.com) - proprietary, free while in beta - Blu-ray reading.
+- ffmpeg with libcdio - GPL/LGPL - audio CD import.

@@ -62,12 +62,16 @@ changing a game's artwork.
 - Y on a game: Lossless Scaling profile (1–3), open its folder, change artwork.
 - Your Steam library with install state and progress; installs run in the background and
   Steam's dialog is confirmed for you (hands-off, optional).
+- **Trophy Collection**: Steam achievements per game (your Steam Web API key) and
+  RetroAchievements (sign in once with username + web API key).
+- Guide button while a game runs: **Quit Game**, Controller Settings, Turn Off the System.
 - Saved Data Utility and Game Data Utility, like the PS3's.
 - Launcher rows for Steam, Epic Games, Battle.net, GeForce NOW and Xbox Cloud Gaming.
 
 ### Music
 - Browses your music folder-by-folder, plus any drive's `MUSIC` folder.
-- **Playlist**, **shuffle**, play/pause from anywhere, now-playing bar.
+- Named **playlists**, **shuffle**, play/pause from anywhere, now-playing bar.
+- An **audio CD** in a drive shows as a row: Import to MP3 / AAC / Opus (ffmpeg with libcdio).
 - **Song Information** (Y): the file's tags and cover, MusicBrainz artist details, Cover Art
   Archive covers.
 - **Eleven visualizers**: the PS3's Spectrum Analyzer, Earth, Line and Waveform; the PSP's
@@ -81,6 +85,8 @@ changing a game's artwork.
   libraries with posters and backdrops, plays in the menu (direct play when the browser can,
   HLS transcode when it can't), and **downloads** films and episodes to any drive.
 - **Information** (Y) on a film or show from TMDB (your own API key).
+- A **DVD or Blu-ray** in a drive shows as a row: Backup to MP4 (HandBrakeCLI; MakeMKV for
+  Blu-ray). PS1 / PS2 discs show in Game with their own icons.
 - **Copy** songs, pictures and videos to any drive's `MUSIC` / `PHOTO` / `VIDEO` folder and
   back to this PC; make folders inside them from the menu. A drive with those folders gets
   its own row, and keeps a greyed row when it's unplugged.
@@ -97,9 +103,10 @@ Grouped like a console's:
   **menu upscaling** (FSR-style sharpening when rendering below native), refresh rate, FPS
   counter, hardware readout, battery percentage.
 - **Audio** - volumes, menu music (five loops or off), navigation sounds, shuffle, music folders.
-- **Network** - **Wi-Fi** networks in range: join (password on the on-screen keyboard),
-  disconnect, forget; **Bluetooth**: paired devices, pair / remove - all without leaving the
-  menu (discovery is best effort, see the roadmap).
+- **Network** - laid out like the PS3's: Settings and Connection Status List, Internet
+  Connection on / off, Internet Connection Settings (Wi-Fi join / forget), Internet
+  Connection Test (router, DNS, internet, speed), Media Server Connection, Bluetooth
+  Register Device and Registered Device List (discovery best effort, see the roadmap).
 - **System** - System Information (device, CPU, RAM, GPU, every drive's used / free space),
   Controller (players 1–4, wired / wireless, battery, A/B profile, dead zone, vibration), Steam
   hands-off install, Steam install drive, in-game menu button, game folders, rescan.

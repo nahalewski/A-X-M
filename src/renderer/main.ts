@@ -7,7 +7,7 @@ import { MusicPlayer } from "./musicPlayer";
 import { MusicVisualizer, VISUALIZER_STYLES, VISUALIZER_STYLE_IDS, VisualizerStyle } from "./visualizer";
 import { spriteEl, spriteHtml, progressRing } from "./sprites";
 import { playIntroSparkle } from "./intro";
-import { OptionsPopup, InfoCard, TextPanel, PopupOption, InfoRow } from "./popups";
+import { OptionsPopup, InfoCard, TextPanel, CenterMenu, PopupOption, InfoRow } from "./popups";
 import { Notifier } from "./notify";
 import { setDictionary } from "./textEntry";
 import { MediaViewer } from "./mediaViewer";
@@ -58,6 +58,11 @@ import {
   ScreenInfo,
   ClockInfo,
   PowerSettings,
+  Disc,
+  TrophyGame,
+  Achievement,
+  ConnectionStatus,
+  RemotePlayStatus,
 } from "./types";
 
 const WAVE_CYCLE_PRESETS = [8, 12, 18, 25, 35];
@@ -115,6 +120,47 @@ async function main(): Promise<void> {
   let resolution: ResolutionState = { target: 0, nativeHeight: 0, nativeWidth: 0, auto: true };
 
   let games: GameEntry[] = await window.axm.getGames();
+  // Optical discs, only while one is in a drive; polled so the row appears on insert.
+  let discs: Disc[] = [];
+  const refreshDiscs = async () => {
+    const next = await window.axm.listDiscs().catch(() => [] as Disc[]);
+    const changed = JSON.stringify(next) !== JSON.stringify(discs);
+    discs = next;
+    if (changed) {
+      for (const d of next) notifier.push(`${discLabel(d)} inserted: ${d.label}`);
+      xmb.refresh();
+    }
+  };
+  const discLabel = (d: Disc) => ({ "audio-cd": "Audio CD", dvd: "DVD", bluray: "Blu-ray Disc", ps1: "PlayStation disc", ps2: "PlayStation 2 disc", data: "Data disc", unknown: "Disc" })[d.kind];
+  const discIcon = (d: Disc) => ({ "audio-cd": "assets/icons/disc-dvd.webp", dvd: "assets/icons/disc-dvd.webp", bluray: "assets/icons/disc-bluray.webp", ps1: "assets/icons/disc-ps1.webp", ps2: "assets/icons/disc-ps2.webp", data: "assets/icons/disc-dvd.webp", unknown: "assets/icons/disc-dvd.webp" })[d.kind];
+  const discTargets = (label: string, run: (target: string) => void): PopupOption[] => [
+    { label: `${label} to this PC`, run: () => run("home") },
+    ...volumes.filter((v) => !v.system).map((v) => ({ label: `${label} to ${v.label} (${v.drive})`, hint: `${fmtBytes(v.freeBytes)} free`, run: () => run(v.drive) })),
+  ];
+  const discRows = (kinds: Disc["kind"][]): MenuItem[] =>
+    discs
+      .filter((d) => kinds.includes(d.kind))
+      .map((d) => ({
+        id: `disc-${d.drive}`,
+        title: d.label !== d.drive ? d.label : discLabel(d),
+        subtitle: `${discLabel(d)} · ${d.drive}${d.tracks ? ` · ${d.tracks} tracks` : ""}`,
+        iconUrl: discIcon(d),
+        iconClass: "disc",
+        contextHint: "options",
+        onContext: () => {
+          void refreshVolumes().then(() => {
+            const opts: PopupOption[] = [];
+            if (d.kind === "audio-cd") opts.push({ label: "Import", hint: `to ${settings.importFormat.toUpperCase()} · change in Settings › Audio`, children: discTargets("Import", (t) => void window.axm.importAudioCd(d, t, settings.importFormat).catch((e) => notifier.push(String(e.message ?? e)))) });
+            if (d.kind === "dvd" || d.kind === "bluray") opts.push({ label: "Backup", hint: "to MP4", children: discTargets("Backup", (t) => void window.axm.backupDisc(d, t).catch((e) => notifier.push(String(e.message ?? e)))) });
+            opts.push({ label: "Information", run: () => showInfo(d.label, discIcon(d), null, [{ label: "Sub-Title", value: discLabel(d) }, { label: "Drive", value: d.drive }, { label: "Tracks", value: d.tracks ? String(d.tracks) : "" }, { label: "Details", value: d.kind === "ps1" || d.kind === "ps2" ? "Playable through an emulator (DuckStation / PCSX2); the menu shows the disc, it doesn't run it" : d.kind === "audio-cd" ? "Import needs ffmpeg with libcdio" : d.kind === "dvd" ? "Backup needs HandBrakeCLI" : d.kind === "bluray" ? "Backup needs MakeMKV (and HandBrakeCLI for MP4)" : "" }]) });
+            showOptions(d.label, opts);
+          });
+          return true;
+        },
+      }));
+  void refreshDiscs();
+  setInterval(() => void refreshDiscs(), 15_000);
+
   // Drives with PHOTO / VIDEO / GAME folders at the root; re-read on each rescan.
   let mediaDrives: MediaDrive[] = await window.axm.getMediaDrives();
   // Every drive with media folders is remembered, so one that's unplugged still
@@ -220,6 +266,11 @@ async function main(): Promise<void> {
   const optionsPopup = new OptionsPopup(document.getElementById("options-popup")!);
   const infoCard = new InfoCard(document.getElementById("info-card")!);
   const textPanel = new TextPanel(document.getElementById("text-panel")!);
+  const centerMenu = new CenterMenu(document.getElementById("center-menu")!);
+  const showCenter = (options: PopupOption[], opts: { question?: string; status?: string; horizontal?: boolean } = {}) => {
+    centerMenu.show(options, opts, () => popOverlay());
+    pushOverlay((a) => centerMenu.handle(a as Parameters<CenterMenu["handle"]>[0]));
+  };
   const notifier = new Notifier(document.body);
   notifier.setPrefs(settings.notifications);
   setDictionary(settings.dictionaryTerms, settings.learnedWords, (words) => {
@@ -462,6 +513,31 @@ async function main(): Promise<void> {
   // the backdrop goes transparent so the game shows through the window, and the
   // menu itself is drawn translucent, the way the XMB sits over a PS3 game.
   let overlayActive = false;
+  const inGameMenu = async () => {
+    const running = await window.axm.runningGame().catch(() => null);
+    if (!running) return;
+    const pads = gamepad.snapshot();
+    const status = `<span class="center-players">${[1, 2, 3, 4].map((n) => `<i class="${pads.some((p) => p.index === n - 1) ? "on" : ""}">${n}</i>`).join("")}</span><span>Controller ${pads.length ? pads.map((p) => p.index + 1).join(", ") : "—"}</span><span>${running.name}</span>`;
+    showCenter(
+      [
+        {
+          label: "Quit Game",
+          run: () =>
+            showCenter(
+              [
+                { label: "Yes", run: async () => { await window.axm.quitRunningGame(); notifier.push(`Quit ${running.name}`); void window.axm.overlayClose(); } },
+                { label: "No", run: () => void inGameMenu() },
+              ],
+              { question: "Do you want to quit the game?", horizontal: true }
+            ),
+        },
+        { label: "Controller Settings", run: () => { xmb.setActiveCategory("settings"); xmb.refresh(); notifier.push("Settings › System › Controller"); } },
+        { label: "Turn Off the System", run: () => confirmPower("Turn Off the System", "shutdown") },
+        { label: "Return to Game", run: () => void window.axm.overlayClose() },
+      ],
+      { status }
+    );
+  };
   const setOverlayMode = (active: boolean) => {
     overlayActive = active;
     document.body.classList.toggle("overlay", active);
@@ -470,7 +546,9 @@ async function main(): Promise<void> {
       ribbon.setBackdrop("none");
       // Menu music over a game would fight the game's own audio.
       void audio.fadeOutAmbient(300);
+      void inGameMenu();
     } else {
+      if (centerMenu.isOpen()) centerMenu.close();
       applyTheme();
       if (!musicPlayer.current()) audio.fadeInAmbient(800);
     }
@@ -645,7 +723,7 @@ async function main(): Promise<void> {
     return true;
   };
   const openInMenuBrowser = (url: string) => {
-    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    if (!/^(https?|file):\/\//i.test(url)) url = "https://" + url;
     if (!browserOpen) {
       browserOpen = true;
       pushOverlay(browserHandler);
@@ -685,12 +763,66 @@ async function main(): Promise<void> {
       ["Xbox Cloud Gaming", "https://www.xbox.com/play"],
       ["GeForce NOW", "https://play.geforcenow.com"],
     ];
+    let view: "root" | "browsers" = "root";
+    let remote: RemotePlayStatus | null = null;
+    const refreshRemote = async () => {
+      remote = await window.axm.remotePlayStatus().catch(() => null);
+      xmb.refresh();
+    };
+    void refreshRemote();
+    window.axm.onRemotePlayExit(() => {
+      notifier.push("Remote Play ended");
+      void refreshRemote();
+    });
+    const launchRemote = async () => {
+      if (!remote?.installed) {
+        showOptions("Remote Play needs chiaki-ng", [
+          {
+            label: "Download chiaki-ng",
+            hint: "open source, from GitHub · about 40 MB",
+            run: async () => {
+              notifier.push("Downloading chiaki-ng…");
+              try {
+                remote = await window.axm.installRemotePlay();
+                notifier.push(`chiaki-ng ${remote.version ?? ""} ready`);
+                xmb.refresh();
+              } catch (e) {
+                notifier.push(`Couldn't get chiaki-ng: ${String((e as Error).message ?? e)}`);
+              }
+            },
+          },
+          { label: "Not now" },
+        ]);
+        return;
+      }
+      await audio.fadeOutAmbient(300);
+      const ok = await window.axm.launchRemotePlay();
+      if (!ok) notifier.push("Remote Play didn't start");
+    };
+    const rootItems = (): MenuItem[] => [
+      { id: "net-browsers", title: "Web Browser", subtitle: "Google, YouTube, Xbox Cloud Gaming, GeForce NOW, or any address", iconUrl: "assets/icons/browser.png", onConfirm: () => { view = "browsers"; xmb.resetSelection("browser"); xmb.refresh(); } },
+      {
+        id: "net-remote",
+        title: "Remote Play",
+        subtitle: remote?.running ? "Running" : remote?.installed ? `PS4 / PS5 · chiaki-ng ${remote.version ?? ""}` : "PS4 / PS5 · fetches chiaki-ng on first use",
+        iconGlyph: "▶",
+        onConfirm: () => void launchRemote(),
+      },
+      { id: "net-manual", title: "Online Instructions", subtitle: "How the menu works and how to use every feature", iconUrl: "assets/icons/about.webp", onConfirm: async () => openInMenuBrowser(await window.axm.manualUrl()) },
+    ];
     return {
       id: "browser",
-      label: "Browser",
+      label: "Network",
       iconUrl: "assets/icons/browser.png",
-      footerHint: () => (browserOpen ? browserToolbar() : undefined),
-      getItems: () => [
+      onBack: () => {
+        if (view === "root") return false;
+        view = "root";
+        xmb.resetSelection("browser");
+        xmb.refresh();
+        return true;
+      },
+      footerHint: () => (browserOpen ? browserToolbar() : view === "browsers" ? "Network › Web Browser" : undefined),
+      getItems: () => view === "root" ? rootItems() : [
         {
           id: "browser-address",
           title: "Enter Address…",
@@ -885,6 +1017,7 @@ async function main(): Promise<void> {
             });
           });
         }
+        if (!musicListing.path) top.push(...discRows(["audio-cd"]));
         if (insideDriveMedia(musicListing.path)) top.push(newFolderRow(musicListing.path!, () => void openFolder(musicListing.path)));
         if (musicListing.entries.length === 0 && top.length > 0) return top;
         if (musicListing.entries.length === 0) {
@@ -997,7 +1130,72 @@ async function main(): Promise<void> {
    * descends into it the same way the music library does; B comes back out.
    */
   function gamesCategory(): Category {
-    let view: "root" | "saves" | "gamedata" | "steam" | "drive" = "root";
+    let view: "root" | "saves" | "gamedata" | "steam" | "drive" | "trophies" | "trophy-list" | "trophy-game" = "root";
+    let trophySource: "steam" | "ra" = "steam";
+    let trophyGames: TrophyGame[] = [];
+    let trophyError: string | null = null;
+    let trophyGame: TrophyGame | null = null;
+    let trophyList: Achievement[] = [];
+    const openTrophies = async (source: "steam" | "ra") => {
+      trophySource = source;
+      trophyGames = [];
+      trophyError = "Loading…";
+      go("trophy-list");
+      const res = source === "steam" ? await window.axm.steamTrophyGames() : await window.axm.raTrophyGames();
+      trophyGames = res.games;
+      trophyError = res.error;
+      xmb.refresh();
+    };
+    const openTrophyGame = async (g: TrophyGame) => {
+      trophyGame = g;
+      trophyList = [];
+      trophyError = "Loading…";
+      go("trophy-game");
+      const res = g.source === "steam" ? await window.axm.steamAchievements(g.id) : await window.axm.raAchievements(g.id);
+      trophyList = res.list;
+      trophyError = res.error;
+      if (g.source === "steam" && res.list.length) {
+        g.unlocked = res.list.filter((a) => a.unlocked).length;
+        g.total = res.list.length;
+      }
+      xmb.refresh();
+    };
+    const raSignIn = async () => {
+      const answers = await askText("RetroAchievements", [{ label: "Username", value: settings.raUsername }, { label: "Web API key", secret: true }]);
+      if (!answers?.[0] || !answers[1]) return;
+      const res = await window.axm.raVerify(answers[0], answers[1]);
+      notifier.push(res.message);
+      if (res.ok) {
+        settings = await window.axm.setSettings({ raUsername: answers[0], raApiKey: answers[1] });
+        await openTrophies("ra");
+      }
+    };
+    const trophyItems = (): MenuItem[] => [
+      { id: "tr-steam", title: "Steam Achievements", subtitle: settings.steamWebApiKey ? "Your played games" : "Add a Steam Web API key in Settings › System › Trophies", iconUrl: "assets/icons/steam.svg", onConfirm: () => openTrophies("steam") },
+      { id: "tr-ra", title: "RetroAchievements", subtitle: settings.raUsername ? `Signed in as ${settings.raUsername}` : "Sign in on first use", iconUrl: "assets/icons/trophy.webp", onConfirm: () => (settings.raUsername && settings.raApiKey ? openTrophies("ra") : raSignIn()), contextHint: settings.raUsername ? "sign out" : undefined, onContext: () => { if (!settings.raUsername) return false; void window.axm.setSettings({ raUsername: "", raApiKey: "" }).then((n) => { settings = n; xmb.refresh(); }); return true; } },
+    ];
+    const trophyListItems = (): MenuItem[] => {
+      if (trophyError && !trophyGames.length) return [{ id: "tr-msg", title: trophyError, iconUrl: "assets/icons/trophy.webp" }];
+      return trophyGames.map((g) => ({
+        id: `tr-${g.source}-${g.id}`,
+        title: g.name,
+        subtitle: g.total >= 0 ? `${g.unlocked} of ${g.total} unlocked` : "A to see achievements",
+        iconUrl: g.icon ?? "assets/icons/trophy.webp",
+        meter: g.total > 0 ? g.unlocked / g.total : undefined,
+        onConfirm: () => openTrophyGame(g),
+      }));
+    };
+    const trophyGameItems = (): MenuItem[] => {
+      if (trophyError && !trophyList.length) return [{ id: "tr-msg", title: trophyError, iconUrl: "assets/icons/trophy.webp" }];
+      return trophyList.map((a) => ({
+        id: `ach-${a.id}`,
+        title: a.name,
+        subtitle: `${a.description}${a.unlockedAt ? ` · ${new Date(a.unlockedAt).toLocaleDateString()}` : ""}${a.points ? ` · ${a.points} pts` : ""}`,
+        iconUrl: a.icon ?? "assets/icons/trophy.webp",
+        iconClass: a.unlocked ? "" : "locked",
+        badge: a.unlocked ? "UNLOCKED" : undefined,
+      }));
+    };
     let driveFolder = "";
 
     const go = (next: typeof view) => {
@@ -1125,6 +1323,13 @@ async function main(): Promise<void> {
         onConfirm: () => go("gamedata"),
       },
       {
+        id: "trophies",
+        title: "Trophy Collection",
+        subtitle: settings.profile?.name ?? "Steam achievements · RetroAchievements",
+        iconUrl: "assets/icons/trophy.webp",
+        onConfirm: () => go("trophies"),
+      },
+      {
         id: "steam-library",
         title: "Steam",
         subtitle: steamLibrary.account ? `${steamLibrary.account}'s library` : "Your Steam library",
@@ -1143,6 +1348,7 @@ async function main(): Promise<void> {
         driveFolder = folder;
         go("drive");
       }),
+      ...discRows(["ps1", "ps2"]),
       ...gameRows(),
     ];
 
@@ -1194,13 +1400,18 @@ async function main(): Promise<void> {
       iconUrl: "assets/icons/games.svg",
       onBack: () => {
         if (view === "root") return false;
-        go("root");
+        if (view === "trophy-game") go("trophy-list");
+        else if (view === "trophy-list") go("trophies");
+        else go("root");
         return true;
       },
       footerHint: () => {
         if (view === "saves") return "Saved Data Utility";
         if (view === "gamedata") return "Game Data Utility";
         if (view === "drive") return driveFolder;
+        if (view === "trophies") return "Trophy Collection";
+        if (view === "trophy-list") return `Trophy Collection › ${trophySource === "steam" ? "Steam" : "RetroAchievements"}`;
+        if (view === "trophy-game") return `Trophy Collection › ${trophyGame?.name ?? ""}`;
         if (view === "steam") {
           if (steamInstallHint) return steamInstallHint;
           const installed = steamLibrary.games.filter((g) => g.state === "installed").length;
@@ -1213,6 +1424,9 @@ async function main(): Promise<void> {
         if (view === "gamedata") return gameDataItems();
         if (view === "steam") return steamItems();
         if (view === "drive") return driveItems();
+        if (view === "trophies") return trophyItems();
+        if (view === "trophy-list") return trophyListItems();
+        if (view === "trophy-game") return trophyGameItems();
         return rootItems();
       },
     };
@@ -1374,6 +1588,11 @@ async function main(): Promise<void> {
   };
 
   const jfDiscover = async () => {
+    if (!settings.mediaServerEnabled) {
+      jf.status = "Media Server Connection is disabled in Settings › Network";
+      xmb.refresh();
+      return;
+    }
     jf.searching = true;
     jf.status = "Searching the network…";
     xmb.refresh();
@@ -1634,7 +1853,7 @@ async function main(): Promise<void> {
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
     fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
-    musicVolume: "audio", ambientTrack: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
+    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
     "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
@@ -1770,7 +1989,7 @@ async function main(): Promise<void> {
       const groups: MenuItem[] = [
         { id: "group-display", title: "Display", subtitle: "Fullscreen, resolution, upscaling, refresh rate, readouts", iconUrl: "assets/icons/settings-display.webp", onConfirm: () => go("display") },
         { id: "group-audio", title: "Audio", subtitle: "Volumes, menu music, sounds, shuffle, music folders", iconUrl: "assets/icons/settings-audio.webp", onConfirm: () => go("audio") },
-        { id: "group-network", title: "Network", subtitle: "Wi-Fi networks and Bluetooth pairing", iconGlyph: "⌔", onConfirm: () => { void netOpen(); } },
+        { id: "group-network", title: "Network", subtitle: "Connection status, Wi-Fi, connection test, media server, Bluetooth", iconUrl: "assets/icons/network-settings.webp", onConfirm: () => { void netOpen(); } },
         { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconUrl: "assets/icons/settings-system.webp", onConfirm: () => go("sys") },
       ];
       const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
@@ -1931,6 +2150,52 @@ async function main(): Promise<void> {
         onConfirm: () => go("notify"),
       },
       {
+        id: "trophies",
+        title: "Trophies",
+        subtitle: `Steam key ${settings.steamWebApiKey ? "set" : "not set"} · RetroAchievements ${settings.raUsername ? settings.raUsername : "not signed in"}`,
+        iconUrl: "assets/icons/trophy.webp",
+        onConfirm: () =>
+          showOptions("Trophies", [
+            {
+              label: "Steam Web API Key…",
+              hint: "steamcommunity.com/dev/apikey",
+              run: async () => {
+                const answers = await askText("Steam Web API Key", [{ label: "Key", value: settings.steamWebApiKey, secret: true }]);
+                if (!answers) return;
+                settings = await window.axm.setSettings({ steamWebApiKey: answers[0].trim() });
+                xmb.refresh();
+              },
+            },
+            {
+              label: "RetroAchievements Sign-in…",
+              hint: "username + web API key",
+              run: async () => {
+                const answers = await askText("RetroAchievements", [{ label: "Username", value: settings.raUsername }, { label: "Web API key", secret: true }]);
+                if (!answers?.[0] || !answers[1]) return;
+                const res = await window.axm.raVerify(answers[0], answers[1]);
+                notifier.push(res.message);
+                if (res.ok) settings = await window.axm.setSettings({ raUsername: answers[0], raApiKey: answers[1] });
+                xmb.refresh();
+              },
+            },
+          ]),
+      },
+      {
+        id: "discTools",
+        title: "Disc Tools",
+        subtitle: "ffmpeg (CD import), HandBrakeCLI (DVD), MakeMKV (Blu-ray)",
+        iconUrl: "assets/icons/disc-bluray.webp",
+        onConfirm: async () => {
+          const t = await window.axm.discTools();
+          showInfo("Disc Tools", "assets/icons/disc-bluray.webp", null, [
+            { label: "ffmpeg", value: t.ffmpeg ? `${t.ffmpeg}${t.ffmpegCdio ? " · libcdio: yes" : " · no libcdio - CD import needs the 'full' build"}` : "Not found · put ffmpeg.exe on PATH or in C:\\ffmpeg\\bin" },
+            { label: "HandBrakeCLI", value: t.handbrake ?? "Not found · handbrake.fr › Downloads › Command Line, into C:\\Program Files\\HandBrake" },
+            { label: "MakeMKV", value: t.makemkv ?? "Not found · makemkv.com, into C:\\Program Files (x86)\\MakeMKV" },
+            { label: "Details", value: "The tools run headless from the menu; discs with copy protection need the tools' own decryption support (libdvdcss, AACS)." },
+          ]);
+        },
+      },
+      {
         id: "dictionary",
         title: "Predictive Text Dictionary",
         subtitle: `${settings.dictionaryTerms.length} terms · ${settings.learnedWords.length} learnt words`,
@@ -1981,6 +2246,13 @@ async function main(): Promise<void> {
           const w = settings.wallpaper;
           await setWallpaper(w.mode === "single" ? { ...w, mode: "shuffle" } : null);
         },
+      },
+      {
+        id: "importFormat",
+        title: "CD Import Format",
+        subtitle: { mp3: "MP3 · 320 kbps", aac: "AAC · 256 kbps (M4A)", opus: "Opus · 160 kbps" }[settings.importFormat],
+        iconUrl: "assets/icons/disc-dvd.webp",
+        onConfirm: () => showOptions("CD Import Format", (["mp3", "aac", "opus"] as const).map((f) => ({ label: f.toUpperCase(), selected: settings.importFormat === f, run: async () => { settings = await window.axm.setSettings({ importFormat: f }); xmb.refresh(); } }))),
       },
       {
         id: "musicShuffle",
@@ -2577,8 +2849,9 @@ async function main(): Promise<void> {
       xmb.refresh();
     };
     const netOpen = async () => {
+      netView = "root";
       go("network");
-      await netRefresh();
+      await netRoot();
     };
     const netSay = (message: string) => {
       net.status = message;
@@ -2590,10 +2863,91 @@ async function main(): Promise<void> {
         }
       }, 6000);
     };
+    let netView: "root" | "wifi" | "register" | "registered" = "root";
+    let conn: ConnectionStatus | null = null;
+    const netRoot = async () => {
+      conn = await window.axm.connectionStatus().catch(() => null);
+      xmb.refresh();
+    };
+    const netSub = (v: typeof netView) => {
+      netView = v;
+      xmb.resetSelection("settings");
+      xmb.refresh();
+    };
     const networkItems = (): MenuItem[] => {
-      const rows: MenuItem[] = [];
-      rows.push({ id: "net-scan", title: net.busy ? "Scanning…" : "Scan Again", subtitle: "Wi-Fi networks in range and Bluetooth devices Windows can see", iconGlyph: "↻", onConfirm: () => (net.busy ? undefined : netRefresh()) });
-      rows.push({ id: "net-wifi-h", title: "Wi-Fi", subtitle: net.wifi.length ? `${net.wifi.length} networks` : net.busy ? "" : "No networks found (is Wi-Fi on?)", iconGlyph: "≋" });
+      if (netView === "wifi") return wifiItems();
+      if (netView === "register") return btItems(false);
+      if (netView === "registered") return btItems(true);
+      const c = conn;
+      return [
+        {
+          id: "net-status",
+          title: "Settings and Connection Status List",
+          subtitle: c ? (c.connected ? `${c.ssid ?? c.adapter} · ${c.ip ?? ""}` : "Not connected") : "Reading…",
+          iconUrl: "assets/icons/network-settings.webp",
+          onConfirm: () =>
+            showInfo("Settings and Connection Status List", "assets/icons/network-settings.webp", null, [
+              { label: "Connection Status", value: c?.connected ? "Connected" : "Not connected" },
+              { label: "Connection Method", value: c?.ssid ? "Wireless" : "Wired / other" },
+              { label: "SSID", value: c?.ssid ?? "" },
+              { label: "Signal Strength", value: c?.signal !== null && c?.signal !== undefined ? `${c.signal}%` : "" },
+              { label: "IP Address", value: c?.ip ?? "" },
+              { label: "Default Router", value: c?.gateway ?? "" },
+              { label: "DNS", value: (c?.dns ?? []).join("\n") },
+              { label: "MAC Address", value: c?.mac ?? "" },
+              { label: "System Name", value: settings.systemName || sysHostName },
+            ]),
+        },
+        {
+          id: "net-internet",
+          title: "Internet Connection",
+          subtitle: c ? (c.wifiEnabled ? "Enabled" : "Disabled") : "…",
+          iconGlyph: "⊕",
+          onConfirm: () =>
+            showOptions("Internet Connection", [
+              { label: "Enabled", selected: !!c?.wifiEnabled, run: async () => { const r = await window.axm.setWifiEnabled(true); notifier.push(r.message); await netRoot(); } },
+              { label: "Disabled", selected: c ? !c.wifiEnabled : false, run: async () => { const r = await window.axm.setWifiEnabled(false); notifier.push(r.message); await netRoot(); } },
+            ]),
+        },
+        { id: "net-wifi", title: "Internet Connection Settings", subtitle: "Wi-Fi networks in range · join, disconnect, forget", iconGlyph: "≋", onConfirm: async () => { netSub("wifi"); await netRefresh(); } },
+        {
+          id: "net-test",
+          title: "Internet Connection Test",
+          subtitle: "Gateway, DNS, internet, a quick speed read",
+          iconGlyph: "✓",
+          onConfirm: async () => {
+            net.busy = "Testing the connection…";
+            xmb.refresh();
+            const t = await window.axm.connectionTest().catch(() => null);
+            net.busy = "";
+            xmb.refresh();
+            if (!t) return notifier.push("The test couldn't run");
+            showInfo("Internet Connection Test", "assets/icons/network-settings.webp", null, [
+              { label: "Obtain IP Address", value: t.ip ? `Succeeded · ${t.ip}` : "Failed" },
+              { label: "Router", value: t.gateway === "ok" ? "Succeeded" : t.gateway === "none" ? "No default router" : "Failed" },
+              { label: "DNS", value: t.dns === "ok" ? "Succeeded" : "Failed" },
+              { label: "Internet Connection", value: t.internet === "ok" ? "Succeeded" : "Failed" },
+              { label: "Connection Speed", value: t.mbps !== null ? `${t.mbps} Mbps (download)` : "" },
+            ]);
+          },
+        },
+        {
+          id: "net-media",
+          title: "Media Server Connection",
+          subtitle: settings.mediaServerEnabled ? "Enabled · Jellyfin servers are found on the LAN" : "Disabled",
+          iconUrl: "assets/icons/jellyfin.svg",
+          onConfirm: async () => {
+            settings = await window.axm.setSettings({ mediaServerEnabled: !settings.mediaServerEnabled });
+            xmb.refresh();
+          },
+        },
+        { id: "net-bt-register", title: "Register Device", subtitle: "Pair a Bluetooth controller, headset or keyboard", iconGlyph: "ᛒ", onConfirm: async () => { netSub("register"); await netRefresh(); } },
+        { id: "net-bt-list", title: "Registered Device List", subtitle: "Paired Bluetooth devices", iconGlyph: "≡", onConfirm: async () => { netSub("registered"); await netRefresh(); } },
+      ];
+    };
+    const wifiItems = (): MenuItem[] => {
+      const rows: MenuItem[] = [{ id: "net-scan", title: net.busy ? "Scanning…" : "Scan Again", iconGlyph: "↻", onConfirm: () => (net.busy ? undefined : netRefresh()) }];
+      if (!net.wifi.length && !net.busy) rows.push({ id: "net-none", title: "No networks found", subtitle: "Is Wi-Fi on?", iconGlyph: "≋" });
       for (const w of net.wifi) {
         const bars = w.signal >= 75 ? "▂▄▆█" : w.signal >= 50 ? "▂▄▆" : w.signal >= 25 ? "▂▄" : "▂";
         rows.push({
@@ -2614,7 +2968,7 @@ async function main(): Promise<void> {
             xmb.refresh();
             const res = await window.axm.wifiConnect(w.ssid, password);
             net.busy = "";
-            netSay(res.message);
+            notifier.push(res.message);
             await netRefresh();
           },
           contextHint: w.connected ? "disconnect" : w.known ? "forget" : undefined,
@@ -2626,34 +2980,33 @@ async function main(): Promise<void> {
           },
         });
       }
-      rows.push({ id: "net-bt-h", title: "Bluetooth", subtitle: net.bt.length ? `${net.bt.length} devices · put a new device in pairing mode, then Scan Again` : net.busy ? "" : "Nothing seen · put the device in pairing mode and Scan Again", iconGlyph: "ᛒ" });
-      for (const d of net.bt) {
+      return rows;
+    };
+    const btItems = (paired: boolean): MenuItem[] => {
+      const rows: MenuItem[] = [{ id: "net-scan", title: net.busy ? "Scanning…" : "Scan Again", subtitle: paired ? undefined : "Put the device in pairing mode first", iconGlyph: "↻", onConfirm: () => (net.busy ? undefined : netRefresh()) }];
+      const list = net.bt.filter((d) => d.paired === paired);
+      if (!list.length && !net.busy) rows.push({ id: "net-none", title: paired ? "No registered devices" : "Nothing new seen", subtitle: paired ? "" : "Put the device in pairing mode, wait a moment, then Scan Again", iconGlyph: "ᛒ" });
+      for (const d of list) {
         const glyph = { audio: "♫", controller: "🎮", input: "⌨", other: "•" }[d.kind];
         rows.push({
           id: `bt-${d.id}`,
           title: d.name,
-          subtitle: d.connected ? "Connected" : d.paired ? "Paired" : d.canPair ? "Not paired · A to pair" : "Seen · can't pair from here",
+          subtitle: d.connected ? "Connected" : d.paired ? "Registered" : d.canPair ? "A to register" : "Seen · can't pair from here",
           iconGlyph: glyph,
-          badge: d.connected ? "CONNECTED" : d.paired ? "PAIRED" : undefined,
+          badge: d.connected ? "CONNECTED" : undefined,
           onConfirm: async () => {
             if (d.paired || !d.canPair) return;
-            net.busy = `Pairing ${d.name}…`;
+            net.busy = `Registering ${d.name}…`;
             xmb.refresh();
             const res = await window.axm.btPair(d.id);
             net.busy = "";
-            netSay(res.message);
+            notifier.push(res.message);
             await netRefresh();
           },
           contextHint: d.paired ? "remove" : undefined,
           onContext: () => {
             if (!d.paired) return false;
-            net.busy = `Removing ${d.name}…`;
-            xmb.refresh();
-            void window.axm.btUnpair(d.id).then((res) => {
-              net.busy = "";
-              netSay(res.message);
-              return netRefresh();
-            });
+            void window.axm.btUnpair(d.id).then((res) => { notifier.push(res.message); return netRefresh(); });
             return true;
           },
         });
@@ -2729,6 +3082,7 @@ async function main(): Promise<void> {
       onBack: () => {
         if (view === "root") return false;
         if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
+        else if (view === "network" && netView !== "root") netSub("root");
         else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network") go("root");
         else if (view === "months") go("theme");
         else go("months");
@@ -2744,7 +3098,7 @@ async function main(): Promise<void> {
         if (view === "display") return "Settings › Display";
         if (view === "audio") return "Settings › Audio";
         if (view === "sys") return "Settings › System";
-        if (view === "network") return netHint();
+        if (view === "network") return net.busy || net.status || (netView === "wifi" ? "Settings › Network › Internet Connection Settings" : netView === "register" ? "Settings › Network › Register Device" : netView === "registered" ? "Settings › Network › Registered Device List" : "Settings › Network");
         if (view === "datetime") return "Settings › System › Date and Time";
         if (view === "power") return "Settings › System › Power Save";
         if (view === "chat") return "Settings › System › Chat";
@@ -2786,7 +3140,7 @@ async function main(): Promise<void> {
       "assets/icons/video.png",
       () => videoListing,
       (l) => (videoListing = l),
-      (open) => [jellyfinEntry, ...driveRows("video", open)],
+      (open) => [jellyfinEntry, ...discRows(["dvd", "bluray"]), ...driveRows("video", open)],
       { active: () => jf.active, items: jfItems, back: jfBack, hint: jfHint }
     ),
     gamesCategory(),

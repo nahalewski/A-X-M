@@ -217,3 +217,91 @@ $r.Status.ToString()`;
   const status = res.out.trim().split(/\r?\n/).pop() ?? "";
   return { ok: status === "Unpaired" || status === "AlreadyUnpaired", message: status === "Unpaired" ? "Removed" : `Remove: ${status || "failed"}` };
 }
+
+// ---- Connection status and test (the PS3's "Settings and Connection Status List") ----
+
+export interface ConnectionStatus {
+  adapter: string;
+  connected: boolean;
+  ssid: string | null;
+  signal: number | null;
+  ip: string | null;
+  gateway: string | null;
+  dns: string[];
+  mac: string | null;
+  /** Wi-Fi radio switched on. */
+  wifiEnabled: boolean;
+}
+
+export async function connectionStatus(): Promise<ConnectionStatus> {
+  const [iface, ipcfg, radio] = await Promise.all([run("netsh", ["wlan", "show", "interfaces"]), run("ipconfig", ["/all"]), run("netsh", ["interface", "show", "interface"])]);
+  const state = (iface.out.match(/^\s*State\s*:\s*(.+)$/m)?.[1] ?? "").trim().toLowerCase();
+  const ssid = (iface.out.match(/^\s*SSID\s*:\s*(.+)$/m)?.[1] ?? "").trim() || null;
+  const signal = Number(iface.out.match(/Signal\s*:\s*(\d+)%/)?.[1] ?? NaN);
+  const adapter = (iface.out.match(/^\s*Name\s*:\s*(.+)$/m)?.[1] ?? "").trim() || "Network";
+  const mac = (iface.out.match(/Physical address\s*:\s*(.+)$/m)?.[1] ?? "").trim() || null;
+  // The block of ipconfig for the adapter that has a default gateway is the live one.
+  const blocks = ipcfg.out.split(/\r?\n(?=\S)/);
+  const live = blocks.find((b) => /Default Gateway[ .]*:\s*\S/.test(b)) ?? "";
+  const ip = live.match(/IPv4 Address[ .]*:\s*([\d.]+)/)?.[1] ?? null;
+  const gateway = live.match(/Default Gateway[ .]*:\s*([\d.]+)/)?.[1] ?? null;
+  const dns = [...live.matchAll(/DNS Servers[ .]*:\s*([\d.:a-f]+)|^\s{30,}([\d.:a-f]+)\s*$/gm)].map((m) => m[1] ?? m[2]).filter(Boolean);
+  const wifiRow = radio.out.split(/\r?\n/).find((l) => /wi-?fi|wireless|wlan/i.test(l));
+  const wifiEnabled = wifiRow ? /^\s*Enabled/i.test(wifiRow) : true;
+  return { adapter, connected: state === "connected" || !!gateway, ssid, signal: Number.isFinite(signal) ? signal : null, ip, gateway, dns, mac, wifiEnabled };
+}
+
+/** Switches the Wi-Fi adapter on or off (netsh needs an elevated shell; reported honestly). */
+export async function setWifiEnabled(enabled: boolean): Promise<{ ok: boolean; message: string }> {
+  const radio = await run("netsh", ["interface", "show", "interface"]);
+  const row = radio.out.split(/\r?\n/).find((l) => /wi-?fi|wireless|wlan/i.test(l));
+  const name = row?.trim().split(/\s{2,}/).pop();
+  if (!name) return { ok: false, message: "No Wi-Fi adapter found" };
+  const res = await run("netsh", ["interface", "set", "interface", `name=${name}`, `admin=${enabled ? "enabled" : "disabled"}`]);
+  if (res.ok && !/requires elevation|access is denied/i.test(res.out)) return { ok: true, message: enabled ? "Wi-Fi on" : "Wi-Fi off" };
+  return { ok: false, message: "Windows needs administrator rights to switch the adapter - use the Wi-Fi networks list instead" };
+}
+
+export interface ConnectionTest {
+  adapter: string;
+  ip: string | null;
+  gateway: "ok" | "failed" | "none";
+  internet: "ok" | "failed";
+  dns: "ok" | "failed";
+  /** Rough download speed in Mbps from a short fetch, or null. */
+  mbps: number | null;
+}
+
+/** The PS3's Internet Connection Test: link, gateway, DNS, internet, a quick speed read. */
+export async function connectionTest(): Promise<ConnectionTest> {
+  const status = await connectionStatus();
+  let gateway: ConnectionTest["gateway"] = "none";
+  if (status.gateway) {
+    const ping = await run("ping", ["-n", "1", "-w", "1500", status.gateway]);
+    gateway = /TTL=/i.test(ping.out) ? "ok" : "failed";
+  }
+  let dns: ConnectionTest["dns"] = "failed";
+  let internet: ConnectionTest["internet"] = "failed";
+  let mbps: number | null = null;
+  try {
+    const started = Date.now();
+    const res = await fetch("https://www.google.com/generate_204", { signal: AbortSignal.timeout(6000) });
+    dns = "ok";
+    internet = res.status === 204 || res.ok ? "ok" : "failed";
+    void started;
+  } catch {
+    // dns or internet down
+  }
+  if (internet === "ok") {
+    try {
+      const started = Date.now();
+      const res = await fetch("https://speed.cloudflare.com/__down?bytes=5000000", { signal: AbortSignal.timeout(15_000) });
+      const buf = await res.arrayBuffer();
+      const secs = (Date.now() - started) / 1000;
+      if (secs > 0) mbps = Math.round(((buf.byteLength * 8) / secs / 1e6) * 10) / 10;
+    } catch {
+      // no speed figure
+    }
+  }
+  return { adapter: status.adapter, ip: status.ip, gateway, internet, dns, mbps };
+}

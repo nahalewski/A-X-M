@@ -392,6 +392,12 @@ export class Xmb {
   }
 
   private renderItemRail(): void {
+    // Remember where each row was, so the rebuilt row can start there and glide
+    // to its new slot - the XMB's short slide when the cursor moves.
+    const previous = new Map<string, number>();
+    for (const el of Array.from(this.itemRailEl.children) as HTMLElement[]) {
+      if (el.dataset.id) previous.set(el.dataset.id, parseFloat(el.style.top));
+    }
     this.itemRailEl.innerHTML = "";
     const items = this.currentItems();
     const selected = this.currentSelectedIndex();
@@ -436,6 +442,17 @@ export class Xmb {
       `;
 
       row.append(slot, text);
+      row.dataset.id = item.id;
+      const from = previous.get(item.id);
+      const to = slotTop(offset, this.clearance);
+      if (from !== undefined && Math.abs(from - to) > 0.5) {
+        row.style.top = `${from}px`;
+        row.classList.add("gliding");
+        // Next frame: let the transition carry it to the real slot.
+        requestAnimationFrame(() => {
+          row.style.top = `${to}px`;
+        });
+      }
       this.itemRailEl.appendChild(row);
     }
   }

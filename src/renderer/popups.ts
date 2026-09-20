@@ -244,3 +244,93 @@ export class TextPanel {
 function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] ?? c);
 }
+
+
+/**
+ * The PS3's in-game menu: a short centred list over a dark screen, with a status
+ * line at the bottom-left (player, charge) and "✕ Enter · ○ Back" along the bottom.
+ * Also used for the "Do you want to quit the game?" question.
+ */
+export class CenterMenu {
+  private root: HTMLElement;
+  private questionEl: HTMLElement;
+  private listEl: HTMLElement;
+  private statusEl: HTMLElement;
+  private options: PopupOption[] = [];
+  private index = 0;
+  private horizontal = false;
+  private open = false;
+  private onClose: () => void = () => {};
+
+  constructor(root: HTMLElement) {
+    this.root = root;
+    this.questionEl = document.createElement("div");
+    this.questionEl.className = "center-question";
+    this.listEl = document.createElement("div");
+    this.listEl.className = "center-list";
+    this.statusEl = document.createElement("div");
+    this.statusEl.className = "center-status";
+    const hint = document.createElement("div");
+    hint.className = "center-hint";
+    hint.innerHTML = `<span>${btn("a")} Enter</span><span>${btn("b")} Back</span>`;
+    root.append(this.questionEl, this.listEl, this.statusEl, hint);
+  }
+
+  isOpen(): boolean {
+    return this.open;
+  }
+
+  show(options: PopupOption[], opts: { question?: string; status?: string; horizontal?: boolean } = {}, onClose: () => void = () => {}): void {
+    this.options = options;
+    this.index = 0;
+    this.horizontal = !!opts.horizontal;
+    this.open = true;
+    this.onClose = onClose;
+    this.questionEl.textContent = opts.question ?? "";
+    this.statusEl.innerHTML = opts.status ?? "";
+    this.listEl.classList.toggle("horizontal", this.horizontal);
+    this.root.classList.remove("hidden");
+    this.render();
+  }
+
+  setStatus(html: string): void {
+    this.statusEl.innerHTML = html;
+  }
+
+  handle(action: PopupAction): boolean {
+    if (!this.open) return false;
+    const n = this.options.length;
+    const prev = this.horizontal ? "left" : "up";
+    const next = this.horizontal ? "right" : "down";
+    if (action === prev) this.index = (this.index + n - 1) % n;
+    else if (action === next) this.index = (this.index + 1) % n;
+    else if (action === "confirm") {
+      const chosen = this.options[this.index];
+      this.close();
+      if (chosen?.run) void chosen.run();
+      return true;
+    } else if (action === "back") {
+      this.close();
+      return true;
+    }
+    this.render();
+    return true;
+  }
+
+  close(): void {
+    if (!this.open) return;
+    this.open = false;
+    this.root.classList.add("hidden");
+    this.onClose();
+  }
+
+  private render(): void {
+    this.listEl.innerHTML = "";
+    this.options.forEach((o, i) => {
+      const row = document.createElement("div");
+      row.className = "center-option" + (i === this.index ? " selected" : "");
+      row.textContent = o.label;
+      this.listEl.appendChild(row);
+    });
+  }
+}

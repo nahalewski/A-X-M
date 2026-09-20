@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>A-X-M · Online Instructions</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b1020; color: #e8eefc; font: 18px/1.6 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 48px 32px 96px; }
+  h1 { font-weight: 300; font-size: 40px; margin: 0 0 8px; letter-spacing: 1px; }
+  h2 { font-weight: 400; font-size: 26px; margin: 40px 0 10px; border-bottom: 1px solid rgba(255,255,255,.15); padding-bottom: 6px; }
+  h3 { font-weight: 500; font-size: 19px; margin: 22px 0 6px; }
+  p, li { opacity: .92; }
+  kbd { display: inline-block; padding: 0 8px; border-radius: 999px; background: #dfe8ff; color: #0b1020; font: 600 13px/22px system-ui; vertical-align: 1px; }
+  .lead { font-size: 20px; opacity: .8; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+  td, th { text-align: left; padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.1); }
+  th { font-weight: 500; opacity: .7; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A-X-M · Ally XMB Menu</h1>
+  <p class="lead">A PS3-style cross-media bar for the ROG Xbox Ally and any Windows handheld or PC. This page opens inside the menu's own browser: <kbd>▲</kbd><kbd>▼</kbd> scroll, <kbd>B</kbd> closes it.</p>
+
+  <h2>Getting around</h2>
+  <table>
+    <tr><th></th><th>Xbox</th><th>PlayStation</th><th>Keyboard</th></tr>
+    <tr><td>Move</td><td>D-pad / left stick</td><td>D-pad / left stick</td><td>Arrows / WASD</td></tr>
+    <tr><td>Select</td><td><kbd>A</kbd></td><td>✕</td><td>Enter</td></tr>
+    <tr><td>Back</td><td><kbd>B</kbd></td><td>○</td><td>Esc / Backspace</td></tr>
+    <tr><td>Options</td><td><kbd>Y</kbd></td><td>△</td><td>Y</td></tr>
+    <tr><td>In-game menu</td><td>Guide</td><td>PS</td><td>Alt+Home (map M1 to it in Armoury Crate)</td></tr>
+  </table>
+  <p>Left and right move between the columns: <b>Users · Settings · Photo · Music · Video · Game · Network</b>. Up and down move through a column. <kbd>Y</kbd> on almost anything opens the options sidebar on the right; <b>Information</b> in it shows the PS3-style details screen.</p>
+
+  <h2>Users</h2>
+  <p>Your profile (name and avatar), <b>Turn Off System</b>, <b>Restart</b>, <b>Sleep</b> and <b>Exit to Desktop</b>. The first boot asks for a name and offers avatars from the bundled set, SteamGridDB, or your own game icons.</p>
+
+  <h2>Game</h2>
+  <p>Every game found on every drive: Steam, Epic, Xbox / Game Pass, GOG-style folders and any folder you add in Settings. <kbd>A</kbd> plays. <kbd>Y</kbd>: Play, Lossless Scaling profile, Change Artwork (any SteamGridDB cover), Open Folder, Information.</p>
+  <h3>Trophy Collection</h3>
+  <p>Steam achievements per game (add your Steam Web API key in Settings › System › Trophies; your profile's game details must be public) and RetroAchievements (sign in once with your RA username and web API key).</p>
+  <h3>Steam library, Saved Data, Game Data</h3>
+  <p>Steam lists everything you own; <kbd>A</kbd> on an uninstalled game starts the install in the background and, with <i>Hands-off Install</i> on, confirms Steam's dialog for you. Saved Data Utility and Game Data Utility open save and install folders.</p>
+  <h3>While a game is running</h3>
+  <p>Press the Guide / PS button: <b>Quit Game</b>, <b>Controller Settings</b>, <b>Turn Off the System</b>, or back to the game.</p>
+
+  <h2>Music</h2>
+  <p>Browses your music folder-by-folder plus any drive's <code>MUSIC</code> folder. <kbd>Y</kbd> on a song: Information (tags, MusicBrainz artist, Cover Art Archive), Visualizer (eleven styles - <kbd>◀</kbd><kbd>▶</kbd> switches on the stage), Add to Playlist, Shuffle, Copy to a drive. <b>Create New Playlist</b> sits at the top; <kbd>Y</kbd> on a playlist: Play, Edit, Copy, Delete, Information. An audio CD in a drive shows as a row with <b>Import</b> (MP3, AAC or Opus - pick the format in Settings › Audio).</p>
+
+  <h2>Photo and Video</h2>
+  <p>Pictures zoom (<kbd>▲</kbd><kbd>▼</kbd>), rotate (<kbd>Y</kbd>), slideshow (<kbd>A</kbd>); <kbd>Y</kbd> in the list sets one as the wallpaper or shuffles a folder. Video plays MP4 with seek. <b>Jellyfin</b> in Video finds servers on the LAN (or type an address), signs in once, shows posters and backdrops, plays films and episodes, and downloads them to any drive. A DVD or Blu-ray in a drive shows as a row with <b>Backup</b> to MP4 (needs HandBrakeCLI, and MakeMKV for Blu-ray).</p>
+  <p><b>Copying</b>: <kbd>Y</kbd> on songs, pictures and videos offers every drive's <code>MUSIC</code> / <code>PHOTO</code> / <code>VIDEO</code> folder, and "Copy to this PC" from a drive. <b>New Folder…</b> appears inside those drive folders.</p>
+
+  <h2>Network</h2>
+  <p><b>Web Browser</b> opens pages inside the menu (D-pad scrolls and moves through history, <kbd>Y</kbd> reloads, <kbd>B</kbd> closes). <b>Remote Play</b> streams a PS4 or PS5 through chiaki-ng, fetched on first use; console registration and PSN sign-in happen in chiaki-ng itself. <b>Online Instructions</b> is this page.</p>
+
+  <h2>Settings</h2>
+  <ul>
+    <li><b>Theme</b> - monthly XMB colours or the PS3 colour picker, ribbon speed / width, visualizer style, welcome sparkle, wallpaper.</li>
+    <li><b>Display</b> - fullscreen / windowed, menu resolution (720p to 4K, or auto), menu upscaling, refresh rate, FPS counter, hardware readout, battery percentage.</li>
+    <li><b>Audio</b> - volumes, menu music (five loops or off), navigation sounds, shuffle, CD import format, music folders.</li>
+    <li><b>Network</b> - connection status, Internet Connection on / off, Wi-Fi networks (join with a password on the on-screen keyboard), connection test, Media Server (Jellyfin) discovery, Bluetooth Register Device and Registered Device List.</li>
+    <li><b>System</b> - System Name, Language, Date and Time, Power Save, Chat (menu audio output and microphone), Notifications, Predictive Text Dictionary, System Information, Controller, Trophies (Steam key, RetroAchievements sign-in), Steam options, game folders.</li>
+  </ul>
+
+  <h2>Tips</h2>
+  <ul>
+    <li>Keys and sign-ins live only in <code>%APPDATA%\A-X-M\axm-settings.json</code>; passwords are never stored.</li>
+    <li>A drive with <code>PHOTO</code>, <code>VIDEO</code>, <code>MUSIC</code> or <code>GAME</code> folders at its root gets its own rows; an unplugged one stays greyed until you forget it with <kbd>Y</kbd>.</li>
+    <li>Windows SmartScreen warns on first run because the build isn't signed - <i>More info › Run anyway</i>.</li>
+  </ul>
+</main>
+</body>
+</html>

@@ -130,6 +130,14 @@ export interface Settings {
   audioInputId: string;
   menuDimMinutes: number;
   playlists: { name: string; tracks: { kind: "track"; name: string; filePath: string; url: string }[] }[];
+  /** Trophy Collection sources. */
+  steamWebApiKey: string;
+  raUsername: string;
+  raApiKey: string;
+  /** Audio CD import format. */
+  importFormat: "mp3" | "aac" | "opus";
+  /** Jellyfin discovery on the LAN ("Media Server Connection"). */
+  mediaServerEnabled: boolean;
   /** The user's playlist: tracks in play order. */
   playlist: { name: string; filePath: string; url: string }[];
   /** Menu wallpaper: one picture, or a folder shuffled every few minutes. */
@@ -195,6 +203,11 @@ const DEFAULTS: Settings = {
   audioInputId: "",
   menuDimMinutes: 0,
   playlists: [],
+  steamWebApiKey: "",
+  raUsername: "",
+  raApiKey: "",
+  importFormat: "mp3",
+  mediaServerEnabled: true,
   playlist: [],
   wallpaper: null,
   knownDrives: [],
