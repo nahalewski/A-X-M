@@ -125,6 +125,15 @@ dataset is not redistributed with A-X-M. Both answer the Information panel's
 - [GameTDB](https://www.gametdb.com) - a community database for the Nintendo platforms,
   read from its published XML dumps. Free for non-commercial use; see the site's terms.
 
+## Toybox figure artwork and NFC data
+
+- [skylandersNFC/LEGO-Dimensions-NFC](https://github.com/skylandersNFC/LEGO-Dimensions-NFC)
+  - no licence stated by the repository. LEGO Dimensions figure artwork, keyed by the
+  same character id the NFC tags carry. A-X-M uses Chteupnin's set; the repository also
+  holds sets by Jeneric, iranzo, Moto28, James Mcat, J1onelonewolf and andromeda.333.
+  Fetched into the user's own cache by `scripts/toybox-lego-art.mjs` and never bundled
+  or redistributed - LEGO Dimensions characters and marks belong to LEGO and Warner Bros.
+
 ## Online services
 
 - [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org)

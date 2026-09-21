@@ -401,6 +401,12 @@ Every API key is the user's own and lives only in their settings; none ship with
 
 ### Artwork and NFC data
 
+| Source | Licence | Used for |
+| --- | --- | --- |
+| [skylandersNFC/LEGO-Dimensions-NFC](https://github.com/skylandersNFC/LEGO-Dimensions-NFC) | none stated | LEGO Dimensions figure artwork, keyed by the character id its NFC tags carry. A-X-M uses Chteupnin's set; the repository also holds sets by Jeneric, iranzo, Moto28, James Mcat, J1onelonewolf and andromeda.333. |
+| [N3evin/AmiiboAPI](https://github.com/N3evin/AmiiboAPI) | MIT | Amiibo identifiers and names. The licence covers the dataset, not Nintendo's artwork. |
+| [Texthead1/Skylander-IDs](https://github.com/Texthead1/Skylander-IDs) | unlicensed | Skylanders figure identifiers. |
+
 The toy figure artwork, NFC identifiers and shelf sprites used by Toybox come from the
 community collections listed in *Settings › About & Credits* and in
 [`assets/THIRD_PARTY_LICENSES.md`](assets/THIRD_PARTY_LICENSES.md), each with its own
