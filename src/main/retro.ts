@@ -367,6 +367,7 @@ export async function preparePs3(game: GameEntry, rpcs3Dir: string, trim: TrimOp
 
   progress(60, "extracting");
   fs.mkdirSync(outDir, { recursive: true });
+  try {
   await new Promise<void>((resolve, reject) => {
     // The ISO9660 view: 7-Zip's UDF reader trips on the disc's tail sectors and reports a header error.
     const p = spawn(zip, ["x", "-y", "-tiso", "-bsp1", "-bso0", `-o${outDir}`, source], { windowsHide: true });
@@ -386,7 +387,13 @@ export async function preparePs3(game: GameEntry, rpcs3Dir: string, trim: TrimOp
     progress(0, "extracting", true, "No PS3_GAME folder came out of the image");
     throw new Error("No PS3_GAME folder came out of the image");
   }
-  if (needsDecrypt) fs.rmSync(source, { force: true }); // the 10 GB intermediate has done its job
+  } finally {
+    // The decrypted copy is the same size as the disc - ten gigabytes or more - and
+    // it is useless once 7-Zip has read it. This has to run on every exit, not just
+    // the happy one: a failed extract, a missing PS3_GAME, or a cancel used to
+    // leave it stranded next to the original .iso with nothing pointing at it.
+    if (needsDecrypt) fs.rmSync(source, { force: true });
+  }
   let freed = 0;
   if (trim && (trim.update || trim.dummy || trim.languages)) {
     progress(96, "trimming");
@@ -396,7 +403,88 @@ export async function preparePs3(game: GameEntry, rpcs3Dir: string, trim: TrimOp
   return { dir: outDir, keySource, decrypted: needsDecrypt, freed, iso, isoBytes: fs.statSync(iso).size };
 }
 
+/**
+ * Removes decrypted intermediates left beside a disc image. One is written next to
+ * the .iso while a PS3 disc is being extracted and deleted straight after; a build
+ * that crashed mid-extract, or was killed, could leave one stranded. Each is the
+ * size of the disc, so this is worth sweeping rather than waiting to be noticed.
+ *
+ * Only files with a matching .iso alongside them are touched, so nothing a user
+ * named .dec.iso themselves is ever removed.
+ */
+export function sweepPs3Intermediates(dirs: string[]): { removed: string[]; freed: number } {
+  const removed: string[] = [];
+  let freed = 0;
+  for (const dir of dirs) {
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!/\.dec\.iso$/i.test(entry)) continue;
+      const full = path.join(dir, entry);
+      const original = full.replace(/\.dec\.iso$/i, ".iso");
+      if (!fs.existsSync(original)) continue;
+      try {
+        freed += fs.statSync(full).size;
+        fs.rmSync(full, { force: true });
+        removed.push(full);
+      } catch {
+        // Locked by something else; it will be caught on the next sweep.
+      }
+    }
+  }
+  return { removed, freed };
+}
+
 export function ps3FolderEboot(dir: string): string | null {
   const e = path.join(dir, "PS3_GAME", "USRDIR", "EBOOT.BIN");
   return fs.existsSync(e) ? e : null;
+}
+
+// --------------------------------------------------- emulators from GitHub ----
+
+/**
+ * Fetches an emulator's latest release asset into C:\Emulators\<name> and unpacks
+ * it with 7-Zip. For the ones winget doesn't carry (shadPS4, Kyty, RPCS3).
+ */
+export async function installFromGithub(name: string, gh: { repo: string; asset: RegExp; exe: string }, onProgress: (done: number, total: number) => void): Promise<boolean> {
+  const zip = sevenZip();
+  if (!zip) return false;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${gh.repo}/releases/latest`, { headers: { "User-Agent": "A-X-M", Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) return false;
+    const rel = (await res.json()) as { assets: { name: string; browser_download_url: string; size: number }[] };
+    const asset = rel.assets.find((a) => gh.asset.test(a.name));
+    if (!asset) return false;
+    const dir = path.join("C:\Emulators", name);
+    fs.mkdirSync(dir, { recursive: true });
+    const archive = path.join(dir, asset.name);
+    const dl = await fetch(asset.browser_download_url, { headers: { "User-Agent": "A-X-M" } });
+    if (!dl.ok || !dl.body) return false;
+    const ws = fs.createWriteStream(archive);
+    const reader = dl.body.getReader();
+    let done = 0;
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      if (value) {
+        done += value.length;
+        if (!ws.write(value)) await new Promise<void>((r) => ws.once("drain", () => r()));
+        onProgress(done, asset.size || done);
+      }
+    }
+    await new Promise<void>((resolve, reject) => ws.end((e?: Error | null) => (e ? reject(e) : resolve())));
+    const ok = await new Promise<boolean>((resolve) => {
+      const p = spawn(zip, ["x", "-y", `-o${dir}`, archive], { windowsHide: true });
+      p.on("close", (code) => resolve(code === 0 || code === 1));
+      p.on("error", () => resolve(false));
+    });
+    fs.rmSync(archive, { force: true });
+    return ok && fs.existsSync(path.join(dir, gh.exe));
+  } catch {
+    return false;
+  }
 }

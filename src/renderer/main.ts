@@ -22,8 +22,10 @@ import { Hud } from "./hud";
 import { GameBackground } from "./background";
 import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform } from "./types";
 
-const RETRO_NAMES: Record<RetroPlatform, string> = { ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
-const RETRO_ORDER: RetroPlatform[] = ["ps3", "ps2", "ps1", "psp", "switch"];
+const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
+const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
+const RETRO_DEFAULTS: Record<RetroPlatform, string> = { ps5: "G:\\GAMES\\PS5", ps4: "G:\\GAMES\\PS4", ps3: "G:\\GAMES\\PS3", ps2: "G:\\GAMES\\PS2", ps1: "G:\\GAMES\\PS1", psp: "G:\\GAMES\\PSP", switch: "K:\\Switch Games" };
+const EMULATOR_SITES: Record<RetroPlatform, string> = { ps5: "Kyty from github.com/InoriRus/Kyty (or Install above) - an experiment, not a way to play retail PS5 games", ps4: "shadPS4 from shadps4.net (or Install above)", ps3: "RPCS3 from rpcs3.net (or Install above)", ps2: "PCSX2 from pcsx2.net (or Install above)", ps1: "DuckStation from duckstation.org (or Install above)", psp: "PPSSPP from ppsspp.org (or Install above)", switch: "Eden - put eden.exe in C:\\eden" };
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -755,8 +757,27 @@ async function main(): Promise<void> {
     transferToast.innerHTML = [...transfers.values()]
       .map((p) => {
         const pct = p.total > 0 ? Math.round((p.done / p.total) * 100) : 0;
-        const verb = p.id.startsWith("dl-") ? "Downloading" : p.id.startsWith("disc-") ? "Ripping" : p.id.startsWith("cd-") ? "Importing" : p.id === "tools" || p.id === "ghost-voice" || p.id === "ghost-model" ? "Setting up" : "Copying";
-        const text = p.error ? `${p.name} — ${p.error}` : `${verb} ${p.name} → ${p.destination} · ${pct}%`;
+        const verb = p.id.startsWith("dl-") ? "Downloading" : p.id.startsWith("disc-") ? "Ripping" : p.id.startsWith("cd-") ? "Importing" : p.id === "tools" || p.id === "ghost-voice" || p.id === "ghost-model" ? "Setting up" : p.id.startsWith("store-") ? "Adding" : "Copying";
+        // Everything here is read at a glance by someone who just pressed a button,
+        // so it says what is happening to what - never a verb from the code, and
+        // never a file path. The step names come from the job and are translated
+        // into plain words; anything unrecognised falls back to the plain sentence.
+        const STEP_WORDS: Record<string, string> = {
+          decrypting: "unlocking the disc",
+          extracting: "copying the game",
+          trimming: "tidying up",
+          copying: "copying the game",
+          installing: "installing",
+          downloading: "downloading",
+          "ready for RPCS3": "nearly done",
+        };
+        const [subject, step] = p.name.split(" · ");
+        const plainStep = step ? (STEP_WORDS[step] ?? step) : null;
+        const text = p.error
+          ? `${subject} — ${p.error}`
+          : p.id.startsWith("ps3-")
+            ? `Getting ${subject} ready to play · ${plainStep ?? "working"} · ${pct}%`
+            : `${verb} ${subject}${plainStep ? ` · ${plainStep}` : ""} · ${pct}%`;
         return `<div class="transfer${p.error ? " error" : ""}"><span class="ring" style="background-position:${(Math.round((pct / 100) * 16) * 100) / 16}% 0"></span><div class="transfer-text"><span>${text}</span><div class="transfer-bar"><div style="width:${pct}%"></div></div></div></div>`;
       })
       .join("");
@@ -3852,7 +3873,7 @@ async function main(): Promise<void> {
    */
   function retroCategory(): Category {
     let platform: RetroPlatform | null = null;
-    let emulators: { platform: RetroPlatform; name: string; exe: string | null; winget: string | null }[] = [];
+    let emulators: { platform: RetroPlatform; name: string; exe: string | null; winget: string | null; github?: unknown; note?: string }[] = [];
     const refreshEmulators = () => void window.axm.retroEmulators().then((e) => { emulators = e; xmb.refresh(); }).catch(() => {});
     refreshEmulators();
     const retroGames = (p: RetroPlatform) => games.filter((g) => g.source === "retro" && g.platform === p && !g.hidden);
@@ -3860,8 +3881,8 @@ async function main(): Promise<void> {
     const offerEmulator = (p: RetroPlatform) => {
       const e = emuOf(p);
       showOptions(`${RETRO_NAMES[p]} needs ${e?.name ?? "an emulator"}`, [
-        ...(e?.winget ? [{ label: `Install ${e.name}`, hint: "through winget, a few minutes", run: async () => { notifier.push(`Installing ${e.name}`, "install"); const ok = await window.axm.installEmulator(p); notifier.push(ok ? `${e.name} installed` : `${e.name} didn't install - see winget`, "install"); games = await window.axm.getGames(); refreshEmulators(); } }] : []),
-        { label: "Where to get it", run: () => showInfo(e?.name ?? "Emulator", `assets/icons/retro-${p}.png`, null, [{ label: "Sub-Title", value: RETRO_NAMES[p] }, { label: "Details", value: { ps3: "RPCS3 from rpcs3.net - put it in C:\\rpcs3", ps2: "PCSX2 from pcsx2.net (or Install above)", ps1: "DuckStation from duckstation.org (or Install above)", psp: "PPSSPP from ppsspp.org (or Install above)", switch: "Eden - put eden.exe in C:\\eden" }[p] }, { label: "Or", value: "Point A-X-M at an existing copy: Settings › System › Emulators" }]) },
+        ...(e?.winget || e?.github ? [{ label: `Install ${e.name}`, hint: e.winget ? "through winget, a few minutes" : "from its GitHub release into C:\\Emulators", run: async () => { notifier.push(`Installing ${e.name}`, "install"); const ok = await window.axm.installEmulator(p); notifier.push(ok ? `${e.name} installed` : `${e.name} didn't install`, "install"); games = await window.axm.getGames(); refreshEmulators(); } }] : []),
+        { label: "Where to get it", run: () => showInfo(e?.name ?? "Emulator", `assets/icons/retro-${p}.png`, null, [{ label: "Sub-Title", value: RETRO_NAMES[p] }, { label: "Details", value: EMULATOR_SITES[p] }, ...(e?.note ? [{ label: "Needs", value: e.note }] : []), { label: "Or", value: "Point A-X-M at an existing copy: Settings › System › Emulators" }]) },
         { label: "Not now" },
       ]);
     };
@@ -3940,7 +3961,7 @@ async function main(): Promise<void> {
       getItems: () => {
         if (platform) {
           const list = rows(platform);
-          return list.length ? list : [{ id: `retro-${platform}-empty`, title: "No games found", subtitle: `Put ${RETRO_NAMES[platform]} games in ${(settings.retroFolders[platform] ?? { ps3: ["G:\\GAMES\\PS3"], ps2: ["G:\\GAMES\\PS2"], ps1: ["G:\\GAMES\\PS1"], psp: ["G:\\GAMES\\PSP"], switch: ["K:\\Switch Games"] }[platform]).join(", ")}`, iconUrl: `assets/icons/retro-${platform}.png` }];
+          return list.length ? list : [{ id: `retro-${platform}-empty`, title: "No games found", subtitle: `Put ${RETRO_NAMES[platform]} games in ${(settings.retroFolders[platform] ?? [RETRO_DEFAULTS[platform]]).join(", ")} - or get them from the Store`, iconUrl: `assets/icons/retro-${platform}.png` }];
         }
         return RETRO_ORDER.map((p) => {
           const n = retroGames(p).length;
@@ -3948,7 +3969,7 @@ async function main(): Promise<void> {
           return {
             id: `retro-${p}`,
             title: RETRO_NAMES[p],
-            subtitle: `${n} game${n === 1 ? "" : "s"}${e ? ` · ${e.name}${e.exe ? "" : " not installed"}` : ""}`,
+            subtitle: `${n} game${n === 1 ? "" : "s"}${e ? ` · ${e.name}${e.exe ? (e.note ? ` · ${e.note}` : "") : " not installed"}` : ""}`,
             iconUrl: `assets/icons/retro-${p}.png`,
             iconClass: "disc",
             onConfirm: () => {
