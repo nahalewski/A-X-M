@@ -3591,6 +3591,27 @@ async function main(): Promise<void> {
     };
   }
 
+  /**
+   * Store: the column for getting hold of things rather than for what is already
+   * installed. Empty until it is pointed at a source, so it shows the same kind of
+   * empty state every other column does rather than pretending to have a catalogue.
+   */
+  function storeCategory(): Category {
+    return {
+      id: "store",
+      label: "Store",
+      iconUrl: "assets/icons/store.webp",
+      getItems: () => [
+        {
+          id: "store-empty",
+          title: "The Store is not set up yet",
+          subtitle: "This is where getting new things will live",
+          iconUrl: "assets/icons/store.webp",
+        },
+      ],
+    };
+  }
+
   const categories: Category[] = [
     usersCategory(),
     settingsCategory(),
@@ -3607,6 +3628,7 @@ async function main(): Promise<void> {
     ),
     gamesCategory(),
     toyBoxCategory(),
+    storeCategory(),
     browserCategory(),
   ];
   const gameBackground = new GameBackground(document.getElementById("game-bg")!);
