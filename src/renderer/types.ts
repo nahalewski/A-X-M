@@ -580,6 +580,46 @@ export interface CompanionStatus {
   trusted: { deviceId: string; name: string; platform: string; pairedAt: string; lastSeenAt: string }[];
 }
 
+export type TvKind = "live" | "movie" | "series";
+
+export interface TvAccount {
+  url: string;
+  username: string;
+  password: string;
+}
+
+export interface TvStatus {
+  configured: boolean;
+  connected: boolean;
+  message: string;
+  expiresAt?: string;
+  activeConnections?: string;
+  maxConnections?: string;
+}
+
+export interface TvCategory {
+  id: string;
+  name: string;
+}
+
+export interface TvItem {
+  id: string;
+  name: string;
+  kind: TvKind;
+  categoryId: string;
+  /** The provider's own artwork URL, fetched at runtime rather than bundled. */
+  icon?: string;
+  epgChannelId?: string;
+  extension?: string;
+}
+
+export interface TvProgramme {
+  title: string;
+  description?: string;
+  start: string;
+  end: string;
+}
+
 export interface AxmApi {
   getSettings(): Promise<Settings>;
   setSettings(partial: Partial<Settings>): Promise<Settings>;
@@ -698,6 +738,12 @@ export interface AxmApi {
   pickMusicFolder(): Promise<Settings>;
   pickBackgroundImage(): Promise<Settings>;
   openBrowser(url: string): Promise<void>;
+  tvStatus(): Promise<TvStatus>;
+  tvLogin(account: TvAccount | null): Promise<TvStatus>;
+  tvCategories(kind: TvKind): Promise<TvCategory[]>;
+  tvItems(kind: TvKind, categoryId?: string): Promise<TvItem[]>;
+  tvEpg(streamId: string): Promise<TvProgramme[]>;
+  tvStreamUrl(item: TvItem): Promise<string | null>;
   companionStatus(): Promise<CompanionStatus>;
   companionForget(deviceId: string): Promise<boolean>;
   companionSetEnabled(enabled: boolean): Promise<boolean>;

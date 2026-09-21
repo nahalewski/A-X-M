@@ -43,6 +43,7 @@ import type { RetroPlatform } from "./types";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
 import { CompanionServer } from "./companion/server";
+import * as xtream from "./xtream";
 import { DeviceRegistry } from "./companion/registry";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
@@ -823,6 +824,25 @@ ipcMain.handle("axm:toyboxShelf", (_e, filter: { view: "all" | "owned" | "favori
 ipcMain.handle("axm:toyboxSetState", (_e, figureId: string, patch: Partial<ToyCollectionEntry>): ToyCollectionEntry =>
   toybox.setCollectionState(figureId, patch)
 );
+
+/**
+ * TV Streaming. The renderer never sees the password: it asks for a playable URL
+ * and gets one back, so the credential stays in the main process where a page
+ * cannot read it.
+ */
+ipcMain.handle("axm:tvStatus", () => xtream.status());
+
+ipcMain.handle("axm:tvLogin", async (_e, account: xtream.XtreamAccount | null) => {
+  xtream.saveAccount(account);
+  return xtream.status();
+});
+
+ipcMain.handle("axm:tvCategories", (_e, kind: xtream.XtreamKind) => xtream.categories(kind));
+ipcMain.handle("axm:tvItems", (_e, kind: xtream.XtreamKind, categoryId?: string) =>
+  xtream.items(kind, categoryId)
+);
+ipcMain.handle("axm:tvEpg", (_e, streamId: string) => xtream.shortEpg(streamId));
+ipcMain.handle("axm:tvStreamUrl", (_e, item: xtream.XtreamItem) => xtream.streamUrl(item));
 
 ipcMain.handle("axm:companionStatus", () => ({
   running: companion.isRunning(),

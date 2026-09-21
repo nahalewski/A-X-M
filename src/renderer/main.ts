@@ -20,7 +20,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, TvCategory, TvItem, TvKind, TvStatus } from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -2292,6 +2292,166 @@ async function main(): Promise<void> {
     return `Jellyfin · ${jf.stack.map((s) => s.name).join(" › ")}`;
   };
 
+  /**
+   * TV Streaming: an Xtream Codes provider, shown as an app inside the Video
+   * column. The renderer never holds the password - it asks the main process for a
+   * playable URL when something is chosen, and gets one back.
+   *
+   * Live channels are HLS, which Chromium cannot play natively, so they go to the
+   * media viewer with the hls flag that already exists for exactly this.
+   */
+  const tv = {
+    active: false,
+    view: "root" as "root" | "categories" | "items",
+    kind: "live" as TvKind,
+    status: null as TvStatus | null,
+    categories: [] as TvCategory[],
+    items: [] as TvItem[],
+    categoryName: "",
+    busy: false,
+  };
+
+  const tvRefresh = () => {
+    xmb.enterLevel("video", `tv:${tv.view}:${tv.kind}:${tv.categoryName}`);
+    xmb.refresh();
+  };
+
+  const tvSignIn = async () => {
+    const values = await askText("TV Streaming Sign In", [
+      { label: "Portal address", value: tv.status?.configured ? "" : "http://" },
+      { label: "Username", value: "" },
+      { label: "Password", value: "" },
+    ]);
+    if (!values || values.length < 3 || !values[0] || !values[1]) return;
+    tv.busy = true;
+    tvRefresh();
+    tv.status = await window.axm.tvLogin({ url: values[0], username: values[1], password: values[2] });
+    tv.busy = false;
+    notifier.push(tv.status.message, "general");
+    tvRefresh();
+  };
+
+  const tvOpenKind = async (kind: TvKind) => {
+    tv.kind = kind;
+    tv.busy = true;
+    tv.view = "categories";
+    tvRefresh();
+    tv.categories = await window.axm.tvCategories(kind).catch(() => []);
+    tv.busy = false;
+    tvRefresh();
+  };
+
+  const tvOpenCategory = async (category: TvCategory) => {
+    tv.categoryName = category.name;
+    tv.busy = true;
+    tv.view = "items";
+    tvRefresh();
+    tv.items = await window.axm.tvItems(tv.kind, category.id).catch(() => []);
+    tv.busy = false;
+    tvRefresh();
+  };
+
+  const tvPlay = async (item: TvItem) => {
+    const url = await window.axm.tvStreamUrl(item).catch(() => null);
+    if (!url) {
+      notifier.push(`${item.name} has no playable stream`, "general");
+      return;
+    }
+    musicPlayer.stop();
+    audio.fadeOutAmbient(400);
+    // Live is a playlist; a film is a plain file the portal serves directly.
+    mediaViewer.open("video", { kind: "file", name: item.name, filePath: url, url, hls: item.kind === "live" }, []);
+    pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+  };
+
+  const tvBack = (): boolean => {
+    if (tv.view === "items") {
+      tv.view = "categories";
+      tvRefresh();
+      return true;
+    }
+    if (tv.view === "categories") {
+      tv.view = "root";
+      tvRefresh();
+      return true;
+    }
+    tv.active = false;
+    tvRefresh();
+    return true;
+  };
+
+  const tvHint = (): string => {
+    if (tv.view === "items") return `TV Streaming › ${tv.categoryName}`;
+    if (tv.view === "categories") return `TV Streaming › ${tv.kind === "live" ? "Live TV" : tv.kind === "movie" ? "Movies" : "Series"}`;
+    return tv.status?.connected ? `TV Streaming · ${tv.status.message}` : "TV Streaming";
+  };
+
+  const tvMenu = (): MenuItem[] => {
+    if (tv.busy) return [{ id: "tv-busy", title: "Loading…", iconUrl: "assets/icons/tv-live.webp" }];
+
+    if (tv.view === "categories") {
+      if (tv.categories.length === 0) {
+        return [{ id: "tv-none", title: "Nothing here", subtitle: "The service returned no categories", iconUrl: "assets/icons/tv-live.webp" }];
+      }
+      return tv.categories.map((c) => ({
+        id: `tv-cat-${c.id}`,
+        title: c.name,
+        iconUrl: tv.kind === "live" ? "assets/icons/tv-live.webp" : tv.kind === "movie" ? "assets/icons/tv-movies.webp" : "assets/icons/tv-series.webp",
+        onConfirm: () => void tvOpenCategory(c),
+      }));
+    }
+
+    if (tv.view === "items") {
+      if (tv.items.length === 0) {
+        return [{ id: "tv-empty", title: "Nothing in here", iconUrl: "assets/icons/tv-live.webp" }];
+      }
+      return tv.items.map((item) => ({
+        id: `tv-item-${item.id}`,
+        title: item.name,
+        // The provider serves its own channel artwork; nothing is bundled.
+        iconUrl: item.icon || (item.kind === "live" ? "assets/icons/tv-live.webp" : "assets/icons/tv-movies.webp"),
+        iconGlyph: "TV",
+        onConfirm: () => void tvPlay(item),
+      }));
+    }
+
+    if (!tv.status?.configured) {
+      return [{
+        id: "tv-signin",
+        title: "Sign In",
+        subtitle: "Portal address, username and password from your provider",
+        iconUrl: "assets/icons/tv-live.webp",
+        onConfirm: () => void tvSignIn(),
+      }];
+    }
+
+    return [
+      { id: "tv-live", title: "Live TV", subtitle: "Channels", iconUrl: "assets/icons/tv-live.webp", onConfirm: () => void tvOpenKind("live") },
+      { id: "tv-movies", title: "Movies", iconUrl: "assets/icons/tv-movies.webp", onConfirm: () => void tvOpenKind("movie") },
+      { id: "tv-series", title: "Series", iconUrl: "assets/icons/tv-series.webp", onConfirm: () => void tvOpenKind("series") },
+      { id: "tv-account", title: "Account", subtitle: tv.status.message, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => void tvSignIn() },
+    ];
+  };
+
+  const tvEntry: MenuItem = {
+    id: "tv-streaming",
+    title: "TV Streaming",
+    subtitle: tv.status?.connected ? tv.status.message : "Live TV, films and series from your provider",
+    iconUrl: "assets/icons/tv-live.webp",
+    onConfirm: async () => {
+      tv.active = true;
+      tv.view = "root";
+      tvRefresh();
+      if (!tv.status) {
+        tv.busy = true;
+        tvRefresh();
+        tv.status = await window.axm.tvStatus().catch(() => null);
+        tv.busy = false;
+        tvRefresh();
+      }
+    },
+  };
+
   const jellyfinEntry: MenuItem = {
     id: "jellyfin",
     title: "Jellyfin",
@@ -4198,8 +4358,15 @@ async function main(): Promise<void> {
       "assets/icons/video.png",
       () => videoListing,
       (l) => (videoListing = l),
-      (open) => [jellyfinEntry, ...discRows(["dvd", "bluray"]), ...driveRows("video", open)],
-      { active: () => jf.active, items: jfItems, back: jfBack, hint: jfHint }
+      (open) => [tvEntry, jellyfinEntry, ...discRows(["dvd", "bluray"]), ...driveRows("video", open)],
+      // One mode slot, two apps: whichever is open answers. TV is checked first
+      // because opening it is what set the flag.
+      {
+        active: () => tv.active || jf.active,
+        items: () => (tv.active ? tvMenu() : jfItems()),
+        back: () => (tv.active ? tvBack() : jfBack()),
+        hint: () => (tv.active ? tvHint() : jfHint()),
+      }
     ),
     gamesCategory(),
     retroCategory(),
