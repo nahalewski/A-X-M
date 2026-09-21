@@ -250,6 +250,35 @@ export interface SongInfo {
   source: string;
 }
 
+export type DbPlatform = "ps1" | "ps2" | "ps3" | "3ds" | "wii" | "wiiu" | "ds";
+
+export interface GameInfo {
+  title: string;
+  serial: string;
+  region: string;
+  languages: string;
+  genre: string;
+  publisher: string;
+  developer: string;
+  releaseDate: string;
+  year: string;
+  players: string;
+  synopsis: string;
+  source: string;
+  sourceUrl: string;
+  matchedBy: "serial" | "release name" | "title" | "none";
+}
+
+export interface GameDbStatus {
+  platform: DbPlatform;
+  name: string;
+  home: string;
+  cached: boolean;
+  updated: string | null;
+  entries: number;
+  sizeBytes: number;
+}
+
 export interface ScreenInfo {
   title: string;
   year: string;
@@ -784,6 +813,11 @@ export interface AxmApi {
   createMediaFolder(parentDir: string, name: string): Promise<string>;
   getSongInfo(filePath: string): Promise<SongInfo | null>;
   getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;
+  getGameInfo(platform: DbPlatform, name: string, filePath?: string): Promise<GameInfo | null>;
+  updateGameDb(platform: DbPlatform): Promise<{ ok: boolean; message: string }>;
+  gameDbStatus(): Promise<GameDbStatus[]>;
+  clearGameDbCache(): Promise<{ ok: boolean; message: string }>;
+  gameDbLocation(): Promise<string>;
   copyMedia(kind: "music" | "photo" | "video", source: string, target: string): Promise<string>;
   jellyfinDownload(login: JellyfinLogin, itemId: string, name: string, kind: "music" | "video", target: string, container: string): Promise<string>;
   onTransfer(callback: (progress: TransferProgress) => void): void;
@@ -905,6 +939,9 @@ export interface AxmApi {
   onToyboxRemoved(callback: (event: ToyboxRemovalEvent) => void): void;
   toyboxSetState(figureId: string, patch: Record<string, unknown>): Promise<unknown>;
   onArtUpdated(callback: (update: ArtUpdate) => void): void;
+  /** Whether a SteamGridDB key is set anywhere (apis.json, the environment, Settings). */
+  artConfigured(): Promise<boolean>;
+  artSnapshot(): Promise<{ id: string; iconPath?: string; heroPath?: string }[]>;
   quit(): Promise<void>;
 }
 

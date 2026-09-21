@@ -21,7 +21,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform} from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -144,8 +144,10 @@ async function main(): Promise<void> {
   const artPendingSince = new Map<string, number>();
   // Every console game without art is "being looked up" while SteamGridDB is set, until
   // the lookup answers (or two minutes pass, so a disc never spins for good).
+  let artConfigured = !!settings.gameArtApiKey;
+  void window.axm.artConfigured().then((v) => { artConfigured = v; markArtPending(); xmb.refresh(); });
   const markArtPending = () => {
-    if (!settings.gameArtApiKey) return;
+    if (!artConfigured) return;
     const now = Date.now();
     for (const g of games) {
       if (g.source !== "retro" || g.iconPath || artSearched.has(g.id)) continue;
@@ -154,7 +156,24 @@ async function main(): Promise<void> {
     for (const [id, at] of artPendingSince) if (now - at > 120_000) { artPending.delete(id); artPendingSince.delete(id); }
   };
   markArtPending();
-  setInterval(() => { const before = artPending.size; markArtPending(); if (artPending.size !== before) xmb.refresh(); }, 5000);
+  // Art found before this window was listening (the first lookups run during the scan)
+  // is picked up here; so is anything a missed event would have brought.
+  const reconcileArt = async () => {
+    const snap = await window.axm.artSnapshot().catch(() => []);
+    let changed = false;
+    for (const s of snap) {
+      const g = games.find((x) => x.id === s.id);
+      if (!g) continue;
+      if (s.iconPath && g.iconPath !== s.iconPath) { g.iconPath = s.iconPath; changed = true; }
+      if (s.heroPath && g.heroPath !== s.heroPath) { g.heroPath = s.heroPath; changed = true; }
+      if (s.iconPath) artPending.delete(s.id);
+    }
+    const before = artPending.size;
+    markArtPending();
+    if (changed || artPending.size !== before) xmb.refresh();
+  };
+  void reconcileArt();
+  setInterval(() => void reconcileArt(), 6000);
   // Optical discs, only while one is in a drive; polled so the row appears on insert.
   let discs: Disc[] = [];
   const refreshDiscs = async () => {
@@ -534,7 +553,7 @@ async function main(): Promise<void> {
         { label: "Library", value: item.installed ? "In your library" : `Adds to ${item.libraryDir}` },
         ...(item.note ? [{ label: "Needs", value: item.note }] : []),
         ...(item.needsPrep ? [{ label: "Note", value: item.needsPrep }] : []),
-      ]),
+      ], () => gameInfoRows(item.platform, item.name, item.path ?? null)),
   });
   const openStore = (tab = "explore") => {
     void storeApp.open(tab);
@@ -921,6 +940,45 @@ async function main(): Promise<void> {
    * The PS3 Information screen: opens with the file's own facts straight away
    * (sub-title, updated, size), then `more()` adds what the lookups bring back.
    */
+  /**
+   * The Information rows for a game: who made it, who put it out, when.
+   *
+   * Only the platforms a database actually covers are asked about. A row is left
+   * out when the database has nothing for it rather than shown empty, except for
+   * the ones worth stating a blank for - a PS3 entry genuinely has no publisher
+   * recorded, and saying so beats leaving the reader wondering.
+   *
+   * The match is reported too. A serial is conclusive; a title match is a guess
+   * that happens to be right most of the time, and is labelled as one.
+   */
+  const GAME_DB_PLATFORMS: Record<string, DbPlatform> = { ps1: "ps1", ps2: "ps2", ps3: "ps3" };
+
+  const gameInfoRows = async (platform: string, name: string, filePath: string | null): Promise<InfoRow[]> => {
+    const db = GAME_DB_PLATFORMS[platform];
+    if (!db) return [];
+
+    const info = await window.axm.getGameInfo(db, name, filePath ?? undefined).catch(() => null);
+    if (!info) return [{ label: "Information", value: "No database available offline" }];
+    if (info.matchedBy === "none") return [{ label: "Information", value: `Not listed in ${info.source}` }];
+
+    const rows: InfoRow[] = [];
+    const add = (label: string, value: string) => { if (value) rows.push({ label, value }); };
+
+    add("Full Title", info.title);
+    add("Serial", info.serial);
+    add("Region", info.region);
+    add("Released", info.releaseDate || info.year);
+    rows.push({ label: "Publisher", value: info.publisher || "Not recorded" });
+    rows.push({ label: "Developer", value: info.developer || "Not recorded" });
+    add("Genre", info.genre);
+    add("Languages", info.languages);
+    add("Players", info.players);
+    add("Synopsis", info.synopsis);
+    rows.push({ label: "Matched by", value: info.matchedBy });
+    rows.push({ label: "Data from", value: info.source });
+    return rows;
+  };
+
   const showInfo = (title: string, art: string | undefined, filePath: string | null, base: InfoRow[], more?: () => Promise<InfoRow[]>) => {
     infoCard.show(title, art, base, () => popOverlay());
     pushOverlay((a) => infoCard.handle(a as Parameters<InfoCard["handle"]>[0]));
@@ -2087,6 +2145,7 @@ async function main(): Promise<void> {
           const authors = [...new Set(db.games.flatMap((g) => g.packs.map((p) => `${p.author} - ${p.name} (github.com/${p.repo})`)))];
           showInfo("About & Credits", "assets/icons/about.webp", null, [
             { label: "Apollo Save Tool", value: "Damian \"bucanero\" Parrino: apollo-lib (the patch engine A-X-M ports), apollo-patches (the cheat database) and apollo-saves (the community saves). GPL-3.0." },
+            { label: "Game information", value: "niemasd's GameDB (PSX, PS2, PS3) for PlayStation release data, and GameTDB for the Nintendo platforms. Downloaded on demand, never bundled. GPL-3.0." },
             { label: "HD texture packs", value: authors.join("\n") },
             { label: "Collections", value: db.moreSources.map((s) => `${s.name}\n${s.url}`).join("\n") },
             { label: "Emulators", value: "DuckStation (stenzek) and PCSX2, whose card formats and texture folders these are; RPCS3, PPSSPP, Eden, shadPS4, Kyty." },

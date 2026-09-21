@@ -200,6 +200,11 @@ const api = {
   createMediaFolder: (parentDir: string, name: string) => ipcRenderer.invoke("axm:createMediaFolder", parentDir, name),
   getSongInfo: (filePath: string) => ipcRenderer.invoke("axm:getSongInfo", filePath),
   getScreenInfo: (title: string, year: string, kind: string, tmdbId?: string) => ipcRenderer.invoke("axm:getScreenInfo", title, year, kind, tmdbId),
+  getGameInfo: (platform: string, name: string, filePath?: string) => ipcRenderer.invoke("axm:getGameInfo", platform, name, filePath),
+  updateGameDb: (platform: string) => ipcRenderer.invoke("axm:updateGameDb", platform),
+  gameDbStatus: () => ipcRenderer.invoke("axm:gameDbStatus"),
+  clearGameDbCache: () => ipcRenderer.invoke("axm:clearGameDbCache"),
+  gameDbLocation: () => ipcRenderer.invoke("axm:gameDbLocation"),
   copyMedia: (kind: string, source: string, target: string) => ipcRenderer.invoke("axm:copyMedia", kind, source, target),
   jellyfinDownload: (login: unknown, itemId: string, name: string, kind: string, target: string, container: string) =>
     ipcRenderer.invoke("axm:jellyfinDownload", login, itemId, name, kind, target, container),
@@ -231,6 +236,8 @@ const api = {
   openFolder: (dirPath: string) => ipcRenderer.invoke("axm:openFolder", dirPath),
   getLaunchers: () => ipcRenderer.invoke("axm:getLaunchers"),
   openLauncher: (id: string) => ipcRenderer.invoke("axm:openLauncher", id),
+  artConfigured: () => ipcRenderer.invoke("axm:artConfigured"),
+  artSnapshot: () => ipcRenderer.invoke("axm:artSnapshot"),
   onArtUpdated: (callback: (update: { gameId: string; iconPath?: string; heroPath?: string; searched?: boolean }) => void) => {
     ipcRenderer.on("axm:artUpdated", (_e, update) => callback(update));
   },

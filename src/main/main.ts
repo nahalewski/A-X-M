@@ -40,6 +40,7 @@ import { checkForUpdate, downloadUpdate, openUpdate } from "./updates";
 import { getPowerSettings, setPowerPlan, setPowerTimeout, powerAction, getClock, syncClock, listTimeZones, setTimeZone, fileInfo, hostName } from "./system";
 import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairBluetooth, unpairBluetooth, WifiNetwork, BluetoothDevice } from "./network";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
+import { getGameInfo, updateDatabase, databaseStatus, clearCache as clearGameDbCache, cacheLocation, GameInfo, DbPlatform } from "./gameDb";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
@@ -370,6 +371,10 @@ ipcMain.handle("axm:toggleFullscreen", (): Settings => {
   return updated;
 });
 
+ipcMain.handle("axm:artConfigured", (): boolean => isGameArtConfigured());
+/** What art every game has right now - the menu reconciles against this, since a
+ *  lookup that finished before the window listened would otherwise be missed. */
+ipcMain.handle("axm:artSnapshot", (): { id: string; iconPath?: string; heroPath?: string }[] => cachedGames.map((g) => ({ id: g.id, iconPath: g.iconPath, heroPath: g.heroPath })));
 ipcMain.handle("axm:scanGames", async (): Promise<GameEntry[]> => {
   cachedGames = await scanAllGames();
   void fetchMissingArt();
@@ -382,13 +387,26 @@ ipcMain.handle("axm:scanGames", async (): Promise<GameEntry[]> => {
  * concurrency so the menu stays responsive, pushing each result to the renderer as it
  * lands rather than making the first paint wait on the network.
  */
+/** The icon a PS3 game ships with, beside its EBOOT (PS3_GAME/ICON0.PNG or ICON0.PNG). */
+function ps3OwnIcon(game: GameEntry): string | null {
+  for (const base of [game.installDir, game.romPath ? path.dirname(game.romPath) : null]) {
+    if (!base) continue;
+    for (const rel of ["ICON0.PNG", "PS3_GAME/ICON0.PNG", "../ICON0.PNG", "../../ICON0.PNG"]) {
+      const p = path.resolve(base, rel);
+      if (fs.existsSync(p)) return pathToFileURL(p).href;
+    }
+  }
+  return null;
+}
+
 let artRunId = 0;
 async function fetchMissingArt(): Promise<void> {
   if (!isGameArtConfigured()) return;
   const runId = ++artRunId;
   // Steam hands us both already, so only the rest need looking up - but a game can
   // easily have one and not the other, hence the per-kind check.
-  const pending = cachedGames.filter((g) => !g.iconPath || !g.heroPath);
+  // Tiles first: a game with no box art at all is worse off than one missing only its banner.
+  const pending = cachedGames.filter((g) => !g.iconPath || !g.heroPath).sort((a, b) => Number(!!a.iconPath) - Number(!!b.iconPath));
   const CONCURRENCY = 3;
 
   let cursor = 0;
@@ -403,6 +421,13 @@ async function fetchMissingArt(): Promise<void> {
         if (grid) {
           game.iconPath = grid;
           update.iconPath = grid;
+        } else if (game.platform === "ps3") {
+          // Nothing on SteamGridDB: a PS3 game folder carries its own ICON0.PNG.
+          const icon = ps3OwnIcon(game);
+          if (icon) {
+            game.iconPath = icon;
+            update.iconPath = icon;
+          }
         }
       }
 
@@ -664,6 +689,14 @@ ipcMain.handle("axm:createMediaFolder", (_e, parentDir: string, name: string): s
 ipcMain.handle("axm:getSongInfo", (_e, filePath: string): Promise<SongInfo | null> => getSongInfo(filePath));
 ipcMain.handle("axm:getScreenInfo", (_e, title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null> =>
   getScreenInfo(title, year, kind, tmdbId)
+);
+ipcMain.handle("axm:getGameInfo", (_e, platform: DbPlatform, name: string, filePath?: string): Promise<GameInfo | null> =>
+  getGameInfo(platform, name, filePath)
+);
+ipcMain.handle("axm:updateGameDb", (_e, platform: DbPlatform) => updateDatabase(platform));
+ipcMain.handle("axm:gameDbStatus", () => databaseStatus());
+ipcMain.handle("axm:clearGameDbCache", () => clearGameDbCache());
+ipcMain.handle("axm:gameDbLocation", () => cacheLocation()
 );
 ipcMain.handle("axm:copyMedia", (_e, kind: TransferKind, source: string, target: string): Promise<string> => copyMedia(kind, source, target));
 ipcMain.handle(
