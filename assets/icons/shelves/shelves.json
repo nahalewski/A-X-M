@@ -1,0 +1,77 @@
+{
+  "cubbyHeight": 150,
+  "shelves": [
+    {
+      "id": "shelf-01",
+      "file": "shelves/shelf-01.webp",
+      "cols": 1,
+      "rows": 3,
+      "slots": 3,
+      "width": 186,
+      "height": 450
+    },
+    {
+      "id": "shelf-02",
+      "file": "shelves/shelf-02.webp",
+      "cols": 1,
+      "rows": 4,
+      "slots": 4,
+      "width": 221,
+      "height": 600
+    },
+    {
+      "id": "shelf-03",
+      "file": "shelves/shelf-03.webp",
+      "cols": 2,
+      "rows": 3,
+      "slots": 6,
+      "width": 354,
+      "height": 450
+    },
+    {
+      "id": "shelf-04",
+      "file": "shelves/shelf-04.webp",
+      "cols": 3,
+      "rows": 3,
+      "slots": 9,
+      "width": 575,
+      "height": 450
+    },
+    {
+      "id": "shelf-05",
+      "file": "shelves/shelf-05.webp",
+      "cols": 2,
+      "rows": 2,
+      "slots": 4,
+      "width": 364,
+      "height": 300
+    },
+    {
+      "id": "shelf-06",
+      "file": "shelves/shelf-06.webp",
+      "cols": 2,
+      "rows": 3,
+      "slots": 6,
+      "width": 428,
+      "height": 450
+    },
+    {
+      "id": "shelf-07",
+      "file": "shelves/shelf-07.webp",
+      "cols": 4,
+      "rows": 3,
+      "slots": 12,
+      "width": 657,
+      "height": 450
+    },
+    {
+      "id": "shelf-08",
+      "file": "shelves/shelf-08.webp",
+      "cols": 4,
+      "rows": 4,
+      "slots": 16,
+      "width": 722,
+      "height": 600
+    }
+  ]
+}
