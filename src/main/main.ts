@@ -391,8 +391,12 @@ ipcMain.handle("axm:scanGames", async (): Promise<GameEntry[]> => {
  * concurrency so the menu stays responsive, pushing each result to the renderer as it
  * lands rather than making the first paint wait on the network.
  */
-/** The icon a PS3 game ships with, beside its EBOOT (PS3_GAME/ICON0.PNG or ICON0.PNG). */
-function ps3OwnIcon(game: GameEntry): string | null {
+/**
+ * The icon a PS3 game ships with: ICON0.PNG beside its EBOOT for a folder game, or
+ * PS3_GAME/ICON0.PNG lifted out of a disc image with 7-Zip (that part of a Redump
+ * image is in the clear even when the game data is encrypted).
+ */
+async function ps3OwnIcon(game: GameEntry): Promise<string | null> {
   for (const base of [game.installDir, game.romPath ? path.dirname(game.romPath) : null]) {
     if (!base) continue;
     for (const rel of ["ICON0.PNG", "PS3_GAME/ICON0.PNG", "../ICON0.PNG", "../../ICON0.PNG"]) {
@@ -400,7 +404,19 @@ function ps3OwnIcon(game: GameEntry): string | null {
       if (fs.existsSync(p)) return pathToFileURL(p).href;
     }
   }
-  return null;
+  if (!game.romPath || !/\.iso$/i.test(game.romPath)) return null;
+  const zip = [path.join(process.env.ProgramFiles ?? "C:\Program Files", "7-Zip", "7z.exe"), path.join(process.env["ProgramFiles(x86)"] ?? "C:\Program Files (x86)", "7-Zip", "7z.exe")].find((c) => fs.existsSync(c));
+  if (!zip) return null;
+  const out = path.join(app.getPath("userData"), "art-cache", "ps3-icons");
+  const file = path.join(out, `${crypto.createHash("sha1").update(game.romPath).digest("hex")}.png`);
+  if (fs.existsSync(file)) return pathToFileURL(file).href;
+  fs.mkdirSync(out, { recursive: true });
+  const ok = await new Promise<boolean>((resolve) =>
+    execFile(zip, ["e", "-y", "-tiso", `-o${out}`, game.romPath!, "PS3_GAME/ICON0.PNG"], { windowsHide: true, timeout: 60_000 }, (err) => resolve(!err && fs.existsSync(path.join(out, "ICON0.PNG"))))
+  );
+  if (!ok) return null;
+  fs.renameSync(path.join(out, "ICON0.PNG"), file);
+  return pathToFileURL(file).href;
 }
 
 let artRunId = 0;
@@ -427,7 +443,8 @@ async function fetchMissingArt(): Promise<void> {
           update.iconPath = grid;
         } else if (game.platform === "ps3") {
           // Nothing on SteamGridDB: a PS3 game folder carries its own ICON0.PNG.
-          const icon = ps3OwnIcon(game);
+          const icon = await ps3OwnIcon(game);
+          if (runId !== artRunId) return;
           if (icon) {
             game.iconPath = icon;
             update.iconPath = icon;

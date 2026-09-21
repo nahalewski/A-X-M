@@ -88,22 +88,68 @@ async function apiGet(endpoint: string): Promise<unknown | null> {
  * Resolves a name to a SteamGridDB game id. Cached separately from the images so
  * looking up a game's grid and its hero only costs one search.
  */
+/**
+ * The names to try for a file called "Legend of Dragoon, The (USA, Canada) (Disc 1)":
+ * as given, with the article put back in front, without disc / region tags, and
+ * without a subtitle after " - ". SteamGridDB's autocomplete is literal, so the
+ * library-catalogue form finds nothing where "The Legend of Dragoon" does.
+ */
+function searchNames(name: string): string[] {
+  const out: string[] = [];
+  const push = (s: string) => { const t = s.replace(/\s+/g, " ").trim(); if (t && !out.includes(t)) out.push(t); };
+  push(name);
+  const untagged = name.replace(/\s*[[(][^\])]*[\])]/g, "").replace(/\s*-?\s*(disc|disk|cd)\s*\d+\b/i, "").trim();
+  push(untagged);
+  const article = untagged.match(/^(.*?),\s*(the|a|an)$/i) ?? untagged.match(/^(.*?),\s*(the|a|an)\s*[-:]\s*(.*)$/i);
+  if (article) push(article[3] ? `${article[2]} ${article[1]}: ${article[3]}` : `${article[2]} ${article[1]}`);
+  const dash = untagged.split(/\s+-\s+/);
+  if (dash.length > 1) push(dash[0]);
+  if (article && dash.length > 1) push(`${article[2]} ${dash[0].replace(/,\s*(the|a|an)$/i, "")}`);
+  return out;
+}
+
+
+/**
+ * A miss is remembered for a week, not forever: SteamGridDB grows, names get
+ * fixed, and a bad night on the network shouldn't leave a game without art.
+ */
+const MISS_TTL_MS = 7 * 86400_000;
+const miss = (): string => `miss:${Date.now()}`;
+/** True when the cached value is a miss that still stands; expired misses read as "not cached". */
+function stillMissing(index: Record<string, string | null>, key: string): boolean | undefined {
+  const v = index[key];
+  if (v === undefined) return undefined;
+  if (v === null) return true;
+  if (v.startsWith("miss:")) {
+    if (Date.now() - Number(v.slice(5)) < MISS_TTL_MS) return true;
+    delete index[key];
+    return undefined;
+  }
+  return false;
+}
+
 async function findGameId(name: string): Promise<number | null> {
   const index = loadIndex();
   const cacheKey = `id:${normalize(name)}`;
-  if (cacheKey in index) {
-    const cached = index[cacheKey];
-    return cached === null ? null : Number(cached);
+  const known = stillMissing(index, cacheKey);
+  if (known === true) return null;
+  if (known === false) return Number(index[cacheKey]);
+
+  let gameId: number | null = null;
+  let answered = false;
+  for (const candidate of searchNames(name)) {
+    const search = (await apiGet(`/search/autocomplete/${encodeURIComponent(candidate)}`)) as
+      | { data?: { id: number }[] }
+      | null;
+    if (!search) continue; // a blip: try the next form, and don't cache the miss
+    answered = true;
+    gameId = search.data?.[0]?.id ?? null;
+    if (gameId !== null) break;
   }
 
-  const search = (await apiGet(`/search/autocomplete/${encodeURIComponent(name)}`)) as
-    | { data?: { id: number }[] }
-    | null;
-  const gameId = search?.data?.[0]?.id ?? null;
-
   // Only cache a definite answer - a network blip shouldn't poison the name forever.
-  if (search) {
-    index[cacheKey] = gameId === null ? null : String(gameId);
+  if (answered) {
+    index[cacheKey] = gameId === null ? miss() : String(gameId);
     saveIndex();
   }
   return gameId;
@@ -161,17 +207,17 @@ export async function resolveArt(name: string, kind: ArtKind = "grid"): Promise<
   const index = loadIndex();
   const key = normalize(name);
   const cacheKey = `${kind}:${key}`;
-  if (cacheKey in index) {
-    const cached = index[cacheKey];
-    if (cached === null) return null;
-    const full = path.join(artDir(), cached);
+  const known = stillMissing(index, cacheKey);
+  if (known === true) return null;
+  if (known === false) {
+    const full = path.join(artDir(), index[cacheKey]!);
     if (fs.existsSync(full)) return pathToFileURL(full).href;
   }
 
   const gameId = await findGameId(name);
   const url = gameId === null ? null : await findArtUrl(gameId, kind);
   if (!url) {
-    index[cacheKey] = null;
+    index[cacheKey] = miss();
     saveIndex();
     return null;
   }
@@ -181,8 +227,7 @@ export async function resolveArt(name: string, kind: ArtKind = "grid"): Promise<
   const destination = path.join(artDir(), fileName);
 
   if (!(await download(url, destination))) {
-    index[cacheKey] = null;
-    saveIndex();
+    // A failed download is a blip, not a verdict: nothing is cached, so it's tried again.
     return null;
   }
 
@@ -227,10 +272,10 @@ export async function resolveIcon(name: string): Promise<string | null> {
   if (!isGameArtConfigured()) return null;
   const index = loadIndex();
   const key = `icon:${normalize(name)}`;
-  if (key in index) {
-    const cached = index[key];
-    if (cached === null) return null;
-    const full = path.join(artDir(), cached);
+  const known = stillMissing(index, key);
+  if (known === true) return null;
+  if (known === false) {
+    const full = path.join(artDir(), index[key]!);
     if (fs.existsSync(full)) return pathToFileURL(full).href;
   }
   const gameId = await findGameId(name);
@@ -241,7 +286,7 @@ export async function resolveIcon(name: string): Promise<string | null> {
   const url = res?.data?.[0]?.thumb ?? res?.data?.[0]?.url ?? null;
   if (!url) {
     if (res) {
-      index[key] = null;
+      index[key] = miss();
       saveIndex();
     }
     return null;
