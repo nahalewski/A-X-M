@@ -102,7 +102,7 @@ export interface GameEntry {
   extractedDir?: string;
 }
 
-export type RetroPlatform = "ps3" | "ps2" | "ps1" | "psp" | "switch";
+export type RetroPlatform = "ps5" | "ps4" | "ps3" | "ps2" | "ps1" | "psp" | "switch";
 
 export interface MediaEntry {
   id: string;
@@ -415,6 +415,7 @@ export interface Settings {
   retroFolders: Partial<Record<RetroPlatform, string[]>>;
   emulators: Partial<Record<RetroPlatform, string>>;
   ps3Trim: Ps3TrimSettings;
+  storeRoot: string;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -555,6 +556,30 @@ export interface ToyboxSummary {
   favorites: ToyFigure[];
 }
 
+/** Input forwarded from a paired phone, shaped so the menu treats it as local. */
+export type CompanionInput =
+  | { kind: "xmb"; action: "up" | "down" | "left" | "right" | "confirm" | "back" | "context" | "guide" }
+  | { kind: "media"; command: string; value?: number }
+  | { kind: "pointer"; input: { kind: string; dx?: number; dy?: number; button?: string } };
+
+export interface CompanionSession {
+  deviceId: string;
+  name: string;
+  address: string;
+  mode: string;
+  paired: boolean;
+  since: number;
+}
+
+export interface CompanionStatus {
+  running: boolean;
+  enabled: boolean;
+  addresses: string[];
+  permissions: Record<string, boolean>;
+  sessions: CompanionSession[];
+  trusted: { deviceId: string; name: string; platform: string; pairedAt: string; lastSeenAt: string }[];
+}
+
 export interface AxmApi {
   getSettings(): Promise<Settings>;
   setSettings(partial: Partial<Settings>): Promise<Settings>;
@@ -673,6 +698,14 @@ export interface AxmApi {
   pickMusicFolder(): Promise<Settings>;
   pickBackgroundImage(): Promise<Settings>;
   openBrowser(url: string): Promise<void>;
+  companionStatus(): Promise<CompanionStatus>;
+  companionForget(deviceId: string): Promise<boolean>;
+  companionSetEnabled(enabled: boolean): Promise<boolean>;
+  companionPermissions(patch: Record<string, boolean>): Promise<Record<string, boolean>>;
+  onCompanionInput(callback: (input: CompanionInput) => void): void;
+  onCompanionPairing(callback: (p: { code: string | null; deviceName: string }) => void): void;
+  onCompanionDevices(callback: (p: { sessions: CompanionSession[] }) => void): void;
+  onCompanionStatus(callback: (p: { message: string }) => void): void;
   toyboxSummary(): Promise<ToyboxSummary>;
   toyboxByPlatform(platform: ToyPlatform): Promise<ToyFigure[]>;
   toyboxSearch(query: string): Promise<ToyFigure[]>;

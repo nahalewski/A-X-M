@@ -587,6 +587,52 @@ async function main(): Promise<void> {
     ask: (question, options) => showOptions(question, options),
   });
   window.axm.onToyboxDetected((event) => void toyDetect.onDetected(event));
+
+  /**
+   * The Android companion. Input arrives already reduced to the same actions a
+   * local button produces, so it goes through the ordinary handlers - the menu
+   * never learns a phone is involved, and a phone dropping mid-press leaves
+   * nothing to unwind.
+   */
+  window.axm.onCompanionInput((input) => {
+    if (input.kind === "xmb") {
+      // Guide is not a menu action - it toggles the in-game overlay, the same as
+      // the pad's guide button, so the phone's Home does what that button does.
+      if (input.action === "guide") {
+        void window.axm.overlayToggle();
+        return;
+      }
+      // Through handleAction, not the raw category, so an overlay that is up -
+      // a popup, the media viewer, the browser - takes the press first, exactly
+      // as it would from the pad in your hands.
+      xmb.handleAction(input.action);
+      return;
+    }
+    if (input.kind === "media") {
+      switch (input.command) {
+        case "toggle": musicPlayer.togglePause(); break;
+        case "play": if (!musicPlayer.isPlaying()) musicPlayer.togglePause(); break;
+        case "pause": if (musicPlayer.isPlaying()) musicPlayer.togglePause(); break;
+        case "next": musicPlayer.next(); break;
+        case "previous": musicPlayer.previous(); break;
+        case "stop": musicPlayer.stop(); break;
+        default: break;   // volume, seek and the rest come with the media screen
+      }
+      xmb.refresh();
+    }
+  });
+
+  // The code has to be readable from across the room, so it takes the screen
+  // rather than going out as a notification that would slide away mid-typing.
+  window.axm.onCompanionPairing(({ code, deviceName }) => {
+    if (!code) return;
+    showInfo(`Pair ${deviceName}`, undefined, null, [
+      { label: "Code", value: code },
+      { label: "Enter it", value: "on the phone, in A-X-M Companion" },
+    ]);
+  });
+
+  window.axm.onCompanionStatus(({ message }) => notifier.push(message, "general"));
   void (0 as unknown as ToyboxDetectionEvent);
   window.axm.onToyboxRemoved((event) => toyDetect.onRemoved(event));
   const simulateScan = async (platform: ToyPlatform | "unknown") => {

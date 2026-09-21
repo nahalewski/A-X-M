@@ -37,11 +37,13 @@ import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 import { toybox, kindOf } from "./toybox/toyboxService";
 import { findEmulators as findRetroEmulators } from "./scanners/retroScanner";
-import { preparePs3 } from "./retro";
+import { preparePs3, installFromGithub } from "./retro";
 import { execFile } from "node:child_process";
 import type { RetroPlatform } from "./types";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
+import { CompanionServer } from "./companion/server";
+import { DeviceRegistry } from "./companion/registry";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
 // requestAnimationFrame already follows the display's native refresh rate, 120Hz on
@@ -57,6 +59,46 @@ app.commandLine.appendSwitch("enable-features", "PlatformHEVCDecoderSupport,Plat
 
 let mainWindow: BrowserWindow | null = null;
 let cachedGames: GameEntry[] = [];
+
+/**
+ * The Android companion.
+ *
+ * The phone finds this machine by UDP broadcast and then holds one WebSocket for
+ * everything it does. Input it sends is forwarded to the renderer as if it were a
+ * local button press, so the menu needs no idea a phone exists - and if the phone
+ * goes away mid-session, nothing here has to unwind.
+ *
+ * A tag the phone scans goes into nfcHub.scan(), the same entry the PC/SC reader
+ * uses, so there is one path for a scan rather than a second one that would drift.
+ */
+const companionRegistry = new DeviceRegistry();
+const companion = new CompanionServer(
+  companionRegistry,
+  loadSettings().systemName || "A-X-M",
+  app.getVersion(),
+  {
+    onXmbInput: (action) => mainWindow?.webContents.send("axm:companionInput", { kind: "xmb", action }),
+    onMediaCommand: (command, value) =>
+      mainWindow?.webContents.send("axm:companionInput", { kind: "media", command, value }),
+    onPointer: (input) => mainWindow?.webContents.send("axm:companionInput", { kind: "pointer", input }),
+    onToyScan: (scan, device) => {
+      nfcHub.scan({
+        reader: { id: device.deviceId, type: "companion" },
+        uid: scan.uid,
+        tech: scan.technology,
+        head: scan.head,
+        tail: scan.tail,
+        characterId: scan.characterId,
+        variantId: scan.variantId,
+      });
+    },
+    // The code is shown on this screen, so whoever pairs has to be able to see it.
+    onPairingCode: (code, deviceName) =>
+      mainWindow?.webContents.send("axm:companionPairing", { code, deviceName }),
+    onSessionsChanged: (sessions) => mainWindow?.webContents.send("axm:companionDevices", { sessions }),
+    onStatus: (message) => mainWindow?.webContents.send("axm:companionStatus", { message }),
+  }
+);
 
 function createWindow(): void {
   const settings = loadSettings();
@@ -200,6 +242,9 @@ app.whenReady().then(() => {
   overlayHotkey.start(loadSettings().overlayHotkey);
   // Toy readers and the companion endpoint come up with the menu.
   setTimeout(() => nfcHub.start(loadSettings().toybox?.companion ?? true), 4000);
+  // Listening from the start: the phone should find A-X-M without anything being
+  // switched on first. It costs one idle UDP socket until something connects.
+  companion.start();
   // MakeMKV reads its key from its own settings file; keep it in step with ours.
   if (loadSettings().makemkvKey) applyMakemkvKey(loadSettings().makemkvKey);
 
@@ -214,6 +259,7 @@ app.on("before-quit", () => console.log("[A-X-M] quitting"));
 app.on("before-quit", () => {
   stopTts();
   nfcHub.stop();
+  companion.stop();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -335,9 +381,11 @@ ipcMain.handle("axm:launchGame", (_e, gameId: string): void => {
 ipcMain.handle("axm:retroEmulators", () => findRetroEmulators(loadSettings().emulators));
 ipcMain.handle("axm:installEmulator", async (_e, platform: RetroPlatform): Promise<boolean> => {
   const emu = findRetroEmulators(loadSettings().emulators).find((x) => x.platform === platform);
-  if (!emu?.winget) return false;
+  if (!emu || (!emu.winget && !emu.github)) return false;
   toolToast("emu-" + platform, `${emu.name} · installing`, 0, 1);
-  const ok = await new Promise<boolean>((resolve) => execFile("winget", ["install", "--id", emu.winget!, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"], { windowsHide: true, timeout: 30 * 60_000 }, (err) => resolve(!err)));
+  let ok = false;
+  if (emu.winget) ok = await new Promise<boolean>((resolve) => execFile("winget", ["install", "--id", emu.winget!, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"], { windowsHide: true, timeout: 30 * 60_000 }, (err) => resolve(!err)));
+  else if (emu.github) ok = await installFromGithub(emu.name, emu.github, (done, total) => toolToast("emu-" + platform, `${emu.name} · downloading`, done, total));
   toolToast("emu-" + platform, emu.name, 1, 1, true);
   cachedGames = await scanAllGames();
   return ok;
@@ -774,6 +822,34 @@ ipcMain.handle("axm:toyboxShelf", (_e, filter: { view: "all" | "owned" | "favori
 
 ipcMain.handle("axm:toyboxSetState", (_e, figureId: string, patch: Partial<ToyCollectionEntry>): ToyCollectionEntry =>
   toybox.setCollectionState(figureId, patch)
+);
+
+ipcMain.handle("axm:companionStatus", () => ({
+  running: companion.isRunning(),
+  enabled: companionRegistry.isEnabled(),
+  addresses: companion.addresses(),
+  permissions: companionRegistry.permissions(),
+  sessions: companion.sessionList(),
+  trusted: companionRegistry.list().map((d) => ({
+    deviceId: d.deviceId,
+    name: d.name,
+    platform: d.platform,
+    pairedAt: d.pairedAt,
+    lastSeenAt: d.lastSeenAt,
+  })),
+}));
+
+ipcMain.handle("axm:companionForget", (_e, deviceId: string) => companionRegistry.revoke(deviceId));
+
+ipcMain.handle("axm:companionSetEnabled", (_e, enabled: boolean) => {
+  companionRegistry.setEnabled(enabled);
+  if (enabled) companion.start();
+  else companion.stop();
+  return companionRegistry.isEnabled();
+});
+
+ipcMain.handle("axm:companionPermissions", (_e, patch: Record<string, boolean>) =>
+  companionRegistry.setPermissions(patch)
 );
 
 ipcMain.handle("axm:openBrowser", (_e, url: string): void => {

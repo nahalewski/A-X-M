@@ -16,6 +16,22 @@ const api = {
   pickMusicFolder: () => ipcRenderer.invoke("axm:pickMusicFolder"),
   pickBackgroundImage: () => ipcRenderer.invoke("axm:pickBackgroundImage"),
   openBrowser: (url: string) => ipcRenderer.invoke("axm:openBrowser", url),
+  companionStatus: () => ipcRenderer.invoke("axm:companionStatus"),
+  companionForget: (deviceId: string) => ipcRenderer.invoke("axm:companionForget", deviceId),
+  companionSetEnabled: (enabled: boolean) => ipcRenderer.invoke("axm:companionSetEnabled", enabled),
+  companionPermissions: (patch: Record<string, boolean>) => ipcRenderer.invoke("axm:companionPermissions", patch),
+  onCompanionInput: (callback: (input: unknown) => void) => {
+    ipcRenderer.on("axm:companionInput", (_e, input) => callback(input));
+  },
+  onCompanionPairing: (callback: (p: { code: string | null; deviceName: string }) => void) => {
+    ipcRenderer.on("axm:companionPairing", (_e, p) => callback(p));
+  },
+  onCompanionDevices: (callback: (p: unknown) => void) => {
+    ipcRenderer.on("axm:companionDevices", (_e, p) => callback(p));
+  },
+  onCompanionStatus: (callback: (p: { message: string }) => void) => {
+    ipcRenderer.on("axm:companionStatus", (_e, p) => callback(p));
+  },
   toyboxSummary: () => ipcRenderer.invoke("axm:toyboxSummary"),
   toyboxByPlatform: (platform: string) => ipcRenderer.invoke("axm:toyboxByPlatform", platform),
   toyboxSearch: (query: string) => ipcRenderer.invoke("axm:toyboxSearch", query),
