@@ -3,3 +3,8 @@ dist/
 release/
 *.log
 tmp/
+
+# Toybox source data and artwork cache. Third-party metadata and publisher-owned
+# character art, pulled locally for a private build - never committed, because this
+# repository is public.
+/toybox-data/
