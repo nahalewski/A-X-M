@@ -112,12 +112,23 @@ export class GamepadNav {
 
   poll(now: number): void {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    // Directions are merged across every connected pad and handled once per frame.
+    // The Ally (and many pads) show up twice - XInput and a HID twin - and per-pad
+    // handling with one shared hold state made the idle twin release the hold each
+    // frame, so one press fired again and again and skipped two or three columns.
+    const want = { up: false, down: false, left: false, right: false };
+    let typed = false;
     for (const pad of pads) {
       if (!pad) continue;
-      const type = controllerTypeOf(pad.id);
-      if (type !== this.lastType) {
-        this.lastType = type;
-        this.onType?.(type);
+      // The glyph set follows the first pad only; a second pad of another family
+      // would otherwise flip the glyphs (and the toast) every frame.
+      if (!typed) {
+        typed = true;
+        const type = controllerTypeOf(pad.id);
+        if (type !== this.lastType) {
+          this.lastType = type;
+          this.onType?.(type);
+        }
       }
       const prev = this.prevButtons.get(pad.index) ?? [];
       const cur = pad.buttons.map((b) => b.pressed);
@@ -132,18 +143,17 @@ export class GamepadNav {
       const axisX = pad.axes[0] ?? 0;
       const axisY = pad.axes[1] ?? 0;
 
-      const wantUp = cur[BUTTON_DPAD_UP] || axisY < -this.deadZone;
-      const wantDown = cur[BUTTON_DPAD_DOWN] || axisY > this.deadZone;
-      const wantLeft = cur[BUTTON_DPAD_LEFT] || axisX < -this.deadZone;
-      const wantRight = cur[BUTTON_DPAD_RIGHT] || axisX > this.deadZone;
-
-      this.handleDirection("up", wantUp, now);
-      this.handleDirection("down", wantDown, now);
-      this.handleDirection("left", wantLeft, now);
-      this.handleDirection("right", wantRight, now);
+      want.up ||= !!cur[BUTTON_DPAD_UP] || axisY < -this.deadZone;
+      want.down ||= !!cur[BUTTON_DPAD_DOWN] || axisY > this.deadZone;
+      want.left ||= !!cur[BUTTON_DPAD_LEFT] || axisX < -this.deadZone;
+      want.right ||= !!cur[BUTTON_DPAD_RIGHT] || axisX > this.deadZone;
 
       this.prevButtons.set(pad.index, cur);
     }
+    this.handleDirection("up", want.up, now);
+    this.handleDirection("down", want.down, now);
+    this.handleDirection("left", want.left, now);
+    this.handleDirection("right", want.right, now);
   }
 
   private handleDirection(dir: "up" | "down" | "left" | "right", want: boolean, now: number): void {
