@@ -12,3 +12,6 @@ tmp/
 # Python bytecode from the NFC / TTS helpers
 __pycache__/
 *.pyc
+
+# PS3 disc keys: the owner's private collection, packaged into local builds, never committed
+/keys/

@@ -20,7 +20,10 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform } from "./types";
+
+const RETRO_NAMES: Record<RetroPlatform, string> = { ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
+const RETRO_ORDER: RetroPlatform[] = ["ps3", "ps2", "ps1", "psp", "switch"];
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -1671,7 +1674,7 @@ async function main(): Promise<void> {
 
     const gameRows = (): MenuItem[] =>
       games
-        .filter((g) => !g.hidden)
+        .filter((g) => !g.hidden && g.source !== "retro")
         .map((g) => ({
           id: g.id,
           title: g.name,
@@ -3841,6 +3844,124 @@ async function main(): Promise<void> {
     xmb.refresh();
   };
 
+  /**
+   * Retro: console games through emulators, one folder per platform. A row is an
+   * ordinary game (launch, Ghost, Toybox and the Y options all apply); what differs
+   * is the emulator it runs in, a PS3 disc image that has to be prepared first, and
+   * an emulator that isn't installed yet.
+   */
+  function retroCategory(): Category {
+    let platform: RetroPlatform | null = null;
+    let emulators: { platform: RetroPlatform; name: string; exe: string | null; winget: string | null }[] = [];
+    const refreshEmulators = () => void window.axm.retroEmulators().then((e) => { emulators = e; xmb.refresh(); }).catch(() => {});
+    refreshEmulators();
+    const retroGames = (p: RetroPlatform) => games.filter((g) => g.source === "retro" && g.platform === p && !g.hidden);
+    const emuOf = (p: RetroPlatform) => emulators.find((e) => e.platform === p);
+    const offerEmulator = (p: RetroPlatform) => {
+      const e = emuOf(p);
+      showOptions(`${RETRO_NAMES[p]} needs ${e?.name ?? "an emulator"}`, [
+        ...(e?.winget ? [{ label: `Install ${e.name}`, hint: "through winget, a few minutes", run: async () => { notifier.push(`Installing ${e.name}`, "install"); const ok = await window.axm.installEmulator(p); notifier.push(ok ? `${e.name} installed` : `${e.name} didn't install - see winget`, "install"); games = await window.axm.getGames(); refreshEmulators(); } }] : []),
+        { label: "Where to get it", run: () => showInfo(e?.name ?? "Emulator", `assets/icons/retro-${p}.png`, null, [{ label: "Sub-Title", value: RETRO_NAMES[p] }, { label: "Details", value: { ps3: "RPCS3 from rpcs3.net - put it in C:\\rpcs3", ps2: "PCSX2 from pcsx2.net (or Install above)", ps1: "DuckStation from duckstation.org (or Install above)", psp: "PPSSPP from ppsspp.org (or Install above)", switch: "Eden - put eden.exe in C:\\eden" }[p] }, { label: "Or", value: "Point A-X-M at an existing copy: Settings › System › Emulators" }]) },
+        { label: "Not now" },
+      ]);
+    };
+    const rows = (p: RetroPlatform): MenuItem[] =>
+      retroGames(p).map((g) => ({
+        id: g.id,
+        title: g.name,
+        subtitle: g.needsPrep ?? (!g.emulator ? `${g.emulatorName ?? "Emulator"} not installed` : undefined),
+        iconUrl: g.iconPath ?? `assets/icons/retro-${p}.png`,
+        backgroundUrl: g.heroPath,
+        iconGlyph: sourceGlyph(g.source),
+        contextGame: g,
+        onConfirm: async () => {
+          if (!g.emulator) {
+            offerEmulator(p);
+            return;
+          }
+          if (g.needsPrep) {
+            const art = g.iconPath ?? `assets/icons/retro-${p}.png`;
+            const t = settings.ps3Trim;
+            const run = async () => {
+              notifier.push(`${g.isoEncrypted ? "Decrypting" : "Extracting"} ${g.name} for RPCS3`, "install", art);
+              try {
+                const r = await window.axm.preparePs3(g.id, settings.ps3Trim);
+                games = await window.axm.getGames();
+                xmb.refresh();
+                const saved = r.freed > 0 ? ` · ${(r.freed / 1073741824).toFixed(1)} GB trimmed` : "";
+                notifier.push(`${g.name} is ready for RPCS3${saved}`, "install", art);
+                // The image has done its job; the folder is what RPCS3 boots.
+                showOptions(`${g.name} is ready`, [
+                  { label: "Delete the disc image", hint: `frees ${(r.isoBytes / 1073741824).toFixed(1)} GB · the extracted game stays`, run: async () => { const ok = await window.axm.deleteDiscImage(g.id); notifier.push(ok ? "Disc image deleted" : "Couldn't delete the image"); games = await window.axm.getGames(); xmb.refresh(); } },
+                  { label: "Keep the disc image" },
+                ]);
+              } catch (e) {
+                notifier.push(`${g.name}: ${String((e as Error).message ?? e)}`, "install");
+              }
+            };
+            showOptions(g.name, [
+              ...(g.extractedDir
+                ? [{ label: "Delete the disc image", hint: "already extracted - the folder game plays; this frees the image's space", run: async () => { const ok = await window.axm.deleteDiscImage(g.id); notifier.push(ok ? "Disc image deleted" : "Couldn't delete the image"); games = await window.axm.getGames(); xmb.refresh(); } }]
+                : []),
+              {
+                label: g.extractedDir ? "Extract again" : g.isoEncrypted ? "Decrypt and extract for RPCS3" : "Extract for RPCS3",
+                hint: `${g.isoEncrypted ? "key from the collection or the .dkey beside it · " : ""}into C:\\rpcs3\\games · a few minutes`,
+                run,
+              },
+              {
+                label: "Trim while extracting",
+                hint: [t.update ? "firmware update" : "", t.dummy ? "dummy / pad files" : "", t.languages ? "other languages" : ""].filter(Boolean).join(", ") || "nothing",
+                children: [
+                  { label: "Firmware update (PS3_UPDATE)", hint: "always safe to drop", selected: t.update, run: async () => { settings = await window.axm.setSettings({ ps3Trim: { ...t, update: !t.update } }); } },
+                  { label: "Dummy and padding files", hint: "only files that are all zeros", selected: t.dummy, run: async () => { settings = await window.axm.setSettings({ ps3Trim: { ...t, dummy: !t.dummy } }); } },
+                  { label: "Languages other than English", hint: "by _FRA / _DEU style tags; a few games copy these to the HDD, so test after", selected: t.languages, run: async () => { settings = await window.axm.setSettings({ ps3Trim: { ...t, languages: !t.languages } }); } },
+                ],
+              },
+              { label: "What this does", run: () => showInfo(g.name, art, null, [{ label: "Sub-Title", value: "PlayStation 3 disc image" }, { label: "Details", value: "RPCS3 boots games from a folder, not from a disc image. This decrypts the image with its disc key (the .dkey beside it, or one from the key collection, each checked against the disc itself) and extracts it into RPCS3's games folder. Trimming empties the files you tick, keeping their names so the game still finds them; TRIMMED.txt in the folder lists what went." }]) },
+              { label: "Not now" },
+            ]);
+            return;
+          }
+          notifier.push(`Starting ${g.name}`, "general", g.iconPath);
+          await window.axm.launchGame(g.id);
+        },
+      }));
+    return {
+      id: "retro",
+      label: "Retro",
+      iconUrl: "assets/icons/retro-ps3.png",
+      onBack: () => {
+        if (!platform) return false;
+        platform = null;
+        xmb.refresh();
+        return true;
+      },
+      footerHint: () => (platform ? `Retro › ${RETRO_NAMES[platform]}${emuOf(platform)?.exe ? ` · ${emuOf(platform)!.name}` : ""}` : undefined),
+      getItems: () => {
+        if (platform) {
+          const list = rows(platform);
+          return list.length ? list : [{ id: `retro-${platform}-empty`, title: "No games found", subtitle: `Put ${RETRO_NAMES[platform]} games in ${(settings.retroFolders[platform] ?? { ps3: ["G:\\GAMES\\PS3"], ps2: ["G:\\GAMES\\PS2"], ps1: ["G:\\GAMES\\PS1"], psp: ["G:\\GAMES\\PSP"], switch: ["K:\\Switch Games"] }[platform]).join(", ")}`, iconUrl: `assets/icons/retro-${platform}.png` }];
+        }
+        return RETRO_ORDER.map((p) => {
+          const n = retroGames(p).length;
+          const e = emuOf(p);
+          return {
+            id: `retro-${p}`,
+            title: RETRO_NAMES[p],
+            subtitle: `${n} game${n === 1 ? "" : "s"}${e ? ` · ${e.name}${e.exe ? "" : " not installed"}` : ""}`,
+            iconUrl: `assets/icons/retro-${p}.png`,
+            iconClass: "disc",
+            onConfirm: () => {
+              platform = p;
+              xmb.resetSelection("retro");
+              xmb.refresh();
+            },
+          };
+        });
+      },
+    };
+  }
+
   function toyBoxCategory(): Category {
     const count = (platform: string) => toybox?.stats.byPlatform[platform] ?? 0;
     // Inside a brand: its sub-folders (figures, power discs, vehicles, cards...).
@@ -4014,6 +4135,7 @@ async function main(): Promise<void> {
       { active: () => jf.active, items: jfItems, back: jfBack, hint: jfHint }
     ),
     gamesCategory(),
+    retroCategory(),
     toyBoxCategory(),
     storeCategory(),
     browserCategory(),
@@ -4125,7 +4247,9 @@ async function main(): Promise<void> {
         label: "Information",
         run: () =>
           showInfo(game.name, game.iconPath, game.installDir && game.source !== "xbox" ? game.installDir : null, [
-            { label: "Sub-Title", value: { steam: "Steam", epic: "Epic Games", xbox: "Xbox / Game Pass", generic: "Installed program" }[game.source] ?? game.source },
+            { label: "Sub-Title", value: game.source === "retro" ? `${RETRO_NAMES[game.platform!] ?? "Retro"} · ${game.emulatorName ?? "emulator"}${game.emulator ? "" : " (not installed)"}` : ({ steam: "Steam", epic: "Epic Games", xbox: "Xbox / Game Pass", generic: "Installed program" }[game.source] ?? game.source) },
+            ...(game.romPath ? [{ label: "Image", value: game.romPath }] : []),
+            ...(game.needsPrep ? [{ label: "Note", value: game.needsPrep }] : []),
             { label: "Drive", value: game.drive },
             { label: "Folder", value: game.installDir ?? "" },
             { label: "Lossless Scaling", value: game.losslessProfile ? `Profile ${game.losslessProfile}` : "Off" },

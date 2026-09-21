@@ -30,8 +30,9 @@ function ps(script: string): Promise<string> {
 export async function runningGame(): Promise<RunningGame | null> {
   const game = lastLaunched;
   if (!game?.installDir || !isWindows) return null;
-  const dir = game.installDir.replace(/'/g, "''").replace(/\\+$/, "");
-  const out = await ps(`Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith('${dir}', [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -ExpandProperty Id`);
+  // A retro game runs inside its emulator, so that is the process to look for.
+  const target = (game.source === "retro" && game.emulator ? game.emulator : game.installDir).replace(/'/g, "''").replace(/\\+$/, "");
+  const out = await ps(`Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith('${target}', [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -ExpandProperty Id`);
   const pids = out.split(/\r?\n/).map((l) => Number(l.trim())).filter((n) => Number.isInteger(n) && n > 0);
   if (!pids.length) return null;
   return { id: game.id, name: game.name, pids };

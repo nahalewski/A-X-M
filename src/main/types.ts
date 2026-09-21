@@ -1,4 +1,4 @@
-export type GameSource = "steam" | "epic" | "xbox" | "generic";
+export type GameSource = "steam" | "epic" | "xbox" | "generic" | "retro";
 export type LaunchType = "exe" | "uri" | "shell";
 
 export interface GameEntry {
@@ -16,4 +16,18 @@ export interface GameEntry {
   heroPath?: string;
   losslessProfile: 1 | 2 | 3 | null;
   hidden: boolean;
+  /** Retro (emulated) games only. */
+  platform?: RetroPlatform;
+  romPath?: string;
+  /** The emulator's exe, or null when it isn't installed. */
+  emulator?: string | null;
+  emulatorName?: string;
+  /** Why it can't be launched yet (a PS3 disc image that needs decrypting). */
+  needsPrep?: string;
+  /** PS3 disc image: true when its data region is encrypted. */
+  isoEncrypted?: boolean;
+  /** PS3 disc image that has already been extracted: where the folder game is. */
+  extractedDir?: string;
 }
+
+export type RetroPlatform = "ps3" | "ps2" | "ps1" | "psp" | "switch";

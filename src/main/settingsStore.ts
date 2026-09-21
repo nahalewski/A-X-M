@@ -142,6 +142,11 @@ export interface Settings {
   makemkvKey: string;
   /** The first-run tool setup has been offered / run. */
   toolsSetupDone: boolean;
+  /** Retro: where the console games are, per platform, and the emulators to use. */
+  retroFolders: Partial<Record<"ps3" | "ps2" | "ps1" | "psp" | "switch", string[]>>;
+  emulators: Partial<Record<"ps3" | "ps2" | "ps1" | "psp" | "switch", string>>;
+  /** What to empty out of an extracted PS3 game: the firmware update, dummy / pad files, other languages. */
+  ps3Trim: { update: boolean; dummy: boolean; languages: boolean };
   /** Toybox: what Ghost does when a toy is scanned. */
   toybox: {
     onSelect: "launch" | "navigate" | "ask";
@@ -230,6 +235,9 @@ const DEFAULTS: Settings = {
   discTarget: "home",
   makemkvKey: "",
   toolsSetupDone: false,
+  retroFolders: {},
+  emulators: {},
+  ps3Trim: { update: true, dummy: true, languages: false },
   toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },

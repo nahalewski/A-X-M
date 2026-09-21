@@ -36,6 +36,10 @@ import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 import { toybox, kindOf } from "./toybox/toyboxService";
+import { findEmulators as findRetroEmulators } from "./scanners/retroScanner";
+import { preparePs3 } from "./retro";
+import { execFile } from "node:child_process";
+import type { RetroPlatform } from "./types";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
@@ -321,8 +325,45 @@ ipcMain.handle("axm:getGames", async (): Promise<GameEntry[]> => {
 ipcMain.handle("axm:launchGame", (_e, gameId: string): void => {
   const game = cachedGames.find((g) => g.id === gameId);
   if (game) {
+    // A retro game without its emulator (or a PS3 image still to be prepared) has nothing to run.
+    if (game.source === "retro" && (!game.launchTarget || game.needsPrep)) return;
     noteLaunched(game);
     launchGame(game);
+  }
+});
+
+ipcMain.handle("axm:retroEmulators", () => findRetroEmulators(loadSettings().emulators));
+ipcMain.handle("axm:installEmulator", async (_e, platform: RetroPlatform): Promise<boolean> => {
+  const emu = findRetroEmulators(loadSettings().emulators).find((x) => x.platform === platform);
+  if (!emu?.winget) return false;
+  toolToast("emu-" + platform, `${emu.name} · installing`, 0, 1);
+  const ok = await new Promise<boolean>((resolve) => execFile("winget", ["install", "--id", emu.winget!, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"], { windowsHide: true, timeout: 30 * 60_000 }, (err) => resolve(!err)));
+  toolToast("emu-" + platform, emu.name, 1, 1, true);
+  cachedGames = await scanAllGames();
+  return ok;
+});
+ipcMain.handle("axm:preparePs3", async (_e, gameId: string, trim: { update: boolean; dummy: boolean; languages: boolean } | null) => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  if (!game) throw new Error("Unknown game");
+  const rpcs3 = findRetroEmulators(loadSettings().emulators).find((e) => e.platform === "ps3")?.exe;
+  if (!rpcs3) throw new Error("RPCS3 isn't installed (C:\\rpcs3\\rpcs3.exe)");
+  // The menu is English-only so far; System Language will feed this when it grows.
+  const lang = "en";
+  const result = await preparePs3(game, path.dirname(rpcs3), trim ? { ...trim, keepLanguage: lang } : null);
+  cachedGames = await scanAllGames();
+  void fetchMissingArt();
+  return result;
+});
+// Only ever the disc image a Retro row points at, and only after the menu asked.
+ipcMain.handle("axm:deleteDiscImage", (_e, gameId: string): boolean => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  if (!game?.romPath || !/\.iso$/i.test(game.romPath)) return false;
+  try {
+    fs.rmSync(game.romPath, { force: true });
+    for (const side of [game.romPath.replace(/\.iso$/i, ".dec.iso")]) fs.rmSync(side, { force: true });
+    return true;
+  } catch {
+    return false;
   }
 });
 

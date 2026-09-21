@@ -1,4 +1,4 @@
-export type GameSource = "steam" | "epic" | "xbox" | "generic";
+export type GameSource = "steam" | "epic" | "xbox" | "generic" | "retro";
 
 /** Which loop plays behind the menu. Keys of AMBIENT_TRACKS in audio.ts. */
 export type AmbientTrackId = "xmb" | "luminous" | "moonlit" | "dreamy" | "midtown";
@@ -89,7 +89,20 @@ export interface GameEntry {
   heroPath?: string;
   losslessProfile: 1 | 2 | 3 | null;
   hidden: boolean;
+  /** Retro (emulated) games only. */
+  platform?: RetroPlatform;
+  romPath?: string;
+  /** The emulator's exe, or null when it isn't installed. */
+  emulator?: string | null;
+  emulatorName?: string;
+  /** Why it can't be launched yet (a PS3 disc image that needs decrypting). */
+  needsPrep?: string;
+  isoEncrypted?: boolean;
+  /** PS3 disc image that has already been extracted: where the folder game is. */
+  extractedDir?: string;
 }
+
+export type RetroPlatform = "ps3" | "ps2" | "ps1" | "psp" | "switch";
 
 export interface MediaEntry {
   id: string;
@@ -399,6 +412,9 @@ export interface Settings {
   makemkvKey: string;
   toolsSetupDone: boolean;
   toybox: ToyboxSettings;
+  retroFolders: Partial<Record<RetroPlatform, string[]>>;
+  emulators: Partial<Record<RetroPlatform, string>>;
+  ps3Trim: Ps3TrimSettings;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -464,6 +480,12 @@ export interface ToyShelfFilter {
   query?: string;
   /** A brand's sub-folder: figures, power-discs, vehicles, cards... */
   kind?: string;
+}
+
+export interface Ps3TrimSettings {
+  update: boolean;
+  dummy: boolean;
+  languages: boolean;
 }
 
 export interface ToyKindRow {
@@ -656,6 +678,10 @@ export interface AxmApi {
   toyboxSearch(query: string): Promise<ToyFigure[]>;
   toyboxShelf(filter: ToyShelfFilter): Promise<ToyShelfFigure[]>;
   toyboxKinds(platform: ToyPlatform): Promise<ToyKindRow[]>;
+  retroEmulators(): Promise<{ platform: RetroPlatform; name: string; exe: string | null; winget: string | null }[]>;
+  preparePs3(gameId: string, trim: Ps3TrimSettings | null): Promise<{ dir: string; keySource: string | null; decrypted: boolean; freed: number; iso: string; isoBytes: number }>;
+  deleteDiscImage(gameId: string): Promise<boolean>;
+  installEmulator(platform: RetroPlatform): Promise<boolean>;
   toyboxSimulate(figureId: string | null): Promise<ToyboxDetectionEvent | null>;
   toyboxSimulateRemoval(): Promise<void>;
   toyboxNfcStatus(): Promise<ToyboxNfcStatus>;

@@ -3,6 +3,7 @@ import { scanSteamGames } from "./scanners/steamScanner";
 import { scanEpicGames } from "./scanners/epicScanner";
 import { scanXboxGames } from "./scanners/xboxScanner";
 import { scanGenericGames } from "./scanners/genericScanner";
+import { scanRetroGames, findEmulators } from "./scanners/retroScanner";
 import { loadSettings } from "./settingsStore";
 
 export async function scanAllGames(): Promise<GameEntry[]> {
@@ -13,6 +14,7 @@ export async function scanAllGames(): Promise<GameEntry[]> {
     Promise.resolve().then(() => scanEpicGames()),
     Promise.resolve().then(() => scanXboxGames()),
     Promise.resolve().then(() => scanGenericGames(settings.extraGameFolders)),
+    Promise.resolve().then(() => scanRetroGames(settings.retroFolders, findEmulators(settings.emulators))),
   ]);
 
   let games: GameEntry[] = [];
@@ -40,7 +42,7 @@ export async function scanAllGames(): Promise<GameEntry[]> {
 
   games.sort((a, b) => a.name.localeCompare(b.name));
   console.log(
-    `[A-X-M] scan complete: ${games.length} total (steam=${games.filter((g) => g.source === "steam").length}, epic=${games.filter((g) => g.source === "epic").length}, xbox=${games.filter((g) => g.source === "xbox").length}, generic=${games.filter((g) => g.source === "generic").length})`
+    `[A-X-M] scan complete: ${games.length} total (steam=${games.filter((g) => g.source === "steam").length}, epic=${games.filter((g) => g.source === "epic").length}, xbox=${games.filter((g) => g.source === "xbox").length}, generic=${games.filter((g) => g.source === "generic").length}, retro=${games.filter((g) => g.source === "retro").length})`
   );
   return games;
 }

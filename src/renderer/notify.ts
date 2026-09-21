@@ -16,6 +16,15 @@ export interface NotifySettings {
 
 const SHOW_MS = 4200;
 
+/** The picture a system notification carries when the caller gave none: one per kind. */
+const KIND_ICONS: Record<NotifyKind, string> = {
+  general: "assets/icons/settings-about.webp",
+  transfer: "assets/icons/hdd.webp",
+  controller: "assets/icons/games.svg",
+  battery: "assets/icons/power.png",
+  install: "assets/icons/system-update.webp",
+};
+
 export class Notifier {
   private root: HTMLElement;
   private textEl: HTMLElement;
@@ -30,15 +39,16 @@ export class Notifier {
     this.root = document.createElement("div");
     this.root.id = "notify";
     this.root.className = "hidden";
-    const badge = document.createElement("span");
-    badge.className = "notify-badge";
-    badge.innerHTML = "<i>△</i><i>○</i><i>✕</i><i>□</i>";
     this.textEl = document.createElement("span");
     this.textEl.className = "notify-text";
+    // The clip is what stays put; the text inside it is what ticks sideways.
+    const clip = document.createElement("span");
+    clip.className = "notify-clip";
+    clip.appendChild(this.textEl);
     this.imgEl = document.createElement("img");
     this.imgEl.className = "notify-img";
     this.imgEl.addEventListener("error", () => this.imgEl.classList.add("broken"));
-    this.root.append(badge, this.imgEl, this.textEl);
+    this.root.append(this.imgEl, clip);
     parent.appendChild(this.root);
   }
 
@@ -67,15 +77,16 @@ export class Notifier {
     this.showing = true;
     this.textEl.textContent = item.text;
     this.textEl.classList.remove("ticker");
+    // Media pills carry the thing's own picture; system pills carry their kind's icon.
     this.root.classList.toggle("media", !!item.iconUrl);
     this.imgEl.classList.remove("broken");
-    if (item.iconUrl) this.imgEl.src = item.iconUrl;
-    else this.imgEl.removeAttribute("src");
+    this.imgEl.src = item.iconUrl ?? KIND_ICONS[item.kind];
     this.root.classList.remove("hidden");
     // Long lines scroll like the PS3's ticker rather than being cut.
     requestAnimationFrame(() => {
-      if (this.textEl.scrollWidth > this.textEl.clientWidth + 4) {
-        this.textEl.style.setProperty("--tick", `${this.textEl.scrollWidth - this.textEl.clientWidth + 12}px`);
+      const clipEl = this.textEl.parentElement!;
+      if (this.textEl.scrollWidth > clipEl.clientWidth + 4) {
+        this.textEl.style.setProperty("--tick", `${this.textEl.scrollWidth - clipEl.clientWidth + 12}px`);
         this.textEl.classList.add("ticker");
       }
     });

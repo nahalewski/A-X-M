@@ -1420,7 +1420,8 @@ body.upscaled.sharpen-strong #background-layer, body.upscaled.sharpen-strong #vi
 #notify.hidden { opacity: 0; transform: translateX(40px); pointer-events: none; }
 .notify-badge { display: grid; grid-template-columns: 1fr 1fr; width: 26px; height: 26px; border-radius: 6px; background: #d9822b; font-size: 9px; line-height: 13px; text-align: center; color: #1a1a1a; font-weight: 700; flex: none; }
 .notify-badge i { font-style: normal; }
-.notify-text { white-space: nowrap; overflow: hidden; max-width: 300px; display: inline-block; }
+.notify-clip { display: block; overflow: hidden; max-width: 300px; }
+.notify-text { white-space: nowrap; display: inline-block; }
 .notify-text.ticker { animation: notify-tick 4s linear forwards; }
 @keyframes notify-tick { 0%, 15% { transform: translateX(0); } 85%, 100% { transform: translateX(calc(-1 * var(--tick))); } }
 
@@ -1472,8 +1473,8 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
 /* Notification pills: the media style carries a picture in the framed rectangle. */
 #notify.media { border-radius: 14px; padding: 8px 20px 8px 8px; background: linear-gradient(180deg, rgba(60, 62, 72, 0.96), rgba(22, 22, 28, 0.96)); }
 #notify.media .notify-badge { display: none; }
-.notify-img { display: none; width: 44px; height: 44px; object-fit: cover; border-radius: 8px; background: rgba(255, 255, 255, 0.1); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35); flex: none; }
-#notify.media .notify-img { display: block; }
+.notify-img { display: block; width: 26px; height: 26px; object-fit: contain; border-radius: 6px; flex: none; }
+#notify.media .notify-img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; background: rgba(255, 255, 255, 0.1); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35); }
 #notify.media .notify-img.broken { visibility: hidden; }
 
 /* Ghost: the assistant floats in the bottom-right with its bubble beside it. */
@@ -1591,8 +1592,8 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
 .toybox-figure { height: 100%; width: auto; max-width: 100%; max-height: 100%; object-fit: contain; object-position: bottom; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); transition: transform 0.2s ease; transform-origin: 50% 100%; }
 .toybox-cell.selected .toybox-figure { transform: scale(1.12) translateY(-2%); animation: toybox-bob 1.8s ease-in-out infinite; }
 @keyframes toybox-bob { 0%, 100% { transform: scale(1.12) translateY(-2%); } 50% { transform: scale(1.12) translateY(-6%); } }
-.toybox-cell:not(.owned) .toybox-figure { opacity: 0.55; filter: grayscale(0.6) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); }
-.toybox-cell.selected:not(.owned) .toybox-figure { opacity: 0.85; }
+.toybox-cell:not(.owned) .toybox-figure { opacity: 0.92; }
+.toybox-cell.owned::after { content: "✓"; position: absolute; left: 6%; top: 4%; width: 1.6vh; height: 1.6vh; line-height: 1.6vh; border-radius: 50%; background: #5fd27a; color: #08210f; font-size: 1.1vh; text-align: center; font-weight: 700; box-shadow: 0 0 6px rgba(95, 210, 122, 0.7); }
 .toybox-placeholder { width: 70%; height: 70%; border-radius: 12%; background: rgba(255, 255, 255, 0.12); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.7); font-size: 2.4vh; font-weight: 600; margin-bottom: 6%; }
 .toybox-star { position: absolute; top: 4%; right: 6%; color: #ffd54a; font-size: 1.8vh; text-shadow: 0 0 6px rgba(255, 213, 74, 0.8); }
 .toybox-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 10%; color: rgba(255, 255, 255, 0.75); font-size: 1.9vh; }
