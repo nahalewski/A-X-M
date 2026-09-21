@@ -183,6 +183,7 @@ export const LAUNCH_IMAGE_FOR: Record<string, string> = {
   switch: "assets/launch/switch.webp",
   wii: "assets/launch/wii.webp",
   wiiu: "assets/launch/wiiu.webp",
+  "3ds": "assets/launch/3ds.webp",
   ds: "assets/launch/ds.webp",
   dsi: "assets/launch/dsi.webp",
 };

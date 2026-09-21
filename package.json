@@ -1,7 +1,7 @@
 {
   "name": "axm",
   "productName": "A-X-M",
-  "version": "0.6.1-beta.1",
+  "version": "0.6.2-beta.1",
   "description": "Ally XMB Menu - PS3-style game hub for ROG Xbox Ally",
   "main": "dist/main/main.js",
   "private": true,
@@ -13,7 +13,8 @@
     "start": "npm run build && electron .",
     "dev": "npm run build && electron . --dev",
     "package": "npm run build && electron-builder",
-    "package:deck": "npm run build && electron-builder --linux AppImage --x64"
+    "package:deck": "npm run build && electron-builder --linux AppImage --x64",
+    "bump": "node scripts/bump-version.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

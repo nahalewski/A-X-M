@@ -15,12 +15,28 @@ rem
 rem  Usage:  build-all.bat              build everything
 rem          build-all.bat win          Windows portable and installer only
 rem          build-all.bat deck         Steam Deck AppImage only
+rem          build-all.bat bump         step the version first, then build all
+rem
+rem  "bump" moves 0.6.2-beta.1 to 0.6.3-beta.1 across package.json and the
+rem  Android app, and raises the phone's versionCode so it accepts the upgrade.
+rem  It is deliberately not automatic on every build: a version that moves when
+rem  nothing changed makes it impossible to tell which package someone is on.
 rem ---------------------------------------------------------------------------
 
 cd /d "%~dp0"
 
 set "TARGET=%~1"
 if "%TARGET%"=="" set "TARGET=all"
+
+if /i "%TARGET%"=="bump" (
+  echo [....] stepping the version
+  call npm run bump
+  if errorlevel 1 (
+    echo [FAIL] could not bump the version
+    exit /b 1
+  )
+  set "TARGET=all"
+)
 
 set "WIN_RESULT=skipped"
 set "DECK_RESULT=skipped"

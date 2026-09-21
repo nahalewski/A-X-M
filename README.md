@@ -315,9 +315,99 @@ one move. The footer draws the glyphs of whichever pad is first.
 
 ## Credits
 
-Developed with AI as a passion project - see *Settings › About*. Icons, sounds and sprite
-sheets are credited in `assets/THIRD_PARTY_LICENSES.md`. Not affiliated with Sony, ASUS,
-Microsoft, Valve, Epic, Jellyfin or TMDB.
+A-X-M is a passion project, developed with AI. It is not affiliated with Sony, Nintendo,
+ASUS, Microsoft, Valve, Epic, Jellyfin or TMDB, and ships none of their firmware, code or
+artwork. Every console mark that appears belongs to its owner.
+
+Everything below is somebody else's work that A-X-M depends on, borrows from, or drives.
+Full licence texts and the per-asset notices are in
+[`assets/THIRD_PARTY_LICENSES.md`](assets/THIRD_PARTY_LICENSES.md), and the same list is
+in the menu under *Settings › About & Credits*.
+
+### Code ported or adapted into this project
+
+| Project | Licence | What A-X-M takes from it |
+| --- | --- | --- |
+| [bucanero/apollo-lib](https://github.com/bucanero/apollo-lib) | GPL-3.0 | The `.savepatch` format and patch engine. `src/main/apollo/savepatch.ts` and `engine.ts` are a TypeScript port of its loader and `patches.c`, following its rules line for line and refusing by name what is not ported. |
+| [bucanero/apollo-patches](https://github.com/bucanero/apollo-patches) | GPL-3.0 | The cheat / save-edit database. Downloaded on demand, never bundled; every patch keeps its author line. |
+| [bucanero/apollo-saves](https://github.com/bucanero/apollo-saves) | GPL-3.0 | Community save files, fetched one at a time when asked for. |
+| [JMRDev0/XMB-PS3-Icons-Sounds-Pack](https://github.com/JMRDev0/XMB-PS3-Icons-Sounds-Pack) | MIT | The PS3-style icon set, menu loop and navigation blips - an original theme pack, not extracted firmware. |
+| [aldostools/Bruteforce-Save-Data](https://github.com/aldostools/Bruteforce-Save-Data) | - | The lineage of the BSD scripts and Save Wizard code format the patch engine reads. |
+| Ross Ridge's ps2mc / mymc notes | - | The description of the PS2 memory card filesystem that `src/main/ps2card.ts` reads and writes. |
+
+The Apollo-derived parts of A-X-M (`src/main/apollo/`) are GPL-3.0, like their source.
+
+### Libraries bundled into the app
+
+| Library | Licence | Used for |
+| --- | --- | --- |
+| [three.js](https://github.com/mrdoob/three.js) | MIT | The flowing ribbon background. The shaders themselves are original to this project. |
+| [hls.js](https://github.com/video-dev/hls.js) | Apache-2.0 | Playing Jellyfin and TV Streaming HLS transcodes. |
+| [music-metadata](https://github.com/Borewit/music-metadata) | MIT | Reading tags and embedded covers for the Song Information card. |
+| [vosk-browser](https://github.com/ccoreilly/vosk-browser) / [Vosk](https://github.com/alphacep/vosk-api) | Apache-2.0 | Ghost's offline speech recognition. Nothing is sent anywhere. |
+| [ws](https://github.com/websockets/ws) | MIT | The WebSocket server the Android companion connects to. |
+| [Electron](https://github.com/electron/electron) | MIT | The app shell. |
+| [electron-builder](https://github.com/electron-userland/electron-builder) | MIT | The portable, installer and Steam Deck packages. |
+| [esbuild](https://github.com/evanw/esbuild) | MIT | Bundling. |
+| [TypeScript](https://github.com/microsoft/TypeScript) | Apache-2.0 | The language. |
+
+### Game information databases
+
+Downloaded into the user's own cache when first needed, never bundled.
+
+| Source | Licence | Used for |
+| --- | --- | --- |
+| [niemasd/GameDB-PSX](https://github.com/niemasd/GameDB-PSX) | GPL-3.0 | PlayStation release data: title, serial, region, publisher, developer, genre, date. |
+| [niemasd/GameDB-PS2](https://github.com/niemasd/GameDB-PS2) | GPL-3.0 | The same for PlayStation 2. |
+| [niemasd/GameDB-PS3](https://github.com/niemasd/GameDB-PS3) | GPL-3.0 | PlayStation 3. Note this set is largely serial-to-title; it carries almost no publisher or date. |
+| [GameTDB](https://www.gametdb.com) | free for non-commercial use | The Nintendo platforms, read from its published XML dumps. |
+
+GameDB's own sources are credited in each of its repositories: GameFAQs, Glitchwave,
+MobyGames, PlayStation Datacenter, Redump, ScreenScraper, SerialStation and VGArchive.
+
+### Emulators and external tools
+
+Launched or driven by the menu. None are bundled; each is installed by the user, or
+fetched from its own official release with the user's say-so.
+
+| Project | Licence | Role |
+| --- | --- | --- |
+| [streetpea/chiaki-ng](https://github.com/streetpea/chiaki-ng) | GPL-3.0 | PS4 / PS5 Remote Play. Pairing and sign-in happen inside chiaki-ng, so the menu never sees those credentials. |
+| [stenzek/duckstation](https://github.com/stenzek/duckstation) | - | PlayStation. Its `settings.ini` tells the menu where its memory cards live. |
+| [PCSX2/pcsx2](https://github.com/PCSX2/pcsx2) | GPL-3.0 | PlayStation 2, including its folder-card format. |
+| [RPCS3/rpcs3](https://github.com/RPCS3/rpcs3) | GPL-2.0 | PlayStation 3. |
+| [hrydgard/ppsspp](https://github.com/hrydgard/ppsspp) | GPL-2.0 | PSP. |
+| [shadps4-emu/shadPS4](https://github.com/shadps4-emu/shadPS4) | GPL-2.0 | PlayStation 4. |
+| [InoriRus/Kyty](https://github.com/InoriRus/Kyty) | - | PlayStation 5, experimental. |
+| [Eden](https://git.eden-emu.dev/eden-emu/eden) | GPL-3.0 | Nintendo Switch. Keys and firmware must be the user's own, from their own console. |
+| [yt-dlp/yt-dlp](https://github.com/yt-dlp/yt-dlp) | Unlicense | Ghost Radio and music search, into the user's own MUSIC folder. |
+| [FFmpeg](https://ffmpeg.org) | LGPL-2.1+ / GPL-2+ | Transcoding, thumbnails, tagging, audio CD import (with libcdio). |
+| [HandBrake](https://handbrake.fr) | GPL-2.0 | DVD / MKV to MP4 for Backup. |
+| [MakeMKV](https://www.makemkv.com) | proprietary, free in beta | Blu-ray reading. |
+
+### Online services
+
+| Service | Notes |
+| --- | --- |
+| [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org) | Artist details and covers. Rate-limited to one request a second, as their terms ask. |
+| [TMDB](https://www.themoviedb.org) | Film and series details and posters. This product uses the TMDB API but is not endorsed or certified by TMDB. |
+| [SteamGridDB](https://www.steamgriddb.com) | Box art, heroes and icons for games. |
+| [RetroAchievements](https://retroachievements.org) | Achievements for console games. |
+| [LRCLIB](https://lrclib.net) | Synced lyrics for the Karaoke visualiser. |
+| [SubDL](https://subdl.com) | Subtitles. |
+| [Jellyfin](https://github.com/jellyfin/jellyfin) | The user's own media server, when they have one. |
+
+Every API key is the user's own and lives only in their settings; none ship with A-X-M.
+
+### Artwork and NFC data
+
+The toy figure artwork, NFC identifiers and shelf sprites used by Toybox come from the
+community collections listed in *Settings › About & Credits* and in
+[`assets/THIRD_PARTY_LICENSES.md`](assets/THIRD_PARTY_LICENSES.md), each with its own
+source link. Amiibo, Skylanders, Disney Infinity and LEGO Dimensions are trademarks of
+their respective owners; A-X-M stores only what the user's own figures report.
+
+The A-X-M mark, the launch screens and the ribbon background are original to this project.
 
 ## Ribbon background
 

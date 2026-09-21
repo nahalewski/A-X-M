@@ -75,6 +75,17 @@ SOFTWARE.
 - [music-metadata](https://github.com/Borewit/music-metadata) - MIT License, Copyright (c)
   2015 Borewit. Reads a track's tags and embedded cover for the Song Information card.
   Full text: `node_modules/music-metadata/LICENSE.txt`.
+- [three.js](https://github.com/mrdoob/three.js) - MIT License, Copyright (c) 2010-2024
+  three.js authors. Draws the flowing ribbon background; the shaders in
+  `src/background/ribbonShaders.ts` are original to this project and run on top of it.
+  Full text: `node_modules/three/LICENSE`.
+- [vosk-browser](https://github.com/ccoreilly/vosk-browser) - Apache License 2.0,
+  Copyright (c) Ciaran O'Reilly, wrapping [Vosk](https://github.com/alphacep/vosk-api)
+  (Apache-2.0, Alpha Cephei). Offline speech recognition for Ghost's voice commands;
+  nothing is sent anywhere. Full text: `node_modules/vosk-browser/LICENSE`.
+- [ws](https://github.com/websockets/ws) - MIT License, Copyright (c) 2011 Einar Otto
+  Stangvik and contributors. The WebSocket server the Android companion connects to.
+  Full text: `node_modules/ws/LICENSE`.
 
 ## Apollo Save Tool (GPL-3.0)
 
@@ -97,6 +108,22 @@ All three are GNU General Public License v3.0. The Apollo-derived parts of A-X-M
 <https://www.gnu.org/licenses/gpl-3.0.html>. Bruteforce Save Data (aldostools) and the
 Save Wizard code format are the lineage of the codes themselves. Ross Ridge's ps2mc /
 mymc notes describe the PS2 card filesystem `src/main/ps2card.ts` reads and writes.
+
+## Game information databases
+
+Downloaded on demand into the user's own cache and never bundled, so a GPL-3.0
+dataset is not redistributed with A-X-M. Both answer the Information panel's
+"who made this, when did it come out" for console games.
+
+- [GameDB-PSX](https://github.com/niemasd/GameDB-PSX),
+  [GameDB-PS2](https://github.com/niemasd/GameDB-PS2) and
+  [GameDB-PS3](https://github.com/niemasd/GameDB-PS3) - GPL-3.0, Niema Moshiri
+  (niemasd), part of [GameDB](https://github.com/niemasd/GameDB). Release data for the
+  PlayStation platforms: title, serial, region, publisher, developer, genre and date.
+  Their own sources are credited in each repository's README - GameFAQs, Glitchwave,
+  MobyGames, PlayStation Datacenter, Redump, ScreenScraper, SerialStation and VGArchive.
+- [GameTDB](https://www.gametdb.com) - a community database for the Nintendo platforms,
+  read from its published XML dumps. Free for non-commercial use; see the site's terms.
 
 ## Online services
 
@@ -127,3 +154,24 @@ mymc notes describe the PS2 card filesystem `src/main/ps2card.ts` reads and writ
 - [HandBrakeCLI](https://handbrake.fr) - GPL-2.0 - DVD / MKV to MP4 for Backup.
 - [MakeMKV](https://www.makemkv.com) - proprietary, free while in beta - Blu-ray reading.
 - ffmpeg with libcdio - GPL/LGPL - audio CD import.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - Unlicense - fetches music for Ghost Radio
+  and the music search, into the user's own MUSIC folder. Downloaded on first use.
+- [FFmpeg](https://ffmpeg.org) - LGPL-2.1+/GPL-2+ - transcoding, thumbnails, tagging and
+  joining the optional menu music. Not bundled; found on PATH or fetched on request.
+
+### Emulators
+
+Launched by the menu, never bundled, and each installed by the user or fetched from its
+own official release with the user's say-so. A-X-M reads their memory-card folders and
+configuration files; it does not include any of their code.
+
+- [DuckStation](https://github.com/stenzek/duckstation) - Stenzek - PlayStation.
+  Its `settings.ini` gives the menu the memory-card folder to read and write.
+- [PCSX2](https://github.com/PCSX2/pcsx2) - GPL-3.0 - PlayStation 2. Likewise via
+  `PCSX2.ini`, including its folder-card format.
+- [RPCS3](https://github.com/RPCS3/rpcs3) - GPL-2.0 - PlayStation 3.
+- [PPSSPP](https://github.com/hrydgard/ppsspp) - GPL-2.0 - PSP.
+- [shadPS4](https://github.com/shadps4-emu/shadPS4) - GPL-2.0 - PlayStation 4.
+- [Kyty](https://github.com/InoriRus/Kyty) - PlayStation 5, experimental.
+- [Eden](https://git.eden-emu.dev/eden-emu/eden) - GPL-3.0 - Nintendo Switch. Keys and
+  firmware are the user's own, from their own console; A-X-M supplies neither.

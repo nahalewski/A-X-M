@@ -2449,6 +2449,10 @@ async function main(): Promise<void> {
           showInfo("About & Credits", "assets/icons/about.webp", null, [
             { label: "Apollo Save Tool", value: "Damian \"bucanero\" Parrino: apollo-lib (the patch engine A-X-M ports), apollo-patches (the cheat database) and apollo-saves (the community saves). GPL-3.0." },
             { label: "Game information", value: "niemasd's GameDB (PSX, PS2, PS3) for PlayStation release data, and GameTDB for the Nintendo platforms. Downloaded on demand, never bundled. GPL-3.0." },
+            { label: "Theme and sounds", value: "The PS3-style icons, menu loop and blips are Justin Rankin's XMB-PS3-Icons-Sounds-Pack (MIT) - an original theme pack, not Sony firmware assets." },
+            { label: "Remote Play", value: "chiaki-ng (streetpea), GPL-3.0. Fetched on first use; the console pairing and sign-in happen inside it, so the menu never sees those credentials." },
+            { label: "Libraries", value: "three.js for the ribbon background, hls.js for streams, music-metadata for tags, vosk-browser for offline voice, ws for the companion link." },
+            { label: "Tools", value: "yt-dlp and FFmpeg for music and video, HandBrakeCLI and MakeMKV for disc backup, libcdio for CD import. None are bundled." },
             { label: "HD texture packs", value: authors.join("\n") },
             { label: "Collections", value: db.moreSources.map((s) => `${s.name}\n${s.url}`).join("\n") },
             { label: "Emulators", value: "DuckStation (stenzek) and PCSX2, whose card formats and texture folders these are; RPCS3, PPSSPP, Eden, shadPS4, Kyty." },
