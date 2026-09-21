@@ -335,14 +335,18 @@ async function main(): Promise<void> {
   const driveRows = (kind: "photo" | "video" | "game" | "music", open: (folder: string) => void): MenuItem[] => {
     const present = mediaDrives
       .filter((d) => d[kind])
-      .map((d): MenuItem => ({
-        id: `drive-${kind}-${d.drive}`,
-        title: `${d.drive} Drive`,
-        subtitle: `${kind.toUpperCase()} folder`,
-        iconUrl: "assets/icons/hdd.webp",
-        iconClass: `hdd hdd-${kind}`,
-        onConfirm: () => open(d[kind]!),
-      }));
+      .map((d): MenuItem => {
+        // A drive on the Sabrent adapter is a cartridge: its games, under its own icon.
+        const cart = kind === "game" && isCartridge(d.drive);
+        return {
+          id: `drive-${kind}-${d.drive}`,
+          title: cart ? `Cartridge (${d.drive})` : `${d.drive} Drive`,
+          subtitle: cart ? "Plugged into the SATA adapter · its games" : `${kind.toUpperCase()} folder`,
+          iconUrl: cart ? "assets/icons/cartridge.png" : "assets/icons/hdd.webp",
+          iconClass: cart ? "cartridge" : `hdd hdd-${kind}`,
+          onConfirm: () => open(d[kind]!),
+        };
+      });
     const absent = settings.knownDrives
       .filter((k) => k[kind] && !mediaDrives.some((d) => d.drive === k.drive))
       .map((k): MenuItem => ({
@@ -660,7 +664,104 @@ async function main(): Promise<void> {
    * never learns a phone is involved, and a phone dropping mid-press leaves
    * nothing to unwind.
    */
+  /**
+   * The menu settings a paired phone shows and can change. The phone gets this
+   * list (labels, choices, current values) and sends back an id and a value; the
+   * same code that the menu's own rows run applies it, so nothing is duplicated.
+   */
+  const PCT = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1].map((v) => ({ id: String(v), label: `${Math.round(v * 100)}%` }));
+  const onOff = (v: boolean) => (v ? "on" : "off");
+  const companionSettingsItems = () => [
+    { id: "musicVolume", title: "Music Volume", group: "Audio", kind: "choice" as const, value: String(settings.musicVolume), options: PCT },
+    { id: "sfxVolume", title: "Menu Sound Volume", group: "Audio", kind: "choice" as const, value: String(settings.sfxVolume), options: PCT },
+    { id: "navSounds", title: "Navigation Sounds", group: "Audio", kind: "toggle" as const, value: onOff(settings.navSoundsEnabled) },
+    { id: "musicShuffle", title: "Music Shuffle", group: "Audio", kind: "toggle" as const, value: onOff(settings.musicShuffle), detail: "Next track at random" },
+    { id: "lyrics", title: "Lyrics", group: "Audio", kind: "toggle" as const, value: onOff(settings.lyricsEnabled), detail: "LRCLIB words for the Karaoke visualizer" },
+    { id: "visualizerEnabled", title: "Visualizer", group: "Theme", kind: "toggle" as const, value: onOff(settings.visualizerEnabled) },
+    { id: "visualizerStyle", title: "Visualizer Style", group: "Theme", kind: "choice" as const, value: settings.visualizerStyle, options: VISUALIZER_STYLES.map((s) => ({ id: s.id, label: `${s.label} · ${s.origin}` })) },
+    { id: "ribbon", title: "Ribbon Background", group: "Theme", kind: "toggle" as const, value: onOff(settings.ribbonEnabled) },
+    { id: "windowMode", title: "Display Mode", group: "Display", kind: "choice" as const, value: settings.windowed ? "windowed" : "fullscreen", options: [{ id: "fullscreen", label: "Fullscreen" }, { id: "windowed", label: "Windowed" }] },
+    { id: "tvEnglishOnly", title: "TV · English Only", group: "TV Streaming", kind: "toggle" as const, value: onOff(settings.tvEnglishOnly), detail: "Hide channels, films and shows tagged as another language" },
+    { id: "tvAdultBlocked", title: "TV · Adult Content Blocked", group: "TV Streaming", kind: "toggle" as const, value: onOff(settings.tvAdultBlocked), detail: settings.tvPin ? "Behind the PIN" : "No PIN set - set one on the A-X-M screen" },
+    { id: "subtitlesEnabled", title: "Subtitles", group: "TV Streaming", kind: "toggle" as const, value: onOff(settings.subtitles?.enabled ?? false), detail: "Fetched from SubDL when a film or episode starts" },
+    { id: "subtitlesLanguage", title: "Subtitle Language", group: "TV Streaming", kind: "choice" as const, value: settings.subtitles?.language ?? "EN", options: ["EN", "ES", "FR", "DE", "IT", "PT", "NL", "JA"].map((l) => ({ id: l, label: l })) },
+    { id: "audioLanguage", title: "Audio Language", group: "TV Streaming", kind: "choice" as const, value: settings.audioLanguage || "en", options: [["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["it", "Italian"], ["pt", "Portuguese"], ["nl", "Dutch"], ["ja", "Japanese"], ["ko", "Korean"], ["zh", "Chinese"], ["ru", "Russian"], ["ar", "Arabic"]].map(([id, label]) => ({ id, label })) },
+    { id: "assistant", title: "Ghost", group: "Assistant", kind: "toggle" as const, value: onOff(settings.assistant.enabled), detail: 'The voice assistant · "hey ghost"' },
+    { id: "assistantVoice", title: "Ghost Speaks", group: "Assistant", kind: "toggle" as const, value: onOff(settings.assistant.voiceReplies) },
+    { id: "toyboxSpeak", title: "Toybox · Ghost Announces Toys", group: "Toybox", kind: "toggle" as const, value: onOff(settings.toybox.speak) },
+    { id: "toyboxCards", title: "Toybox · Cards", group: "Toybox", kind: "toggle" as const, value: onOff(settings.toybox.showCards) },
+  ];
+  let lastCompanionSettings = "";
+  const publishCompanionSettings = () => {
+    const items = companionSettingsItems();
+    const key = JSON.stringify(items);
+    if (key === lastCompanionSettings) return;
+    lastCompanionSettings = key;
+    window.axm.companionSettings(items);
+  };
+  publishCompanionSettings();
+  // Changes made on this screen reach the phone within a couple of seconds.
+  setInterval(publishCompanionSettings, 2000);
+
+  const applyCompanionSetting = async (id: string, value: string) => {
+    const on = value === "on";
+    const pct = Math.min(1, Math.max(0, Number(value)));
+    switch (id) {
+      case "musicVolume": settings = await window.axm.setSettings({ musicVolume: pct }); audio.setVolumes(settings.musicVolume, settings.sfxVolume); musicPlayer.setVolume(settings.musicVolume); break;
+      case "sfxVolume": settings = await window.axm.setSettings({ sfxVolume: pct }); audio.setVolumes(settings.musicVolume, settings.sfxVolume); break;
+      case "navSounds": settings = await window.axm.setSettings({ navSoundsEnabled: on }); audio.setSfxEnabled(on); break;
+      case "musicShuffle": settings = await window.axm.setSettings({ musicShuffle: on }); musicPlayer.setShuffle(on); break;
+      case "lyrics": settings = await window.axm.setSettings({ lyricsEnabled: on }); break;
+      case "visualizerEnabled": settings = await window.axm.setSettings({ visualizerEnabled: on }); if (!on && visualizer.currentMode() !== "off") clearVisualizer(); break;
+      case "visualizerStyle":
+        if (VISUALIZER_STYLE_IDS.includes(value as VisualizerStyle)) {
+          visualizer.setStyle(value as VisualizerStyle, visualizer.currentMode() === "stage");
+          settings = await window.axm.setSettings({ visualizerStyle: value as VisualizerStyle });
+          // Picked from the phone while music plays: show it, behind the menu.
+          if (musicPlayer.current() && settings.visualizerEnabled && visualizer.currentMode() === "off") {
+            if (!visualizer.isAvailable()) visualizer.attach(musicPlayer.element());
+            visualizer.setTrackName(musicPlayer.current()?.name ?? null);
+            visualizer.setMode("background");
+          }
+        }
+        break;
+      case "ribbon": settings = await window.axm.setSettings({ ribbonEnabled: on }); applyTheme(); break;
+      case "windowMode": if ((value === "windowed") !== settings.windowed) settings = await window.axm.toggleFullscreen(); break;
+      case "tvEnglishOnly": settings = await window.axm.setSettings({ tvEnglishOnly: on }); tv.categories = []; tv.items = []; break;
+      case "tvAdultBlocked": settings = await window.axm.setSettings({ tvAdultBlocked: on }); tvAdultUnlocked = false; tv.categories = []; tv.items = []; break;
+      case "subtitlesEnabled": settings = await window.axm.setSettings({ subtitles: { enabled: on, language: settings.subtitles?.language ?? "EN" } }); break;
+      case "subtitlesLanguage": settings = await window.axm.setSettings({ subtitles: { enabled: settings.subtitles?.enabled ?? true, language: value.toUpperCase().slice(0, 5) } }); break;
+      case "audioLanguage": settings = await window.axm.setSettings({ audioLanguage: value.toLowerCase().slice(0, 3) }); mediaViewer.setAudioLanguage(settings.audioLanguage); break;
+      case "assistant": settings = await window.axm.setSettings({ assistant: { ...settings.assistant, enabled: on } }); break;
+      case "assistantVoice": settings = await window.axm.setSettings({ assistant: { ...settings.assistant, voiceReplies: on } }); break;
+      case "toyboxSpeak": settings = await window.axm.setSettings({ toybox: { ...settings.toybox, speak: on } }); break;
+      case "toyboxCards": settings = await window.axm.setSettings({ toybox: { ...settings.toybox, showCards: on } }); break;
+      default: return;
+    }
+    xmb.refresh();
+    publishCompanionSettings();
+  };
+
   window.axm.onCompanionInput((input) => {
+    if (input.kind === "setting") {
+      void applyCompanionSetting(input.id, input.value);
+      return;
+    }
+    if (input.kind === "keyboard") {
+      textEntry.setValue(input.text, input.done);
+      return;
+    }
+    if (input.kind === "musicPlay") {
+      // The phone picked a track in the library: play it with its folder as the queue.
+      const folder = input.filePath.replace(/[\\/][^\\/]*$/, "");
+      void window.axm.browseMusic(folder).then((listing) => {
+        const entry = listing.entries.find((e) => e.kind === "track" && e.filePath.toLowerCase() === input.filePath.toLowerCase());
+        if (!entry) return;
+        musicPlayer.play(entry, listing.entries, settings.musicVolume);
+        xmb.refresh();
+      }).catch(() => {});
+      return;
+    }
     if (input.kind === "xmb") {
       // Guide is not a menu action - it toggles the in-game overlay, the same as
       // the pad's guide button, so the phone's Home does what that button does.
@@ -825,9 +926,14 @@ async function main(): Promise<void> {
   // stick plugged in a moment ago is offered.
   let volumes: VolumeInfo[] = [];
   const refreshVolumes = async () => {
+    const before = volumes.filter((v) => v.cartridge).map((v) => v.drive).join();
     volumes = await window.axm.getVolumes();
+    if (volumes.filter((v) => v.cartridge).map((v) => v.drive).join() !== before) xmb.refresh();
   };
+  const isCartridge = (drive: string) => volumes.some((v) => v.cartridge && v.drive.toUpperCase() === drive.slice(0, 2).toUpperCase());
   void refreshVolumes();
+  // Plugging the cartridge in (or pulling it) shows up within the minute.
+  setInterval(() => void refreshVolumes(), 45_000);
   const fmtBytes = (n: number): string => (n >= 1e12 ? `${(n / 1e12).toFixed(2)} TB` : n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${(n / 1e6).toFixed(0)} MB`);
   const copyTargets = (kind: "music" | "photo" | "video", sourcePath: string | null): PopupOption[] => {
     const folder = { music: "MUSIC", photo: "PHOTO", video: "VIDEO" }[kind];
@@ -921,6 +1027,8 @@ async function main(): Promise<void> {
       })
       .join("");
   };
+
+  textEntry.setOnPrompt((prompt) => window.axm.companionKeyboard(prompt));
 
   const askText = (title: string, fields: Parameters<TextEntry["show"]>[1]): Promise<string[] | null> =>
     new Promise((resolve) => {
@@ -1902,6 +2010,15 @@ async function main(): Promise<void> {
         driveFolder = folder;
         go("drive");
       }),
+      // The cartridge (a drive on the Sabrent adapter), whether or not it has a GAME folder.
+      ...volumes.filter((v) => v.cartridge && !mediaDrives.some((d) => d.game && d.drive.toUpperCase() === v.drive.toUpperCase())).map((v): MenuItem => ({
+        id: `cartridge-${v.drive}`,
+        title: `Cartridge (${v.drive})`,
+        subtitle: "Plugged into the SATA adapter · its games",
+        iconUrl: "assets/icons/cartridge.png",
+        iconClass: "cartridge",
+        onConfirm: () => { driveFolder = `${v.drive}\\`; go("drive"); },
+      })),
       ...discRows(["ps1", "ps2"]),
       ...gameRows(),
     ];
@@ -1914,6 +2031,10 @@ async function main(): Promise<void> {
         return dir === root || dir.startsWith(root + "\\");
       });
       if (rows.length === 0) {
+        if (isCartridge(driveFolder)) {
+          const n = games.filter((g) => g.source === "retro" && !g.hidden && g.drive?.toUpperCase() === driveFolder.slice(0, 2).toUpperCase()).length;
+          return [{ id: "drive-empty", title: n ? `${n} console game${n === 1 ? "" : "s"} on the cartridge` : "No games found", subtitle: n ? `Under Retro › Cartridge (${driveFolder.slice(0, 2)}) · PC games go in ${driveFolder.slice(0, 2)}\\GAME` : `Put PC games in ${driveFolder.slice(0, 2)}\\GAME and console games in ${driveFolder.slice(0, 2)}\\ROMS\\<platform>`, iconUrl: "assets/icons/cartridge.png", iconClass: "cartridge" }];
+        }
         return [{ id: "drive-empty", title: "No games found", subtitle: `Put each game in its own folder under ${driveFolder}`, iconUrl: "assets/icons/hdd.webp", iconClass: "hdd hdd-game" }];
       }
       return rows;
@@ -2445,7 +2566,7 @@ async function main(): Promise<void> {
     tv.busy = true;
     tv.view = "categories";
     tvRefresh();
-    tv.categories = await window.axm.tvCategories(kind).catch(() => []);
+    tv.categories = await window.axm.tvCategories(kind, tvAdultUnlocked).catch(() => []);
     tv.busy = false;
     tvRefresh();
   };
@@ -2455,7 +2576,7 @@ async function main(): Promise<void> {
     tv.busy = true;
     tv.view = "items";
     tvRefresh();
-    tv.items = await window.axm.tvItems(tv.kind, category.id).catch(() => []);
+    tv.items = await window.axm.tvItems(tv.kind, category.id, tvAdultUnlocked).catch(() => []);
     tv.busy = false;
     tvRefresh();
   };
@@ -2481,6 +2602,7 @@ async function main(): Promise<void> {
     pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
     if (subs) void fetchSubtitles(subs, url);
   };
+  mediaViewer.setAudioLanguage(settings.audioLanguage || "en");
   mediaViewer.setOnVideoError((entry) => {
     if (!/^https?:\/\//.test(entry.url ?? "") || entry.hls || tvRelayTried === entry.filePath) return;
     tvRelayTried = entry.filePath;
@@ -2623,9 +2745,23 @@ async function main(): Promise<void> {
       { id: "tv-live", title: "Live TV", subtitle: "Channels", iconUrl: "assets/icons/tv-live.webp", onConfirm: () => void tvOpenKind("live") },
       { id: "tv-movies", title: "Movies", iconUrl: "assets/icons/tv-movies.webp", onConfirm: () => void tvOpenKind("movie") },
       { id: "tv-series", title: "Series", iconUrl: "assets/icons/tv-series.webp", onConfirm: () => void tvOpenKind("series") },
-      { id: "tv-language", title: "English Only", subtitle: settings.tvEnglishOnly ? "On · channels, films and shows tagged as another language are hidden" : "Off · everything the service lists", iconUrl: "assets/icons/tv-epg.webp", onConfirm: async () => { settings = await window.axm.setSettings({ tvEnglishOnly: !settings.tvEnglishOnly }); tv.categories = []; tv.items = []; xmb.refresh(); } },
+      ...(settings.tvAdultBlocked
+        ? [{ id: "tv-adult", title: "Adult Content", subtitle: tvAdultUnlocked ? "Unlocked until A-X-M closes · press to lock again" : "Locked · enter the PIN to show it this once", iconUrl: "assets/icons/tv-epg.webp", onConfirm: async () => { if (tvAdultUnlocked) { tvAdultUnlocked = false; tv.categories = []; tv.items = []; xmb.refresh(); return; } if (await askPin("Adult Content")) { tvAdultUnlocked = true; tv.categories = []; tv.items = []; notifier.push("Adult content shown until A-X-M closes", "general"); xmb.refresh(); } } }]
+        : []),
+      { id: "tv-settings-hint", title: "Languages and Filters", subtitle: `${settings.tvEnglishOnly ? "English only" : "All languages"}${Object.keys(settings.tvLanguageOverrides ?? {}).length ? ` · ${Object.keys(settings.tvLanguageOverrides).length} overridden` : ""} · Settings › TV Streaming`, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => notifier.push("Languages, adult PIN, subtitles and audio are in Settings › TV Streaming", "general") },
       { id: "tv-account", title: "Account", subtitle: tv.status.message, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => void tvSignIn() },
     ];
+  };
+
+  /** Adult rows are shown only after the PIN, and only until the app closes. */
+  let tvAdultUnlocked = false;
+  const askPin = async (title: string): Promise<boolean> => {
+    if (!settings.tvPin) return true;
+    const a = await askText(title, [{ label: "PIN", value: "", secret: true }]);
+    if (!a) return false;
+    if (a[0].trim() === settings.tvPin) return true;
+    notifier.push("That PIN isn't right", "general");
+    return false;
   };
 
   const tvEntry: MenuItem = {
@@ -2665,12 +2801,12 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | "companion" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | "companion" | "tv" | "tvlang" | { month: number };
   /** Which group each root row files under; anything unlisted stays at the top level. */
-  const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
+  const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme" | "tv"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
     fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
-    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", subtitles: "sys", subdlKey: "sys", lyrics: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
+    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", subtitles: "tv", subdlKey: "tv", lyrics: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
     "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
@@ -2900,7 +3036,7 @@ async function main(): Promise<void> {
         const group = SETTINGS_GROUPS[item.id];
         settingLabels.push({ name: item.title, go: () => { goCategory("settings"); if (group) go(group); else go("root"); xmb.refresh(); } });
       }
-      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["toybox settings", "toybox"], ["theme settings", "theme"]] as const) {
+      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["toybox settings", "toybox"], ["tv settings", "tv"], ["theme settings", "theme"]] as const) {
         settingLabels.push({ name, go: () => { goCategory("settings"); if (v === "network") void netOpen(); else go(v as SettingsView); } });
       }
       const all = allRootItems();
@@ -2925,6 +3061,7 @@ async function main(): Promise<void> {
             go("companion");
           },
         },
+        { id: "group-tv", title: "TV Streaming", subtitle: `${settings.tvEnglishOnly ? "English only" : "All languages"} · adult content ${settings.tvAdultBlocked ? "behind a PIN" : "shown"} · subtitles ${settings.subtitles?.enabled ? settings.subtitles.language : "off"} · audio ${(settings.audioLanguage || "en").toUpperCase()}`, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => go("tv") },
         { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconUrl: "assets/icons/settings-assistant.png", onConfirm: () => go("assistant") },
         { id: "group-toybox", title: "Toybox", subtitle: "What Ghost does when a toy is scanned, readers, the companion app", iconUrl: "assets/icons/toybox.webp", onConfirm: () => go("toybox") },
       ];
@@ -3773,6 +3910,54 @@ async function main(): Promise<void> {
       xmb.refresh();
     };
     const onOff = (v: boolean) => (v ? "On" : "Off");
+    /** Settings › TV Streaming: what the portal shows, the adult PIN, subtitles and audio. */
+    let tvTags: { tag: string; count: number; english: boolean }[] | null = null;
+    const AUDIO_LANGS: [string, string][] = [["en", "English"], ["es", "Spanish"], ["fr", "French"], ["de", "German"], ["it", "Italian"], ["pt", "Portuguese"], ["nl", "Dutch"], ["ja", "Japanese"], ["ko", "Korean"], ["zh", "Chinese"], ["ru", "Russian"], ["ar", "Arabic"]];
+    const tvSettingsItems = (): MenuItem[] => {
+      const overrides = settings.tvLanguageOverrides ?? {};
+      const n = Object.keys(overrides).length;
+      return [
+        { id: "tv-english", title: "English Only", subtitle: settings.tvEnglishOnly ? "On · channels, films and shows tagged as another language are hidden" : "Off · everything the service lists", iconUrl: "assets/icons/tv-epg.webp", onConfirm: async () => { await save({ tvEnglishOnly: !settings.tvEnglishOnly }); tv.categories = []; tv.items = []; } },
+        { id: "tv-languages", title: "Languages", subtitle: n ? `${n} tag${n === 1 ? "" : "s"} set by hand · show or hide each language the provider tags` : "Show or hide each language the provider tags", iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => { tvTags = null; void window.axm.tvLanguages().then((t) => { tvTags = t; xmb.refresh(); }).catch(() => { tvTags = []; xmb.refresh(); }); go("tvlang"); } },
+        { id: "tv-adult-block", title: "Adult Content", subtitle: settings.tvAdultBlocked ? `Blocked · ${settings.tvPin ? "behind the PIN" : "no PIN set yet - set one below"} · unlock from the TV Streaming page for one session` : "Shown · adult categories and channels are listed like any other", iconUrl: "assets/icons/tv-epg.webp", onConfirm: async () => {
+          if (settings.tvAdultBlocked && !(await askPin("Show Adult Content"))) return;
+          await save({ tvAdultBlocked: !settings.tvAdultBlocked });
+          tvAdultUnlocked = false;
+          tv.categories = []; tv.items = [];
+        } },
+        { id: "tv-pin", title: settings.tvPin ? "Change PIN" : "Set PIN", subtitle: settings.tvPin ? "4 or more digits · asked before adult content shows" : "Not set · adult content is hidden without one but anyone can unlock it", iconUrl: "assets/icons/tv-epg.webp", onConfirm: async () => {
+          if (settings.tvPin && !(await askPin("Current PIN"))) return;
+          const a = await askText("New PIN", [{ label: "PIN (digits)", value: "", secret: true }]);
+          if (!a) return;
+          const pin = a[0].trim();
+          if (!/^\d{4,8}$/.test(pin)) { notifier.push("A PIN is 4 to 8 digits", "general"); return; }
+          await save({ tvPin: pin });
+          notifier.push("PIN set", "general");
+        } },
+        ...allRootItems().filter((i) => SETTINGS_GROUPS[i.id] === "tv"),
+        { id: "tv-audio", title: "Audio Language", subtitle: `${AUDIO_LANGS.find(([c]) => c === (settings.audioLanguage || "en"))?.[1] ?? settings.audioLanguage} · the track picked when a video has more than one`, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => showOptions("Audio Language", AUDIO_LANGS.map(([code, name]) => ({ label: name, hint: code.toUpperCase(), selected: (settings.audioLanguage || "en") === code, run: async () => { await save({ audioLanguage: code }); mediaViewer.setAudioLanguage(code); } }))) },
+      ];
+    };
+    const tvLanguageItems = (): MenuItem[] => {
+      if (!tvTags) return [{ id: "tvlang-busy", title: "Reading the provider's categories…", iconUrl: "assets/icons/tv-epg.webp" }];
+      if (!tvTags.length) return [{ id: "tvlang-none", title: "No language tags found", subtitle: "The provider doesn't prefix its categories, so there's nothing to filter by", iconUrl: "assets/icons/tv-epg.webp" }];
+      const overrides = settings.tvLanguageOverrides ?? {};
+      return tvTags.map((t) => {
+        const o = overrides[t.tag];
+        const byDefault = t.english || !settings.tvEnglishOnly;
+        const shown = o ? o === "show" : byDefault;
+        return {
+          id: `tvlang-${t.tag}`,
+          title: t.tag,
+          subtitle: `${shown ? "Shown" : "Hidden"}${o ? " · set by hand" : " · by default"} · ${t.count} categor${t.count === 1 ? "y" : "ies"}`,
+          iconUrl: "assets/icons/tv-epg.webp",
+          contextHint: o ? "back to default" : undefined,
+          onConfirm: async () => { await save({ tvLanguageOverrides: { ...overrides, [t.tag]: shown ? "hide" : "show" } }); tv.categories = []; tv.items = []; },
+          onContext: () => { const next = { ...overrides }; delete next[t.tag]; void save({ tvLanguageOverrides: next }).then(() => { tv.categories = []; tv.items = []; }); return true; },
+        };
+      });
+    };
+
     const toyboxSettingsItems = (): MenuItem[] => {
       const t = settings.toybox;
       void window.axm.toyboxNfcStatus().then((st) => (nfcStatus = st)).catch(() => {});
@@ -4326,7 +4511,8 @@ async function main(): Promise<void> {
         if (view === "root") return false;
         if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
         else if (view === "network" && netView !== "root") netSub("root");
-        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox" || view === "companion") go("root");
+        else if (view === "tvlang") go("tv");
+        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox" || view === "companion" || view === "tv") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -4345,6 +4531,8 @@ async function main(): Promise<void> {
         if (view === "assistant") return "Settings › Assistant";
         if (view === "toybox") return "Settings › Toybox";
         if (view === "companion") return "Settings › Companion Devices";
+        if (view === "tv") return "Settings › TV Streaming";
+        if (view === "tvlang") return "Settings › TV Streaming › Languages";
         if (view === "datetime") return "Settings › System › Date and Time";
         if (view === "power") return "Settings › System › Power Save";
         if (view === "chat") return "Settings › System › Chat";
@@ -4367,6 +4555,8 @@ async function main(): Promise<void> {
         if (view === "assistant") return assistantItems();
         if (view === "toybox") return toyboxSettingsItems();
         if (view === "companion") return companionRows();
+        if (view === "tv") return tvSettingsItems();
+        if (view === "tvlang") return tvLanguageItems();
         if (view === "datetime") return dateTimeItems();
         if (view === "power") return powerItems();
         if (view === "chat") return chatItems();
@@ -4407,6 +4597,8 @@ async function main(): Promise<void> {
    */
   function retroCategory(): Category {
     let platform: RetroPlatform | null = null;
+    /** The cartridge drive being browsed, e.g. "N:". */
+    let cartridge: string | null = null;
     let emulators: { platform: RetroPlatform; name: string; exe: string | null; winget: string | null; github?: unknown; note?: string }[] = [];
     const refreshEmulators = () => void window.axm.retroEmulators().then((e) => { emulators = e; xmb.refresh(); }).catch(() => {});
     refreshEmulators();
@@ -4484,20 +4676,41 @@ async function main(): Promise<void> {
     return {
       id: "retro",
       label: "Retro",
-      iconUrl: "assets/icons/retro-ps3.png",
+      iconUrl: "assets/icons/retro-arcade.png",
       onBack: () => {
-        if (!platform) return false;
+        if (!platform && !cartridge) return false;
         platform = null;
+        cartridge = null;
         xmb.refresh();
         return true;
       },
-      footerHint: () => (platform ? `Retro › ${RETRO_NAMES[platform]}${emuOf(platform)?.exe ? ` · ${emuOf(platform)!.name}` : ""}` : undefined),
+      footerHint: () => (cartridge ? `Retro › Cartridge (${cartridge})` : platform ? `Retro › ${RETRO_NAMES[platform]}${emuOf(platform)?.exe ? ` · ${emuOf(platform)!.name}` : ""}` : undefined),
       getItems: () => {
+        if (cartridge) {
+          const list = RETRO_ORDER.flatMap((p) => rows(p).filter((r) => r.contextGame?.drive?.toUpperCase() === cartridge!.toUpperCase()));
+          return list.length ? list : [{ id: "retro-cartridge-empty", title: "No games found", subtitle: `Put console games in ${cartridge}\GAME\ROMS\<PS1, PS2, PS3, PSP, Switch…> on the cartridge`, iconUrl: "assets/icons/cartridge.png", iconClass: "cartridge" }];
+        }
         if (platform) {
           const list = rows(platform);
           return list.length ? list : [{ id: `retro-${platform}-empty`, title: "No games found", subtitle: `Put ${RETRO_NAMES[platform]} games in ${(settings.retroFolders[platform] ?? [RETRO_DEFAULTS[platform]]).join(", ")} - or get them from the Store`, iconUrl: `assets/icons/retro-${platform}.png` }];
         }
-        return RETRO_ORDER.map((p) => {
+        const carts = volumes.filter((v) => v.cartridge);
+        const cartRows: MenuItem[] = carts.map((v) => {
+          const n = games.filter((g) => g.source === "retro" && !g.hidden && g.drive?.toUpperCase() === v.drive.toUpperCase()).length;
+          return {
+            id: `retro-cartridge-${v.drive}`,
+            title: `Cartridge (${v.drive})`,
+            subtitle: `${n} game${n === 1 ? "" : "s"} · plugged into the SATA adapter`,
+            iconUrl: "assets/icons/cartridge.png",
+            iconClass: "cartridge",
+            onConfirm: () => {
+              cartridge = v.drive;
+              xmb.resetSelection("retro");
+              xmb.refresh();
+            },
+          };
+        });
+        return [...cartRows, ...RETRO_ORDER.map((p) => {
           const n = retroGames(p).length;
           const e = emuOf(p);
           return {
@@ -4512,7 +4725,7 @@ async function main(): Promise<void> {
               xmb.refresh();
             },
           };
-        });
+        })];
       },
     };
   }
@@ -4671,6 +4884,46 @@ async function main(): Promise<void> {
       ],
     };
   }
+
+  /**
+   * The download queue, shown at the foot of every column that can start one.
+   *
+   * One queue, not six: a rip, a store install and a voice model all go through the
+   * same transfer channel, and someone asking "what is downloading" wants the
+   * answer, not the answer for this column only. The row names whatever is nearest
+   * to finishing so the subtitle is useful at a glance without opening anything.
+   */
+  const downloadRow = (): MenuItem => {
+    const jobs = [...transfers.values()].filter((t) => !t.finished);
+    const pct = (t: TransferProgress) => (t.total > 0 ? Math.round((t.done / t.total) * 100) : 0);
+    const nearest = jobs.slice().sort((a, b) => pct(b) - pct(a))[0];
+
+    return {
+      id: "downloads",
+      title: "Downloads",
+      subtitle:
+        jobs.length === 0
+          ? "Nothing downloading"
+          : jobs.length === 1
+            ? `${nearest.name.split(" · ")[0]} · ${pct(nearest)}%`
+            : `${jobs.length} in progress · ${nearest.name.split(" · ")[0]} ${pct(nearest)}%`,
+      iconUrl: "assets/icons/download.webp",
+      onConfirm: () => {
+        if (jobs.length === 0) {
+          showInfo("Downloads", undefined, null, [
+            { label: "Queue", value: "Nothing is downloading right now" },
+          ]);
+          return;
+        }
+        showInfo(
+          "Downloads",
+          undefined,
+          null,
+          jobs.map((t) => ({ label: `${pct(t)}%`, value: t.name.split(" · ")[0] }))
+        );
+      },
+    };
+  };
 
   const categories: Category[] = [
     usersCategory(),
