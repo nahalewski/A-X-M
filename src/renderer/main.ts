@@ -3569,6 +3569,28 @@ async function main(): Promise<void> {
   }
 
   // Matches the real XMB running order: Users, Settings, Photo, Music, Video, Game, Network.
+  /**
+   * Toy Box: the column for the menu's own little extras - things you look at or
+   * play with rather than files you manage. It has no contents of its own yet, so
+   * it shows the same kind of empty state every other column does instead of
+   * pretending to hold something.
+   */
+  function toyBoxCategory(): Category {
+    return {
+      id: "toybox",
+      label: "Toy Box",
+      iconUrl: "assets/icons/toybox.webp",
+      getItems: () => [
+        {
+          id: "toybox-empty",
+          title: "Nothing in the Toy Box yet",
+          subtitle: "This is where the menu's extras will live",
+          iconUrl: "assets/icons/toybox.webp",
+        },
+      ],
+    };
+  }
+
   const categories: Category[] = [
     usersCategory(),
     settingsCategory(),
@@ -3584,6 +3606,7 @@ async function main(): Promise<void> {
       { active: () => jf.active, items: jfItems, back: jfBack, hint: jfHint }
     ),
     gamesCategory(),
+    toyBoxCategory(),
     browserCategory(),
   ];
   const gameBackground = new GameBackground(document.getElementById("game-bg")!);
