@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Everything happens on the local network. No internet permission is
-         requested, so the app cannot reach anything beyond the LAN even if a
-         dependency tried to. -->
+    <!-- Everything happens on the local network, over plain HTTP / WebSocket to
+         the menu on the LAN - which Android blocks by default as "cleartext", so
+         it is allowed explicitly below. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -21,6 +21,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AxmCompanion">
 
         <activity

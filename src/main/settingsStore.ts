@@ -197,7 +197,7 @@ const DEFAULTS: Settings = {
   windowed: false,
   targetHz: 120,
   waveColorCycleSeconds: 18,
-  musicVolume: 0.6,
+  musicVolume: 0.25,
   sfxVolume: 0.8,
   extraGameFolders: [],
   gameOverrides: {},
