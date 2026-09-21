@@ -1,6 +1,8 @@
 import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { epgConfig } from "./apiKeys";
+import { logoFor } from "./networkLogos";
 
 /**
  * Xtream Codes client, for the TV Streaming app in the Video column.
@@ -85,11 +87,19 @@ function text(value: unknown): string {
 export function loadAccount(): XtreamAccount | null {
   try {
     const raw = JSON.parse(fs.readFileSync(accountPath(), "utf-8")) as Partial<XtreamAccount>;
-    if (!raw.url || !raw.username || !raw.password) return null;
-    return { url: normaliseBase(raw.url), username: raw.username, password: raw.password };
+    if (raw.url && raw.username && raw.password) {
+      return { url: normaliseBase(raw.url), username: raw.username, password: raw.password };
+    }
   } catch {
-    return null;
+    // Nothing saved yet; fall through to the shared config below.
   }
+  // apis/apis.json can carry the portal, so a fresh install with that file
+  // filled in is already signed in and nobody has to retype it.
+  const epg = epgConfig();
+  if (epg.url && epg.username && epg.password) {
+    return { url: normaliseBase(epg.url), username: epg.username, password: epg.password };
+  }
+  return null;
 }
 
 export function saveAccount(account: XtreamAccount | null): void {
@@ -205,7 +215,9 @@ export async function items(kind: XtreamKind, categoryId?: string): Promise<Xtre
       name: text(r.name) || text(r.title),
       kind,
       categoryId: text(r.category_id),
-      icon: text(r.stream_icon) || text(r.cover) || undefined,
+      // A file the user dropped into "network logos" beats whatever the provider
+      // serves, which is often low quality or missing entirely.
+      icon: logoFor(text(r.name) || text(r.title)) || text(r.stream_icon) || text(r.cover) || undefined,
       epgChannelId: text(r.epg_channel_id) || undefined,
       extension: text(r.container_extension) || undefined,
     }))

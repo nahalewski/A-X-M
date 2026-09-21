@@ -21,3 +21,12 @@ __pycache__/
 /companion-android/build/
 /companion-android/app/build/
 /companion-android/local.properties
+
+# Real API keys and service logins. The example file is committed; this one is not.
+# This repository is public, so a key in a tracked file is a published key.
+/apis/apis.json
+
+# Channel logos the user supplies. Broadcaster marks belong to their owners and
+# are not ours to redistribute, so only the README here is tracked.
+/network logos/*
+!/network logos/README.md

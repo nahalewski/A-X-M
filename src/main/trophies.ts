@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { getSteamInstallPath } from "./scanners/steamScanner";
 import { parseVdf, VdfNode } from "./vdf";
 import { loadSettings } from "./settingsStore";
+import { apiKey } from "./apiKeys";
 
 /**
  * Trophy Collection: Steam achievements per game, and RetroAchievements.
@@ -69,7 +70,7 @@ export function steamId64(): string | null {
 }
 
 export async function steamTrophyGames(): Promise<{ games: TrophyGame[]; error: string | null }> {
-  const key = loadSettings().steamWebApiKey;
+  const key = apiKey("steamWeb", loadSettings().steamWebApiKey);
   const id = steamId64();
   if (!key) return { games: [], error: "Add your Steam Web API key in Settings › System › Trophies (steamcommunity.com/dev/apikey)" };
   if (!id) return { games: [], error: "No Steam account has signed in on this machine" };
@@ -94,7 +95,7 @@ export async function steamTrophyGames(): Promise<{ games: TrophyGame[]; error: 
 }
 
 export async function steamAchievements(appid: string): Promise<{ list: Achievement[]; error: string | null }> {
-  const key = loadSettings().steamWebApiKey;
+  const key = apiKey("steamWeb", loadSettings().steamWebApiKey);
   const id = steamId64();
   if (!key || !id) return { list: [], error: "Steam key or account missing" };
   const [player, schema] = await Promise.all([
@@ -130,7 +131,10 @@ const RA = "https://retroachievements.org/API";
 
 function raAuth(): { u: string; y: string } | null {
   const s = loadSettings();
-  return s.raUsername && s.raApiKey ? { u: s.raUsername, y: s.raApiKey } : null;
+  // Either half may come from the file; both are still required together.
+  const user = apiKey("retroAchievementsUser", s.raUsername);
+  const key = apiKey("retroAchievements", s.raApiKey);
+  return user && key ? { u: user, y: key } : null;
 }
 
 export async function raTrophyGames(): Promise<{ games: TrophyGame[]; error: string | null }> {

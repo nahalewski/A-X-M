@@ -1,0 +1,14 @@
+{
+  "steamGridDb": "",
+  "tmdb": "",
+  "steamWeb": "",
+  "retroAchievements": "",
+  "retroAchievementsUser": "",
+  "epg": {
+    "url": "",
+    "username": "",
+    "password": "",
+    "xmltvUrl": ""
+  },
+  "_comment": "Copy to apis.json and fill in. apis.json is gitignored."
+}

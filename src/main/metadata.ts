@@ -5,6 +5,7 @@ import { app } from "electron";
 import { pathToFileURL } from "node:url";
 import * as mm from "music-metadata";
 import { loadSettings } from "./settingsStore";
+import { apiKey } from "./apiKeys";
 
 /**
  * "Information" for the Y-button pop-ups: what a song, film or show actually is.
@@ -226,7 +227,7 @@ interface TmdbSearchHit {
 }
 
 async function tmdb<T>(endpoint: string, params: Record<string, string> = {}): Promise<T | null> {
-  const key = loadSettings().tmdbApiKey;
+  const key = apiKey("tmdb", loadSettings().tmdbApiKey);
   if (!key) return null;
   const q = new URLSearchParams({ api_key: key, ...params });
   try {
@@ -246,7 +247,7 @@ export async function getScreenInfo(title: string, year: string, kind: "movie" |
   const cacheKey = `screen:${kind}:${tmdbId ?? ""}:${title.toLowerCase()}:${year}`;
   const cached = readCache<ScreenInfo>(cacheKey);
   if (cached) return cached;
-  if (!loadSettings().tmdbApiKey) return null;
+  if (!apiKey("tmdb", loadSettings().tmdbApiKey)) return null;
 
   const tryKind = async (k: "movie" | "tv"): Promise<ScreenInfo | null> => {
     let id = tmdbId ? Number(tmdbId) : 0;

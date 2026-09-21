@@ -20,7 +20,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, TvCategory, TvItem, TvKind, TvStatus } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession } from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -2470,7 +2470,7 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | "companion" | { month: number };
   /** Which group each root row files under; anything unlisted stays at the top level. */
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
@@ -2479,6 +2479,87 @@ async function main(): Promise<void> {
     "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
+  };
+
+  /**
+   * Companion Devices. The pairing code is not requested from here - it appears by
+   * itself the moment a phone says hello, because that is when the host generates
+   * one. This screen exists to show that A-X-M is listening, on which address, and
+   * to forget a device.
+   */
+  let companionState: CompanionStatus | null = null;
+  const refreshCompanion = async () => {
+    companionState = await window.axm.companionStatus().catch(() => null);
+    xmb.refresh();
+  };
+
+  const companionRows = (): MenuItem[] => {
+    const state = companionState;
+    if (!state) return [{ id: "companion-loading", title: "Loading…", iconGlyph: "▤" }];
+
+    const rows: MenuItem[] = [
+      {
+        id: "companion-enabled",
+        title: "Companion",
+        subtitle: state.enabled
+          ? state.running
+            ? `Listening on ${state.addresses[0] ?? "this machine"}`
+            : "On, but the network port could not be opened"
+          : "Off",
+        iconGlyph: "▤",
+        onConfirm: async () => {
+          await window.axm.companionSetEnabled(!state.enabled);
+          await refreshCompanion();
+        },
+      },
+      {
+        id: "companion-howto",
+        title: "How to pair",
+        subtitle: "Open A-X-M Companion on your phone, on this Wi-Fi, and tap this machine",
+        iconGlyph: "?",
+        onConfirm: () =>
+          showInfo("Pair your phone", undefined, null, [
+            { label: "1", value: "Put the phone on the same Wi-Fi as this machine" },
+            { label: "2", value: "Open A-X-M Companion and tap this machine in the list" },
+            { label: "3", value: "A four digit code appears here; type it on the phone" },
+            { label: "Address", value: state.addresses.join(", ") || "no network found" },
+          ]),
+      },
+    ];
+
+    for (const device of state.trusted) {
+      const live = state.sessions.find((x: CompanionSession) => x.deviceId === device.deviceId && x.paired);
+      rows.push({
+        id: `companion-device-${device.deviceId}`,
+        title: device.name,
+        subtitle: live ? `Connected · ${live.address}` : `Paired · last seen ${fmtWhen(device.lastSeenAt)}`,
+        iconGlyph: live ? "●" : "○",
+        contextHint: "forget",
+        onContext: () => {
+          void showOptions(device.name, [
+            {
+              label: "Forget this device",
+              hint: "It will have to pair again",
+              run: async () => {
+                await window.axm.companionForget(device.deviceId);
+                await refreshCompanion();
+              },
+            },
+          ]);
+          return true;
+        },
+      });
+    }
+
+    if (state.trusted.length === 0) {
+      rows.push({
+        id: "companion-none",
+        title: "No devices paired yet",
+        subtitle: "Your phone will appear here once it has paired",
+        iconGlyph: "○",
+      });
+    }
+    return rows;
   };
 
   function settingsCategory(): Category {
@@ -2633,6 +2714,22 @@ async function main(): Promise<void> {
         { id: "group-audio", title: "Audio", subtitle: "Volumes, menu music, sounds, shuffle, music folders", iconUrl: "assets/icons/settings-audio.webp", onConfirm: () => go("audio") },
         { id: "group-network", title: "Network", subtitle: "Connection status, Wi-Fi, connection test, media server, Bluetooth", iconUrl: "assets/icons/network-settings.webp", onConfirm: () => { void netOpen(); } },
         { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconUrl: "assets/icons/settings-system.webp", onConfirm: () => go("sys") },
+        {
+          id: "group-companion",
+          title: "Companion Devices",
+          subtitle: companionState
+            ? companionState.sessions.some((x: CompanionSession) => x.paired)
+              ? `${companionState.sessions.filter((x: CompanionSession) => x.paired).length} connected`
+              : companionState.trusted.length > 0
+                ? `${companionState.trusted.length} paired · none connected`
+                : "Pair your phone with A-X-M"
+            : "Pair your phone with A-X-M",
+          iconGlyph: "▤",
+          onConfirm: () => {
+            void refreshCompanion();
+            go("companion");
+          },
+        },
         { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconGlyph: "◈", onConfirm: () => go("assistant") },
         { id: "group-toybox", title: "Toybox", subtitle: "What Ghost does when a toy is scanned, readers, the companion app", iconUrl: "assets/icons/toybox.webp", onConfirm: () => go("toybox") },
       ];
@@ -4000,7 +4097,7 @@ async function main(): Promise<void> {
         if (view === "root") return false;
         if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
         else if (view === "network" && netView !== "root") netSub("root");
-        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox") go("root");
+        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox" || view === "companion") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -4018,6 +4115,7 @@ async function main(): Promise<void> {
         if (view === "network") return net.busy || net.status || (netView === "wifi" ? "Settings › Network › Internet Connection Settings" : netView === "register" ? "Settings › Network › Register Device" : netView === "registered" ? "Settings › Network › Registered Device List" : "Settings › Network");
         if (view === "assistant") return "Settings › Assistant";
         if (view === "toybox") return "Settings › Toybox";
+        if (view === "companion") return "Settings › Companion Devices";
         if (view === "datetime") return "Settings › System › Date and Time";
         if (view === "power") return "Settings › System › Power Save";
         if (view === "chat") return "Settings › System › Chat";
@@ -4039,6 +4137,7 @@ async function main(): Promise<void> {
         if (view === "network") return networkItems();
         if (view === "assistant") return assistantItems();
         if (view === "toybox") return toyboxSettingsItems();
+        if (view === "companion") return companionRows();
         if (view === "datetime") return dateTimeItems();
         if (view === "power") return powerItems();
         if (view === "chat") return chatItems();
@@ -4591,6 +4690,30 @@ async function main(): Promise<void> {
       cmds.push({ verbs: ["go to", "open", "show", "navigate to", "navigate"], name, reply: `Opening ${name}`, run: () => goCategory(id) });
     }
     for (const sl of settingLabels) cmds.push({ verbs: ["go to", "open", "show", "navigate to", "change", "set"], name: sl.name, reply: `Opening ${sl.name}`, run: sl.go });
+
+    // Pairing, asked for out loud. Ghost answers in his own bubble with the
+    // address and the steps, so nobody has to find the Settings screen first -
+    // and if a phone is already waiting, he reads out the code it needs.
+    cmds.push({
+      verbs: ["pair", "connect", "set up", "setup", "link"],
+      name: "my phone",
+      reply: "Open A-X-M Companion on your phone and tap this machine. I'll show you the code.",
+      weight: 0.4,
+      run: async () => {
+        await refreshCompanion();
+        const state = companionState;
+        if (!state?.enabled) {
+          await window.axm.companionSetEnabled(true);
+          await refreshCompanion();
+        }
+        showInfo("Pair your phone", undefined, null, [
+          { label: "1", value: "Put the phone on the same Wi-Fi as this machine" },
+          { label: "2", value: "Open A-X-M Companion and tap this machine" },
+          { label: "3", value: "A four digit code appears here; type it on the phone" },
+          { label: "Address", value: companionState?.addresses.join(", ") || "no network found" },
+        ]);
+      },
+    });
     // The Toybox shelf: "open my shelf", "show my amiibo", "open toybox favourites".
     if (toybox?.hasDatabase) {
       cmds.push({ verbs: ["open", "show", "go to"], name: "my shelf", reply: "Opening your shelf", weight: 0.2, run: () => openToyShelf({ view: "owned", platform: "" }, "My Shelf") });

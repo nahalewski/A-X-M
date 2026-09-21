@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 import { loadSettings } from "./settingsStore";
+import { apiKey } from "./apiKeys";
 
 /**
  * Artwork lookup via SteamGridDB, for the launchers that don't hand us any of their
@@ -60,7 +61,8 @@ function normalize(name: string): string {
 }
 
 function getApiKey(): string {
-  return process.env.AXM_STEAMGRIDDB_KEY || loadSettings().gameArtApiKey || "";
+  // apis/apis.json wins, then the environment, then whatever was typed in Settings.
+  return apiKey("steamGridDb", process.env.AXM_STEAMGRIDDB_KEY || loadSettings().gameArtApiKey || "");
 }
 
 export function isGameArtConfigured(): boolean {

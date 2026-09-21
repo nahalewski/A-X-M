@@ -44,6 +44,8 @@ import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
 import { CompanionServer } from "./companion/server";
 import * as xtream from "./xtream";
+import { apiConfigSource, apiFolder, ensureApiExample } from "./apiKeys";
+import { logoStatus, refreshLogos } from "./networkLogos";
 import { DeviceRegistry } from "./companion/registry";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
@@ -246,6 +248,8 @@ app.whenReady().then(() => {
   // Listening from the start: the phone should find A-X-M without anything being
   // switched on first. It costs one idle UDP socket until something connects.
   companion.start();
+  // Writes apis/apis.example.json the first time, so the folder explains itself.
+  ensureApiExample();
   // MakeMKV reads its key from its own settings file; keep it in step with ours.
   if (loadSettings().makemkvKey) applyMakemkvKey(loadSettings().makemkvKey);
 
@@ -831,6 +835,8 @@ ipcMain.handle("axm:toyboxSetState", (_e, figureId: string, patch: Partial<ToyCo
  * cannot read it.
  */
 ipcMain.handle("axm:tvStatus", () => xtream.status());
+ipcMain.handle("axm:tvLogos", () => ({ ...logoStatus(), apiFolder: apiFolder(), apiSource: apiConfigSource() }));
+ipcMain.handle("axm:tvRefreshLogos", () => refreshLogos());
 
 ipcMain.handle("axm:tvLogin", async (_e, account: xtream.XtreamAccount | null) => {
   xtream.saveAccount(account);

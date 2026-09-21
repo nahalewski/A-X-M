@@ -739,6 +739,8 @@ export interface AxmApi {
   pickBackgroundImage(): Promise<Settings>;
   openBrowser(url: string): Promise<void>;
   tvStatus(): Promise<TvStatus>;
+  tvLogos(): Promise<{ folder: string; count: number; apiFolder: string; apiSource: string | null }>;
+  tvRefreshLogos(): Promise<number>;
   tvLogin(account: TvAccount | null): Promise<TvStatus>;
   tvCategories(kind: TvKind): Promise<TvCategory[]>;
   tvItems(kind: TvKind, categoryId?: string): Promise<TvItem[]>;
