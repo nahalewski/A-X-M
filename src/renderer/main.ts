@@ -25,6 +25,8 @@ import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKi
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
+/** The disc a game shows until its box art is found: black PS, blue PS2, gold PS3. */
+const RETRO_DISC: Partial<Record<RetroPlatform, string>> = { ps1: "assets/icons/retro-disc-ps1.webp", ps2: "assets/icons/retro-disc-ps2.webp", ps3: "assets/icons/retro-disc-ps3.webp" };
 const RETRO_DEFAULTS: Record<RetroPlatform, string> = { ps5: "G:\\GAMES\\PS5", ps4: "G:\\GAMES\\PS4", ps3: "G:\\GAMES\\PS3", ps2: "G:\\GAMES\\PS2", ps1: "G:\\GAMES\\PS1", psp: "G:\\GAMES\\PSP", switch: "K:\\Switch Games" };
 const EMULATOR_SITES: Record<RetroPlatform, string> = { ps5: "Kyty from github.com/InoriRus/Kyty (or Install above) - an experiment, not a way to play retail PS5 games", ps4: "shadPS4 from shadps4.net (or Install above)", ps3: "RPCS3 from rpcs3.net (or Install above)", ps2: "PCSX2 from pcsx2.net (or Install above)", ps1: "DuckStation from duckstation.org (or Install above)", psp: "PPSSPP from ppsspp.org (or Install above)", switch: "Eden - put eden.exe in C:\\eden" };
 import { MemoryCardUtility, showApolloDatabaseOptions } from "./memoryCardUtility";
@@ -136,6 +138,23 @@ async function main(): Promise<void> {
   let resolution: ResolutionState = { target: 0, nativeHeight: 0, nativeWidth: 0, auto: true };
 
   let games: GameEntry[] = await window.axm.getGames();
+  /** Games whose box art is still being looked up - their disc spins meanwhile. */
+  const artPending = new Set<string>();
+  const artSearched = new Set<string>();
+  const artPendingSince = new Map<string, number>();
+  // Every console game without art is "being looked up" while SteamGridDB is set, until
+  // the lookup answers (or two minutes pass, so a disc never spins for good).
+  const markArtPending = () => {
+    if (!settings.gameArtApiKey) return;
+    const now = Date.now();
+    for (const g of games) {
+      if (g.source !== "retro" || g.iconPath || artSearched.has(g.id)) continue;
+      if (!artPending.has(g.id)) { artPending.add(g.id); artPendingSince.set(g.id, now); }
+    }
+    for (const [id, at] of artPendingSince) if (now - at > 120_000) { artPending.delete(id); artPendingSince.delete(id); }
+  };
+  markArtPending();
+  setInterval(() => { const before = artPending.size; markArtPending(); if (artPending.size !== before) xmb.refresh(); }, 5000);
   // Optical discs, only while one is in a drive; polled so the row appears on insert.
   let discs: Disc[] = [];
   const refreshDiscs = async () => {
@@ -4689,7 +4708,8 @@ async function main(): Promise<void> {
         id: g.id,
         title: g.name,
         subtitle: g.needsPrep ?? (!g.emulator ? `${g.emulatorName ?? "Emulator"} not installed` : undefined),
-        iconUrl: g.iconPath ?? `assets/icons/retro-${p}.png`,
+        iconUrl: g.iconPath ?? RETRO_DISC[p] ?? `assets/icons/retro-${p}.png`,
+        iconClass: g.iconPath ? undefined : RETRO_DISC[p] ? `disc${artPending.has(g.id) ? " spinning" : ""}` : undefined,
         backgroundUrl: g.heroPath,
         iconGlyph: sourceGlyph(g.source),
         contextGame: g,
@@ -5299,11 +5319,12 @@ async function main(): Promise<void> {
   bootLogoImg.src = "assets/icons/boot-logo.png";
 
   // Box art arrives asynchronously in the background - patch it in as it lands.
-  window.axm.onArtUpdated(({ gameId, iconPath, heroPath }) => {
+  window.axm.onArtUpdated(({ gameId, iconPath, heroPath, searched }) => {
     const game = games.find((g) => g.id === gameId);
     if (!game) return;
     if (iconPath) game.iconPath = iconPath;
     if (heroPath) game.heroPath = heroPath;
+    if (searched || iconPath) { artPending.delete(gameId); artSearched.add(gameId); }
     // refresh() re-runs the selection callback, so a banner that arrives while its
     // game is already focused still fades in.
     xmb.refresh();

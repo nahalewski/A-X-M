@@ -415,9 +415,9 @@ async function fetchMissingArt(): Promise<void> {
         }
       }
 
-      if (!update.iconPath && !update.heroPath) continue;
+      // Sent even with nothing found: the menu's disc spins while a game is being looked up.
       if (!mainWindow?.isDestroyed()) {
-        mainWindow?.webContents.send("axm:artUpdated", update);
+        mainWindow?.webContents.send("axm:artUpdated", { ...update, searched: true });
       }
     }
   };

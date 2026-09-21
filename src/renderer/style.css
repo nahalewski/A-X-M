@@ -1442,6 +1442,9 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
 
 /* Disc rows and locked achievements. */
 .item-icon.disc { object-fit: contain; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+/* A console game whose box art is still being looked up: its disc turns meanwhile. */
+.item-icon.disc.spinning { animation: disc-spin 2.4s linear infinite; }
+@keyframes disc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .item-icon.locked { filter: grayscale(1) brightness(0.55); }
 
 /* The PS3 in-game menu: a dark screen with a centred list and the status line. */

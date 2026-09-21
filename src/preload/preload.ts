@@ -231,7 +231,7 @@ const api = {
   openFolder: (dirPath: string) => ipcRenderer.invoke("axm:openFolder", dirPath),
   getLaunchers: () => ipcRenderer.invoke("axm:getLaunchers"),
   openLauncher: (id: string) => ipcRenderer.invoke("axm:openLauncher", id),
-  onArtUpdated: (callback: (update: { gameId: string; iconPath?: string; heroPath?: string }) => void) => {
+  onArtUpdated: (callback: (update: { gameId: string; iconPath?: string; heroPath?: string; searched?: boolean }) => void) => {
     ipcRenderer.on("axm:artUpdated", (_e, update) => callback(update));
   },
   quit: () => ipcRenderer.invoke("axm:quit"),

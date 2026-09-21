@@ -451,6 +451,8 @@ export interface Settings {
 
 /** Artwork that landed after the initial scan. Either field may be absent. */
 export interface ArtUpdate {
+  /** The lookup for this game ran (art or none) - the placeholder can stop spinning. */
+  searched?: boolean;
   gameId: string;
   iconPath?: string;
   heroPath?: string;
