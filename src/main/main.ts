@@ -42,6 +42,7 @@ import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairB
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
 import { getGameInfo, updateDatabase, databaseStatus, clearCache as clearGameDbCache, cacheLocation, GameInfo, DbPlatform } from "./gameDb";
 import { listPackages, installPackage, mountImage, dismountImage, packagesFolder, installFolder, PcPackage } from "./pcIso";
+import { cartridgeArtwork, clearCartridgeArtwork, CartridgeGame } from "./cartridgeArtwork";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
@@ -707,6 +708,11 @@ ipcMain.handle("axm:gameDbLocation", () => cacheLocation());
  * whose art has not resolved keeps artUrl null and the menu shows a plain disc
  * for it, which is the intended look until the real artwork turns up.
  */
+ipcMain.handle("axm:cartridgeArtwork", (_e, drive: string, games: CartridgeGame[]): Promise<string[]> =>
+  cartridgeArtwork(drive, games)
+);
+ipcMain.handle("axm:clearCartridgeArtwork", (_e, drive: string): number => clearCartridgeArtwork(drive));
+
 ipcMain.handle("axm:listPcPackages", async (): Promise<PcPackage[]> => {
   const packages = listPackages();
   if (!isGameArtConfigured()) return packages;

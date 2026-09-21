@@ -1705,3 +1705,51 @@ body:has(#options-popup:not(.hidden)) .toybox-card, body:has(#info-card:not(.hid
 .choice-note { font-size: 16px; font-weight: 300; color: rgba(255, 255, 255, 0.9); min-height: 22px; margin-bottom: 14px; text-align: center; }
 .choice-hints { display: flex; gap: 60px; font-size: 16px; color: rgba(255, 255, 255, 0.9); }
 .choice-hints b { display: inline-block; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; line-height: 20px; text-align: center; color: #111; margin-right: 6px; font-style: normal; }
+
+/*
+ * The cartridge window.
+ *
+ * The cartridge art has an opening in it, and the game artwork shows through
+ * that rather than sitting beside the icon. The numbers below are measured off
+ * the cartridge image itself: its opening runs from 22.8% to 77.3% across and
+ * 23.8% to 88.2% down, which is a roughly two-by-three portrait box - the same
+ * shape as the flat grid artwork that goes in it, so nothing has to be cropped.
+ *
+ * The artwork is underneath and the cartridge on top, so the frame's own edges
+ * and highlights stay crisp over the art.
+ */
+.item-icon.icon-window {
+  position: relative;
+  display: block;
+  background: none;
+}
+
+.icon-window-art {
+  position: absolute;
+  left: 22.8%;
+  top: 23.8%;
+  width: 54.6%;
+  height: 64.4%;
+  object-fit: cover;
+  border-radius: 2px;
+  /* Fades between artwork rather than snapping, which is less distracting in
+     the corner of the eye while the rest of the menu is being read. */
+  animation: cartridge-art-in 620ms ease-out;
+}
+
+.icon-window-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+@keyframes cartridge-art-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-window-art { animation: none; }
+}

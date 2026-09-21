@@ -11,6 +11,8 @@ export interface MenuItem {
   iconUrl?: string;
   /** Extra class on the icon image, e.g. a per-column tint. */
   iconClass?: string;
+  /** Artwork shown through a cut-out in the icon, e.g. the cartridge window. */
+  iconOverlayUrl?: string;
   iconGlyph?: string;
   badge?: string;
   /** 0..1 fill for a small bar under the subtitle, e.g. drive usage. */
@@ -511,6 +513,22 @@ export class Xmb {
   }
 
   private buildIcon(item: MenuItem): HTMLElement {
+    // An icon with a cut-out shows artwork through it: the artwork goes behind,
+    // positioned to the opening by CSS, and the icon itself sits on top.
+    if (item.iconUrl && item.iconOverlayUrl) {
+      const wrap = document.createElement("div");
+      wrap.className = "item-icon icon-window" + (item.iconClass ? " " + item.iconClass : "");
+      const art = document.createElement("img");
+      art.className = "icon-window-art";
+      art.src = item.iconOverlayUrl;
+      art.addEventListener("error", () => art.remove());
+      const frame = document.createElement("img");
+      frame.className = "icon-window-frame";
+      frame.src = item.iconUrl;
+      wrap.appendChild(art);
+      wrap.appendChild(frame);
+      return wrap;
+    }
     if (item.iconUrl) {
       const img = document.createElement("img");
       img.className = "item-icon" + (item.iconClass ? " " + item.iconClass : "");

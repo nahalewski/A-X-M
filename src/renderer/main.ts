@@ -383,8 +383,9 @@ async function main(): Promise<void> {
           id: `drive-${kind}-${d.drive}`,
           title: cart ? `Cartridge (${d.drive})` : root ? `ROOT (${d.drive})` : `${d.drive} Drive`,
           subtitle: cart ? "Plugged into the SATA adapter · its games" : `${kind.toUpperCase()} folder`,
-          iconUrl: cart ? "assets/icons/cartridge.png" : "assets/icons/hdd.webp",
+          iconUrl: cart ? "assets/icons/cartridge-frame.webp" : "assets/icons/hdd.webp",
           iconClass: cart ? "cartridge" : `hdd hdd-${kind}`,
+          iconOverlayUrl: cart ? cartridgeArtFor(d.drive) : undefined,
           onConfirm: () => open(d[kind]!),
         };
       });
@@ -1009,8 +1010,60 @@ async function main(): Promise<void> {
   const refreshVolumes = async () => {
     const before = volumes.filter((v) => v.cartridge).map((v) => v.drive).join();
     volumes = await window.axm.getVolumes();
-    if (volumes.filter((v) => v.cartridge).map((v) => v.drive).join() !== before) xmb.refresh();
+    if (volumes.filter((v) => v.cartridge).map((v) => v.drive).join() !== before) {
+      xmb.refresh();
+      void refreshCartridgeArt();
+    }
   };
+  /**
+   * The artwork turning over in the cartridge's window.
+   *
+   * One image per drive at a time, stepped every few seconds. Six seconds is
+   * slow enough to read as a display rather than a flicker, and the timer only
+   * runs while a cartridge is actually plugged in, so nothing is redrawn on a
+   * machine that has never seen one.
+   *
+   * The artwork itself is cached on the cartridge, so this only has to fetch
+   * the first time a given cartridge is seen.
+   */
+  const CARTRIDGE_ROTATE_MS = 6000;
+  const cartridgeArt = new Map<string, string[]>();
+  let cartridgeArtIndex = 0;
+  let cartridgeTimer = 0;
+
+  const cartridgeArtFor = (drive: string): string | undefined => {
+    const list = cartridgeArt.get(drive.slice(0, 2).toUpperCase());
+    if (!list || list.length === 0) return undefined;
+    return list[cartridgeArtIndex % list.length];
+  };
+
+  const refreshCartridgeArt = async () => {
+    const carts = volumes.filter((v) => v.cartridge);
+    if (carts.length === 0) {
+      cartridgeArt.clear();
+      return;
+    }
+    for (const cart of carts) {
+      const drive = cart.drive.slice(0, 2).toUpperCase();
+      // A game's own drive field is authoritative; romPath or installDir is only
+      // needed to prove to the main side that it really sits on this cartridge.
+      const onIt = games
+        .filter((g) => (g.drive || "").slice(0, 2).toUpperCase() === drive)
+        .map((g) => ({ name: g.name, filePath: g.romPath ?? g.installDir ?? "" }))
+        .filter((g) => g.filePath);
+      if (onIt.length === 0) continue;
+      const art = await window.axm.cartridgeArtwork(cart.drive, onIt).catch(() => []);
+      if (art.length > 0) cartridgeArt.set(drive, art);
+    }
+    if (cartridgeArt.size > 0 && !cartridgeTimer) {
+      cartridgeTimer = window.setInterval(() => {
+        cartridgeArtIndex++;
+        xmb.refresh();
+      }, CARTRIDGE_ROTATE_MS);
+    }
+    xmb.refresh();
+  };
+
   const isCartridge = (drive: string) => volumes.some((v) => v.cartridge && v.drive.toUpperCase() === drive.slice(0, 2).toUpperCase());
   void refreshVolumes();
   // Plugging the cartridge in (or pulling it) shows up within the minute.
@@ -2151,8 +2204,9 @@ async function main(): Promise<void> {
         id: `cartridge-${v.drive}`,
         title: `Cartridge (${v.drive})`,
         subtitle: "Plugged into the SATA adapter · its games",
-        iconUrl: "assets/icons/cartridge.png",
+        iconUrl: "assets/icons/cartridge-frame.webp",
         iconClass: "cartridge",
+        iconOverlayUrl: cartridgeArtFor(v.drive),
         onConfirm: () => { driveFolder = `${v.drive}\\`; go("drive"); },
       })),
       ...discRows(["ps1", "ps2"]),

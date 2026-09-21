@@ -828,6 +828,8 @@ export interface AxmApi {
   gameDbStatus(): Promise<GameDbStatus[]>;
   clearGameDbCache(): Promise<{ ok: boolean; message: string }>;
   gameDbLocation(): Promise<string>;
+  cartridgeArtwork(drive: string, games: { name: string; filePath: string }[]): Promise<string[]>;
+  clearCartridgeArtwork(drive: string): Promise<number>;
   listPcPackages(): Promise<PcPackage[]>;
   pcPackageFolders(): Promise<{ images: string | null; installs: string | null }>;
   mountPcPackage(filePath: string): Promise<{ ok: boolean; drive?: string; message: string }>;
