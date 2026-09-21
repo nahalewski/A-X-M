@@ -8,3 +8,7 @@ tmp/
 # character art, pulled locally for a private build - never committed, because this
 # repository is public.
 /toybox-data/
+
+# Python bytecode from the NFC / TTS helpers
+__pycache__/
+*.pyc
