@@ -16,7 +16,7 @@ import { loadSettings } from "./settingsStore";
  * scan normally; this is about the retro library and media.
  */
 
-export const ROOT_FOLDERS = ["GAME", "GAME-PC", "MUSIC", "PHOTO", "VIDEO", "SAVE", "TEXTURES", "PATCHES", "NFC"] as const;
+export const ROOT_FOLDERS = ["GAME", "GAME-PC", "MUSIC", "PHOTO", "VIDEO", "SAVE", "TEXTURES", "PATCHES", "NFC", "BOOT"] as const;
 
 /**
  * Where PC game images sit, and where they install to.

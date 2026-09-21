@@ -207,6 +207,19 @@ export interface Settings {
   navSoundsEnabled: boolean;
   /** The ambient menu loop. Off means silence between the boot sound and a game. */
   menuMusicEnabled: boolean;
+  /**
+   * Optional sounds the user keeps in BOOT on the ROOT drive.
+   *
+   * bootSound is a sound id, "shuffle" for a different one each start, or "off".
+   * launchSounds are the four XMB-to-emulator noises, each only honoured when
+   * the file behind it is present. menuMusicTrack picks which track the ambient
+   * loop uses; "" is the built-in one.
+   */
+  bootSound: string;
+  launchSounds: { ps1: boolean; ps2: boolean; ps3: boolean; psp: boolean };
+  menuMusicTrack: string;
+  /** The full-screen A-X-M splash shown while an emulator starts. */
+  launchSplashEnabled: boolean;
   /** Show the percentage next to the battery icons. */
   batteryPercentEnabled: boolean;
   /** Preferred drive for Steam installs, e.g. "N:", or "" to leave it to Steam. */
@@ -224,6 +237,10 @@ const DEFAULTS: Settings = {
   targetHz: 120,
   waveColorCycleSeconds: 18,
   musicVolume: 0.25,
+  bootSound: "off",
+  launchSounds: { ps1: false, ps2: false, ps3: false, psp: false },
+  menuMusicTrack: "",
+  launchSplashEnabled: true,
   sfxVolume: 0.8,
   extraGameFolders: [],
   gameOverrides: {},

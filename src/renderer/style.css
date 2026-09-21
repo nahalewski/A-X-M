@@ -1753,3 +1753,64 @@ body:has(#options-popup:not(.hidden)) .toybox-card, body:has(#info-card:not(.hid
 @media (prefers-reduced-motion: reduce) {
   .icon-window-art { animation: none; }
 }
+
+/*
+ * The launch splash.
+ *
+ * Covers the gap between leaving the menu and the emulator taking the screen,
+ * which would otherwise be a flash of desktop. It sits above everything and
+ * takes no input: it is scenery, and the emulator is what should receive the
+ * controller once it appears.
+ *
+ * The artwork is letterboxed rather than cropped. These are logo plates with
+ * the mark centred, and filling the screen would cut the edges off the wider
+ * ones on a 16:10 panel.
+ */
+.launch-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.2vh;
+  background: #000;
+  opacity: 0;
+  transition: opacity 420ms ease;
+  pointer-events: none;
+}
+
+.launch-splash.shown {
+  opacity: 1;
+}
+
+.launch-splash img {
+  max-width: 78vw;
+  max-height: 62vh;
+  object-fit: contain;
+  /* Scales up very slightly while it is shown, so the screen is not dead still. */
+  animation: launch-splash-drift 3200ms ease-out both;
+}
+
+.launch-splash-name {
+  font-size: clamp(16px, 2.1vw, 30px);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(235, 244, 255, 0.82);
+  text-align: center;
+  max-width: 80vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes launch-splash-drift {
+  from { transform: scale(0.972); }
+  to { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launch-splash img { animation: none; }
+  .launch-splash { transition: none; }
+}

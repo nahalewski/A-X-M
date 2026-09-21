@@ -76,6 +76,9 @@ export class AudioManager {
    * one faded in, so changing the setting is audible immediately rather than at the
    * next launch. Before the first play it just records the choice.
    */
+  /** A user-supplied loop from the ROOT drive, or null for the built-in one. */
+  private ambientSource: string | null = null;
+
   setAmbientTrack(track: AmbientTrackId): void {
     if (!AMBIENT_TRACKS[track] || track === this.ambientTrack) return;
     this.ambientTrack = track;
@@ -116,8 +119,15 @@ export class AudioManager {
   }
 
   /** Plays boot.ogg once, then fades the ambient loop in once it actually finishes. */
-  playBootThenAmbient(): void {
-    const boot = new Audio("assets/sounds/boot.ogg");
+  /**
+   * The menu's own boot sound, or one the user supplied.
+   *
+   * A custom file lives on a removable drive and may not be readable - the
+   * cartridge could have been pulled - so every failure path here still starts
+   * the ambient loop. Silence on boot is a bug; a missing optional sound is not.
+   */
+  playBootThenAmbient(bootUrl?: string | null): void {
+    const boot = new Audio(bootUrl || "assets/sounds/boot.ogg");
     boot.volume = this.sfxVolume;
 
     const startAmbient = () => this.fadeInAmbient();
@@ -141,10 +151,26 @@ export class AudioManager {
     boot.play().catch(startOnce);
   }
 
+  /**
+   * Plays a file of the user's instead of a built-in ambient track.
+   *
+   * Passing null puts the built-in loop back. Any loop already playing is
+   * dropped so the change is heard now rather than at the end of a track that
+   * might run for another half a minute.
+   */
+  setAmbientSource(url: string | null): void {
+    if (this.ambientSource === url) return;
+    this.ambientSource = url;
+    if (this.ambient) {
+      this.ambient.pause();
+      this.ambient = null;
+    }
+  }
+
   fadeInAmbient(durationMs = 2500): void {
     if (!this.ambientEnabled) return;
     if (!this.ambient) {
-      this.ambient = new Audio(AMBIENT_TRACKS[this.ambientTrack].src);
+      this.ambient = new Audio(this.ambientSource || AMBIENT_TRACKS[this.ambientTrack].src);
       this.ambient.loop = true;
       if (this.sinkId) void (this.ambient as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId?.(this.sinkId).catch(() => {});
     }

@@ -44,6 +44,7 @@ import { getGameInfo, updateDatabase, databaseStatus, clearCache as clearGameDbC
 import { listPackages, installPackage, mountImage, dismountImage, packagesFolder, installFolder, PcPackage } from "./pcIso";
 import { cartridgeArtwork, clearCartridgeArtwork, CartridgeGame } from "./cartridgeArtwork";
 import { planTransfer, transferGame, uninstallGame, detectLauncher, LAUNCHER_NAMES, TransferPlan } from "./gameTransfer";
+import { soundAvailability, resolveBootSound, resolveLaunchSound, resolveMenuMusic, LAUNCH_IMAGE_FOR, SoundAvailability } from "./bootSounds";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
@@ -709,6 +710,15 @@ ipcMain.handle("axm:gameDbLocation", () => cacheLocation());
  * whose art has not resolved keeps artUrl null and the menu shows a plain disc
  * for it, which is the intended look until the real artwork turns up.
  */
+// ---- Optional boot / launch / menu sounds from the ROOT drive -------------
+ipcMain.handle("axm:soundAvailability", (): SoundAvailability => soundAvailability());
+ipcMain.handle("axm:bootSound", (_e, choice: string) => resolveBootSound(choice));
+ipcMain.handle("axm:launchSound", (_e, platform: string, enabled: boolean) => resolveLaunchSound(platform, enabled));
+ipcMain.handle("axm:menuMusicTrack", (_e, enabled: boolean) => resolveMenuMusic(enabled));
+ipcMain.handle("axm:launchImage", (_e, platform: string): string | null =>
+  LAUNCH_IMAGE_FOR[platform as keyof typeof LAUNCH_IMAGE_FOR] ?? null
+);
+
 // ---- Moving PC games between this PC and the cartridge --------------------
 ipcMain.handle("axm:planGameTransfer", (_e, game: GameEntry, targetDrive: string): Promise<TransferPlan> =>
   planTransfer(game, targetDrive)

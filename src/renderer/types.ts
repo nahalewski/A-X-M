@@ -269,6 +269,26 @@ export interface GameInfo {
   matchedBy: "serial" | "release name" | "title" | "none";
 }
 
+export interface AvailableSound {
+  id: string;
+  file: string;
+  label: string;
+  role: "boot" | "launch" | "menu";
+  platform?: string;
+  filePath: string;
+  url: string;
+  sizeBytes: number;
+}
+
+export interface SoundAvailability {
+  folder: string | null;
+  folderExists: boolean;
+  boot: AvailableSound[];
+  launch: AvailableSound[];
+  menu: AvailableSound | null;
+  launchByPlatform: Record<string, AvailableSound | null>;
+}
+
 export interface GameTransferPlan {
   ok: boolean;
   reason?: string;
@@ -493,6 +513,10 @@ export interface Settings {
   ankerDeviceName: string;
   navSoundsEnabled: boolean;
   menuMusicEnabled: boolean;
+  bootSound: string;
+  launchSounds: { ps1: boolean; ps2: boolean; ps3: boolean; psp: boolean };
+  menuMusicTrack: string;
+  launchSplashEnabled: boolean;
   batteryPercentEnabled: boolean;
   steamInstallDrive: string;
   overlayHotkey: string;
@@ -840,6 +864,11 @@ export interface AxmApi {
   gameDbStatus(): Promise<GameDbStatus[]>;
   clearGameDbCache(): Promise<{ ok: boolean; message: string }>;
   gameDbLocation(): Promise<string>;
+  soundAvailability(): Promise<SoundAvailability>;
+  bootSound(choice: string): Promise<AvailableSound | null>;
+  launchSound(platform: string, enabled: boolean): Promise<AvailableSound | null>;
+  menuMusicTrack(enabled: boolean): Promise<AvailableSound | null>;
+  launchImage(platform: string): Promise<string | null>;
   planGameTransfer(game: GameEntry, targetDrive: string): Promise<GameTransferPlan>;
   transferGame(game: GameEntry, targetDrive: string, mode: "move" | "copy"): Promise<{ ok: boolean; message: string; newPath?: string }>;
   uninstallGame(game: GameEntry): Promise<{ ok: boolean; message: string }>;

@@ -21,7 +21,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform, PcPackage, GameTransferPlan} from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform, PcPackage, GameTransferPlan, SoundAvailability} from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -534,7 +534,7 @@ async function main(): Promise<void> {
         return;
       }
       notifier.push(`Starting ${g.name}`, "general", g.iconPath);
-      void window.axm.launchGame(g.id);
+      void launchWithSplash(g);
     },
     onPrepare: (item, store) => {
       const g = findRetroGame(item);
@@ -641,7 +641,7 @@ async function main(): Promise<void> {
     runningGame: () => window.axm.runningGame().catch(() => null),
     launch: (g) => {
       notifier.push(`Starting ${g.name}`, "general", g.iconPath);
-      void window.axm.launchGame(g.id);
+      void launchWithSplash(g);
     },
     navigateTo: (g) => {
       if (!xmb.selectItem("game", g.id)) {
@@ -1183,6 +1183,108 @@ async function main(): Promise<void> {
       return;
     }
     go();
+  };
+
+  /**
+   * The optional sounds the user keeps in BOOT on the ROOT drive.
+   *
+   * Read once at start and after the drive changes. Null means it has not been
+   * looked at yet, which the settings rows show as "checking" rather than as
+   * "none found" - those are different things and reading one as the other
+   * would have people hunting for files that are perfectly fine.
+   */
+  const LAUNCH_PLATFORMS = ["ps1", "ps2", "ps3", "psp"] as const;
+  const LAUNCH_LABELS: Record<(typeof LAUNCH_PLATFORMS)[number], string> = {
+    ps1: "PlayStation",
+    ps2: "PlayStation 2",
+    ps3: "PlayStation 3",
+    psp: "PSP",
+  };
+
+  let sounds: SoundAvailability | null = null;
+  const refreshSounds = async () => {
+    sounds = await window.axm.soundAvailability().catch(() => null);
+    xmb.refresh();
+  };
+
+  const setBootSound = async (choice: string) => {
+    settings = await window.axm.setSettings({ bootSound: choice });
+    xmb.refresh();
+  };
+
+  const setLaunchSound = async (platform: (typeof LAUNCH_PLATFORMS)[number], on: boolean) => {
+    settings = await window.axm.setSettings({ launchSounds: { ...settings.launchSounds, [platform]: on } });
+    xmb.refresh();
+  };
+
+  const setMenuMusicTrack = async (id: string) => {
+    settings = await window.axm.setSettings({ menuMusicTrack: id });
+    xmb.refresh();
+  };
+
+  /**
+   * The full-screen A-X-M splash shown on the way into an emulator.
+   *
+   * The emulator takes a moment to appear, and without this the menu just
+   * vanishes to desktop in the meantime. The splash covers that gap, and the
+   * platform's launch sound plays over it.
+   *
+   * The emulator is started as soon as the sound begins rather than after it
+   * finishes: the point is to fill the wait, not to add to it. The splash then
+   * clears on its own once the emulator has had time to take the screen.
+   */
+  const LAUNCH_SPLASH_MS = 2600;
+
+  const showLaunchSplash = async (platform: string, gameName: string): Promise<void> => {
+    const image = await window.axm.launchImage(platform).catch(() => null);
+    if (!image) return;
+
+    const overlay = document.createElement("div");
+    overlay.className = "launch-splash";
+    const art = document.createElement("img");
+    art.src = image;
+    art.alt = "";
+    const caption = document.createElement("div");
+    caption.className = "launch-splash-name";
+    caption.textContent = gameName;
+    overlay.appendChild(art);
+    overlay.appendChild(caption);
+    document.body.appendChild(overlay);
+
+    // One frame, so the fade-in transition actually runs.
+    requestAnimationFrame(() => overlay.classList.add("shown"));
+
+    window.setTimeout(() => {
+      overlay.classList.remove("shown");
+      window.setTimeout(() => overlay.remove(), 600);
+    }, LAUNCH_SPLASH_MS);
+  };
+
+  /**
+   * Starts a game, with the splash and launch sound when it is a console one.
+   *
+   * PC games go straight through: they have their own launchers and splash
+   * screens, and putting ours in front would just be in the way.
+   */
+  const launchWithSplash = async (game: GameEntry): Promise<void> => {
+    const platform = game.platform ?? "";
+    const isConsole = game.source === "retro" && (LAUNCH_PLATFORMS as readonly string[]).includes(platform);
+
+    if (isConsole) {
+      const key = platform as (typeof LAUNCH_PLATFORMS)[number];
+      if (settings.launchSounds[key]) {
+        const sound = await window.axm.launchSound(key, true).catch(() => null);
+        if (sound) {
+          const clip = new Audio(sound.url);
+          clip.volume = settings.sfxVolume;
+          // A file on a drive that has been pulled should not stop the launch.
+          void clip.play().catch(() => undefined);
+        }
+      }
+      if (settings.launchSplashEnabled) void showLaunchSplash(key, game.name);
+    }
+
+    await window.axm.launchGame(game.id);
   };
 
   const isCartridge = (drive: string) => volumes.some((v) => v.cartridge && v.drive.toUpperCase() === drive.slice(0, 2).toUpperCase());
@@ -2249,7 +2351,7 @@ async function main(): Promise<void> {
           contextGame: g,
           onConfirm: () => {
             notifier.push(`Starting ${g.name}`, "general", g.iconPath);
-            return window.axm.launchGame(g.id);
+            return launchWithSplash(g);
           },
         }));
 
@@ -3869,6 +3971,105 @@ async function main(): Promise<void> {
         onConfirm: () => showOptions("CD Import Format", (["mp3", "aac", "opus", "flac"] as const).map((f) => ({ label: f.toUpperCase(), selected: settings.importFormat === f, run: async () => { settings = await window.axm.setSettings({ importFormat: f }); xmb.refresh(); } }))),
       },
       {
+        id: "bootSound",
+        title: "Boot Sound",
+        subtitle: (() => {
+          if (!sounds || sounds.boot.length === 0) return `None found · put .wav files in ${sounds?.folder ?? "BOOT"}`;
+          if (settings.bootSound === "shuffle") return `Shuffle · one of ${sounds.boot.length} at random`;
+          const hit = sounds.boot.find((b) => b.id === settings.bootSound);
+          return hit ? hit.label : "Off";
+        })(),
+        iconUrl: "assets/icons/music.png",
+        onConfirm: () => {
+          // Nothing to choose from is said plainly, with where the files go,
+          // rather than opening an empty picker.
+          const snd = sounds;
+          if (!snd || snd.boot.length === 0) {
+            notifier.push(`Put boot sounds in ${snd?.folder ?? "BOOT on the ROOT drive"}`);
+            return;
+          }
+          showOptions("Boot Sound", [
+            { label: "Off", selected: settings.bootSound === "off", run: () => void setBootSound("off") },
+            {
+              label: "Shuffle",
+              hint: `A different one of the ${snd.boot.length} each start`,
+              selected: settings.bootSound === "shuffle",
+              run: () => void setBootSound("shuffle"),
+            },
+            ...snd.boot.map((b) => ({
+              label: b.label,
+              selected: settings.bootSound === b.id,
+              run: () => void setBootSound(b.id),
+            })),
+          ]);
+        },
+      },
+      {
+        id: "launchSounds",
+        title: "Game Launch Sounds",
+        subtitle: (() => {
+          if (!sounds) return "Checking the ROOT drive";
+          const on = LAUNCH_PLATFORMS.filter((p) => settings.launchSounds[p]);
+          if (on.length === 0) return "Off for every platform";
+          return `${on.map((p) => p.toUpperCase()).join(", ")} · played on the way into the emulator`;
+        })(),
+        iconUrl: "assets/icons/retro-arcade.png",
+        onConfirm: () => {
+          const snd = sounds;
+          if (!snd) return;
+          showOptions("Game Launch Sounds", LAUNCH_PLATFORMS.map((platform) => {
+            const file = snd.launchByPlatform[platform];
+            return {
+              label: LAUNCH_LABELS[platform],
+              // Say which file a toggle will actually play: PS1 and PS3 have no
+              // launch sound of their own and borrow their boot sound.
+              hint: file ? file.file : "No sound file for this platform",
+              selected: settings.launchSounds[platform],
+              run: () => {
+                if (!file) {
+                  notifier.push(`No launch sound for ${LAUNCH_LABELS[platform]} in ${snd.folder ?? "BOOT"}`);
+                  return;
+                }
+                void setLaunchSound(platform, !settings.launchSounds[platform]);
+              },
+            };
+          }));
+        },
+      },
+      {
+        id: "launchSplash",
+        title: "Launch Screen",
+        subtitle: settings.launchSplashEnabled ? "On · A-X-M splash while the emulator starts" : "Off · straight into the game",
+        iconUrl: "assets/launch/ps3.webp",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ launchSplashEnabled: !settings.launchSplashEnabled });
+          xmb.refresh();
+        },
+      },
+      ...((): MenuItem[] => {
+        // Only offered when the file is actually on the drive.
+        const track = sounds?.menu;
+        const folder = sounds?.folder ?? "";
+        if (!track) return [];
+        return [{
+          id: "menuMusicTrack",
+          title: "Menu Music",
+          subtitle: settings.menuMusicTrack === track.id ? track.label : "Built-in loop",
+          iconUrl: "assets/icons/music.png",
+          onConfirm: () => {
+            showOptions("Menu Music", [
+              { label: "Built-in loop", selected: !settings.menuMusicTrack, run: () => void setMenuMusicTrack("") },
+              {
+                label: track.label,
+                hint: `${(track.sizeBytes / 1048576).toFixed(1)} MB from ${folder}`,
+                selected: settings.menuMusicTrack === track.id,
+                run: () => void setMenuMusicTrack(track.id),
+              },
+            ]);
+          },
+        }];
+      })(),
+      {
         id: "musicShuffle",
         title: "Music Shuffle",
         subtitle: settings.musicShuffle ? "On · next track at random" : "Off · folder order",
@@ -5092,7 +5293,7 @@ async function main(): Promise<void> {
             return;
           }
           notifier.push(`Starting ${g.name}`, "general", g.iconPath);
-          await window.axm.launchGame(g.id);
+          await launchWithSplash(g);
         },
       }));
     return {
@@ -5503,7 +5704,7 @@ async function main(): Promise<void> {
     // each destination can be shown with its size and free space.
     const transfer = await gameTransferOptions(game);
     showOptions(game.name, [
-      { label: "Play", run: () => void window.axm.launchGame(game.id) },
+      { label: "Play", run: () => void launchWithSplash(game) },
       {
         label: "Lossless Scaling",
         hint: game.losslessProfile ? `Profile ${game.losslessProfile}` : "Off",
@@ -5688,7 +5889,7 @@ async function main(): Promise<void> {
   assistant.setCommands((): Command[] => {
     const cmds: Command[] = [];
     for (const g of games.filter((x) => !x.hidden)) {
-      cmds.push({ verbs: ["launch", "start", "play", "open", "run"], name: g.name, reply: `Launching ${g.name}`, weight: 0.2, run: () => { notifier.push(`Starting ${g.name}`, "general", g.iconPath); void window.axm.launchGame(g.id); } });
+      cmds.push({ verbs: ["launch", "start", "play", "open", "run"], name: g.name, reply: `Launching ${g.name}`, weight: 0.2, run: () => { notifier.push(`Starting ${g.name}`, "general", g.iconPath); void launchWithSplash(g); } });
     }
     for (const pl of settings.playlists) {
       cmds.push({ verbs: ["play", "shuffle", "start"], name: `playlist ${pl.name}`, reply: `Playing ${pl.name}`, weight: 0.3, run: () => {
@@ -5791,7 +5992,18 @@ async function main(): Promise<void> {
     if (settings.menuDimMinutes > 0 && performance.now() - lastInput > settings.menuDimMinutes * 60_000) document.body.classList.add("dimmed");
   }, 5000);
 
-  audio.playBootThenAmbient();
+  // The boot sound and menu music the user picked, if the files are still on the
+  // drive. Both are resolved before anything plays, so a removed file falls back
+  // to the built-in sound rather than to silence.
+  void (async () => {
+    await refreshSounds();
+    const [boot, menu] = await Promise.all([
+      window.axm.bootSound(settings.bootSound).catch(() => null),
+      window.axm.menuMusicTrack(!!settings.menuMusicTrack).catch(() => null),
+    ]);
+    audio.setAmbientSource(menu?.url ?? null);
+    audio.playBootThenAmbient(boot?.url ?? null);
+  })();
 
   const bootSplash = document.getElementById("boot-splash")!;
   setTimeout(() => {
