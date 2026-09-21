@@ -60,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.axm.companion.Screen
+import com.axm.companion.protocol.CompanionSetting
 import com.axm.companion.net.LinkState
 import com.axm.companion.protocol.DiscoveredHost
 import com.axm.companion.protocol.MediaCommand
@@ -184,7 +185,9 @@ fun HomeScreen(
             Text("MODES", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
             ModeRow("Controls", "The menu and games; media controls when something plays") { onOpen(Screen.REMOTE) }
             ModeRow("Media", "What is playing") { onOpen(Screen.MEDIA) }
+            ModeRow("Music Library", "Pick a song from the PC's music from here") { onOpen(Screen.LIBRARY) }
             ModeRow("Touchpad", "Move the pointer") { onOpen(Screen.TOUCHPAD) }
+            ModeRow("A-X-M Settings", "The menu's settings, changed from the phone") { onOpen(Screen.SETTINGS) }
         }
     }
 }
@@ -300,7 +303,15 @@ fun RemoteScreen(onAction: (XmbAction) -> Unit, onBack: () -> Unit) {
 /* ------------------------------------------------------------------- media -- */
 
 @Composable
-fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, onBack: () -> Unit, onRoute: ((Boolean) -> Unit)? = null) {
+fun MediaScreen(
+    media: MediaState,
+    onCommand: (MediaCommand, Double?) -> Unit,
+    onBack: () -> Unit,
+    onRoute: ((Boolean) -> Unit)? = null,
+    visualizer: CompanionSetting? = null,
+    onVisualizer: ((String) -> Unit)? = null,
+    onLibrary: (() -> Unit)? = null,
+) {
     Column(
         Modifier.fillMaxSize().background(Axm.Background).padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -383,7 +394,7 @@ fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, o
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(Axm.Panel),
             ) {
                 OutputChoice("This PC", media.output != "phone", Modifier.weight(1f)) { onRoute(false) }
-                OutputChoice("This phone · Bluetooth", media.output == "phone", Modifier.weight(1f)) { onRoute(true) }
+                OutputChoice("Phone", media.output == "phone", Modifier.weight(1f)) { onRoute(true) }
             }
         }
 
@@ -395,6 +406,33 @@ fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, o
                 onCommand(MediaCommand.MUTE, null)
             }
             PadButton(Icons.Filled.Favorite, "Favourite", 56) { onCommand(MediaCommand.FAVORITE, null) }
+        }
+
+        // The menu's visualizer, switched from here: ◀ ▶ step through the styles
+        // the host listed, the same list ◀ ▶ walk on the stage.
+        if (visualizer != null && onVisualizer != null && visualizer.options.isNotEmpty()) {
+            val i = visualizer.options.indexOfFirst { it.first == visualizer.value }.coerceAtLeast(0)
+            val n = visualizer.options.size
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(Axm.Panel).padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PadButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous style", 40) { onVisualizer(visualizer.options[(i - 1 + n) % n].first) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("VISUALIZER", style = MaterialTheme.typography.labelMedium, color = Axm.TextDim)
+                    Text(visualizer.options[i].second, color = Axm.Text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                PadButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next style", 40) { onVisualizer(visualizer.options[(i + 1) % n].first) }
+            }
+        }
+
+        if (onLibrary != null) {
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(Axm.PanelRaised).clickable(onClick = onLibrary).padding(vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Browse the music library", color = Axm.Accent, style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
 }

@@ -175,8 +175,11 @@ interface RawItem {
   IndexNumber?: number;
   ParentIndexNumber?: number;
   MediaType?: string;
-  MediaSources?: { Id?: string; Container?: string; MediaStreams?: { Type: string; Codec?: string }[] }[];
+  MediaSources?: { Id?: string; Container?: string; MediaStreams?: { Type: string; Codec?: string; Language?: string; Index?: number; IsDefault?: boolean }[] }[];
 }
+
+/** ISO 639-1 (the setting) to the 639-2 codes files carry. */
+const LANG3: Record<string, string[]> = { en: ["eng", "en"], es: ["spa", "es"], fr: ["fre", "fra", "fr"], de: ["ger", "deu", "de"], it: ["ita", "it"], pt: ["por", "pt"], nl: ["dut", "nld", "nl"], ja: ["jpn", "ja"], ko: ["kor", "ko"], zh: ["chi", "zho", "zh"], ru: ["rus", "ru"], ar: ["ara", "ar"] };
 
 /** Containers and codecs Chromium's <video> plays natively. Anything else is transcoded. */
 const DIRECT_CONTAINERS = new Set(["mp4", "m4v", "mov", "webm"]);
@@ -229,8 +232,15 @@ function hlsUrl(login: JellyfinLogin, raw: RawItem): string {
     BreakOnNonKeyFrames: "True",
     TranscodeReasons: "ContainerNotSupported",
   });
-  const sourceId = raw.MediaSources?.[0]?.Id;
-  if (sourceId) q.set("MediaSourceId", sourceId);
+  const source = raw.MediaSources?.[0];
+  if (source?.Id) q.set("MediaSourceId", source.Id);
+  // More than one audio track: the one in the menu's audio language, else the file's default.
+  const audio = (source?.MediaStreams ?? []).filter((m) => m.Type === "Audio");
+  if (audio.length > 1) {
+    const want = LANG3[loadSettings().audioLanguage || "en"] ?? [];
+    const pick = audio.find((m) => want.includes((m.Language ?? "").toLowerCase()));
+    if (pick?.Index !== undefined) q.set("AudioStreamIndex", String(pick.Index));
+  }
   return `${login.serverUrl}/Videos/${raw.Id}/master.m3u8?${q.toString()}`;
 }
 

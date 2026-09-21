@@ -6,6 +6,7 @@ import { execFile } from "node:child_process";
 import { BrowserWindow } from "electron";
 
 import { JellyfinLogin } from "./settingsStore";
+import { cartridgeDrives } from "./cartridge";
 
 /**
  * Drives and moving media between them.
@@ -29,6 +30,8 @@ export interface VolumeInfo {
   usedBytes: number;
   kind: "fixed" | "removable" | "network" | "other";
   system: boolean;
+  /** Plugged in through the Sabrent SATA adapter - shown as a game cartridge. */
+  cartridge?: boolean;
 }
 
 export type MediaKind = "music" | "photo" | "video";
@@ -46,7 +49,14 @@ export interface TransferProgress {
   error?: string;
 }
 
-export function listVolumes(): Promise<VolumeInfo[]> {
+export async function listVolumes(): Promise<VolumeInfo[]> {
+  const volumes = await listVolumesRaw();
+  const carts = await cartridgeDrives();
+  for (const v of volumes) v.cartridge = carts.includes(v.drive.toUpperCase());
+  return volumes;
+}
+
+function listVolumesRaw(): Promise<VolumeInfo[]> {
   if (!isWindows) return listVolumesPosix();
   const script =
     "Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -in 2,3,4 } | " +

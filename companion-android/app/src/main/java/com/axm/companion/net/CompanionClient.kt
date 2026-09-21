@@ -2,7 +2,10 @@ package com.axm.companion.net
 
 import com.axm.companion.protocol.Capabilities
 import com.axm.companion.protocol.CompanionMode
+import com.axm.companion.protocol.CompanionSetting
 import com.axm.companion.protocol.DiscoveredHost
+import com.axm.companion.protocol.KeyboardPrompt
+import com.axm.companion.protocol.MusicListing
 import com.axm.companion.protocol.Frame
 import com.axm.companion.protocol.GhostState
 import com.axm.companion.protocol.MediaCommand
@@ -87,6 +90,18 @@ class CompanionClient(
 
     private val _ghostText = MutableStateFlow<String?>(null)
     val ghostText: StateFlow<String?> = _ghostText.asStateFlow()
+
+    /** The menu's settings, as the host lists them; changed from here with sendSetting. */
+    private val _settings = MutableStateFlow<List<CompanionSetting>>(emptyList())
+    val settings: StateFlow<List<CompanionSetting>> = _settings.asStateFlow()
+
+    /** A text prompt open on the A-X-M screen, or null. */
+    private val _keyboard = MutableStateFlow<KeyboardPrompt?>(null)
+    val keyboard: StateFlow<KeyboardPrompt?> = _keyboard.asStateFlow()
+
+    /** The last music folder the host listed for us. */
+    private val _musicListing = MutableStateFlow<MusicListing?>(null)
+    val musicListing: StateFlow<MusicListing?> = _musicListing.asStateFlow()
 
     private fun hostKey(h: DiscoveredHost) = "${h.address}:${h.controlPort}"
 
@@ -199,6 +214,10 @@ class CompanionClient(
             Protocol.MEDIA_STATE -> _media.value = MediaState.from(p)
             Protocol.GHOST_STATE -> _ghost.value = GhostState.from(p.optString("state", "idle"))
             Protocol.GHOST_MESSAGE -> _ghostText.value = p.optString("text").ifEmpty { null }
+            Protocol.SETTINGS_STATE -> _settings.value = CompanionSetting.list(p)
+            Protocol.KEYBOARD_SHOW -> _keyboard.value = KeyboardPrompt.from(p)
+            Protocol.KEYBOARD_HIDE -> _keyboard.value = null
+            Protocol.MUSIC_LISTING -> _musicListing.value = MusicListing.from(p)
             else -> Unit   // A newer host naming a feature we lack is ignorable.
         }
     }
@@ -235,6 +254,22 @@ class CompanionClient(
         tail?.let { payload.put("tail", it) }
         send(Protocol.TOYBOX_SCAN, payload)
     }
+
+    fun sendSetting(id: String, value: String) =
+        send(Protocol.SETTINGS_SET, JSONObject().put("id", id).put("value", value))
+
+    /** What the phone has typed for the menu's prompt; done = enter / next. */
+    fun sendKeyboard(text: String, done: Boolean) =
+        send(Protocol.KEYBOARD_INPUT, JSONObject().put("text", text).put("done", done))
+
+    /** A folder key from a listing, or null for the top of the library. */
+    fun browseMusic(key: String?) {
+        val payload = JSONObject()
+        key?.let { payload.put("key", it) }
+        send(Protocol.MUSIC_BROWSE, payload)
+    }
+
+    fun playMusic(key: String) = send(Protocol.MUSIC_PLAY, JSONObject().put("key", key))
 
     fun requestMode(mode: CompanionMode) =
         send(Protocol.COMPANION_MODE, JSONObject().put("mode", mode.wire))

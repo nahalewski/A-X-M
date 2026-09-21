@@ -1093,6 +1093,7 @@ body.pad-switch .btn-y, body.pad-kishi .btn-y { -webkit-mask-position: 0% 0; mas
 .item-icon.hdd-photo { filter: hue-rotate(80deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 .item-icon.hdd-video { filter: hue-rotate(200deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 .item-icon.hdd-game { filter: hue-rotate(320deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+.item-icon.cartridge { object-fit: contain; padding: 6%; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 /* Sheet order: triangle, circle, cross, square. Xbox A=cross, B=circle, X=square, Y=triangle. */
 body.pad-ps .btn-a { -webkit-mask-position: 66.667% 0; mask-position: 66.667% 0; }
 body.pad-ps .btn-b { -webkit-mask-position: 33.333% 0; mask-position: 33.333% 0; }

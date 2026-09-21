@@ -113,6 +113,7 @@ export class MediaViewer {
     root.appendChild(this.videoBar);
 
     this.videoEl.addEventListener("timeupdate", () => this.updateVideoChrome());
+    this.videoEl.addEventListener("loadedmetadata", () => this.pickAudioTrack());
     this.videoEl.addEventListener("play", () => this.updateVideoChrome());
     this.videoEl.addEventListener("pause", () => this.updateVideoChrome());
     this.videoEl.addEventListener("ended", () => this.updateVideoChrome());
@@ -135,6 +136,36 @@ export class MediaViewer {
   }
 
   private trackUrl: string | null = null;
+  /** ISO 639-1 code the user wants to hear when a video has more than one audio track. */
+  private audioLanguage = "en";
+
+  setAudioLanguage(code: string): void {
+    this.audioLanguage = (code || "en").toLowerCase();
+    this.pickAudioTrack();
+  }
+
+  /** Whether a track's language tag (eng, en-US, fre...) is the wanted language. */
+  private wantsLang(lang: string | undefined): boolean {
+    const l = (lang ?? "").toLowerCase();
+    if (!l) return false;
+    const alts: Record<string, string[]> = { en: ["eng"], es: ["spa"], fr: ["fre", "fra"], de: ["ger", "deu"], it: ["ita"], pt: ["por"], nl: ["dut", "nld"], ja: ["jpn"], ko: ["kor"], zh: ["chi", "zho"], ru: ["rus"], ar: ["ara"] };
+    return l === this.audioLanguage || l.startsWith(this.audioLanguage + "-") || (alts[this.audioLanguage] ?? []).includes(l);
+  }
+
+  private pickAudioTrack(): void {
+    // hls.js: the playlist's alternate audio renditions.
+    if (this.hls && this.hls.audioTracks.length > 1) {
+      const i = this.hls.audioTracks.findIndex((t) => this.wantsLang(t.lang));
+      if (i >= 0 && this.hls.audioTrack !== i) this.hls.audioTrack = i;
+    }
+    // Native: <video>.audioTracks (Chromium, with the AudioVideoTracks blink feature).
+    const tracks = (this.videoEl as HTMLVideoElement & { audioTracks?: { length: number; [i: number]: { language: string; enabled: boolean } } }).audioTracks;
+    if (tracks && tracks.length > 1) {
+      let want = -1;
+      for (let i = 0; i < tracks.length; i++) if (this.wantsLang(tracks[i].language)) { want = i; break; }
+      if (want >= 0) for (let i = 0; i < tracks.length; i++) tracks[i].enabled = i === want;
+    }
+  }
 
   /** Shows subtitles (WebVTT text) over the playing video; null clears them. */
   setSubtitles(vtt: string | null): void {
@@ -232,6 +263,7 @@ export class MediaViewer {
         this.hls.loadSource(entry.url);
         this.hls.attachMedia(this.videoEl);
         this.hls.on(Hls.Events.MANIFEST_PARSED, () => this.videoEl.play().catch(() => {}));
+        this.hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => this.pickAudioTrack());
       } else {
         this.videoEl.src = entry.url;
         this.videoEl.play().catch(() => {});

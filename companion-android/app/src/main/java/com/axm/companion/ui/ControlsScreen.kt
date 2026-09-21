@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.axm.companion.protocol.CompanionSetting
 import com.axm.companion.protocol.MediaCommand
 import com.axm.companion.protocol.MediaState
 import com.axm.companion.protocol.XmbAction
@@ -39,6 +40,9 @@ fun ControlsScreen(
     onCommand: (MediaCommand, Double?) -> Unit,
     onBack: () -> Unit,
     onRoute: ((Boolean) -> Unit)? = null,
+    visualizer: CompanionSetting? = null,
+    onVisualizer: ((String) -> Unit)? = null,
+    onLibrary: (() -> Unit)? = null,
 ) {
     val playingSomething = media.title != null
     // null = follow playback; true / false = the user chose.
@@ -63,7 +67,7 @@ fun ControlsScreen(
             Segment(if (playingSomething) "Media · playing" else "Media", showMedia, Modifier.weight(1f)) { forced = true }
         }
         Box(Modifier.fillMaxSize()) {
-            if (showMedia) MediaScreen(media = media, onCommand = onCommand, onBack = onBack, onRoute = onRoute)
+            if (showMedia) MediaScreen(media = media, onCommand = onCommand, onBack = onBack, onRoute = onRoute, visualizer = visualizer, onVisualizer = onVisualizer, onLibrary = onLibrary)
             else RemoteScreen(onAction = onAction, onBack = onBack)
         }
     }

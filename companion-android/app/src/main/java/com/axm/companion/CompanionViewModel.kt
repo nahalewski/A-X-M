@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /** Which screen the user is on. The host can also drive this, later. */
-enum class Screen { HOME, REMOTE, MEDIA, TOUCHPAD, TOYBOX, GHOST }
+enum class Screen { HOME, REMOTE, MEDIA, TOUCHPAD, TOYBOX, GHOST, SETTINGS, LIBRARY }
 
 /**
  * Holds the link and everything the screens read.
@@ -106,7 +106,7 @@ class CompanionViewModel(app: Application) : AndroidViewModel(app) {
     fun media(command: MediaCommand, value: Double? = null) = client.sendMedia(command, value)
 
     /** The phone's own player, live while the host says the output is the phone. */
-    private val phonePlayer = com.axm.companion.net.PhonePlayer()
+    private val phonePlayer = com.axm.companion.net.PhonePlayer(app)
     private var followingOutput = false
 
     /** Switches the music to this phone (Bluetooth follows the phone), or back to the PC. */
@@ -135,9 +135,17 @@ class CompanionViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        phonePlayer.release()
+        phonePlayer.destroy()
         super.onCleared()
     }
     fun pointer(kind: String, dx: Float = 0f, dy: Float = 0f, button: String? = null) =
         client.sendPointer(kind, dx, dy, button)
+
+    /** A menu setting changed from the phone. The host applies it and lists again. */
+    fun setSetting(id: String, value: String) = client.sendSetting(id, value)
+
+    fun keyboard(text: String, done: Boolean) = client.sendKeyboard(text, done)
+
+    fun browse(key: String?) = client.browseMusic(key)
+    fun playTrack(key: String) = client.playMusic(key)
 }

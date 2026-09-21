@@ -224,6 +224,7 @@ export interface VolumeInfo {
   usedBytes: number;
   kind: "fixed" | "removable" | "network" | "other";
   system: boolean;
+  cartridge?: boolean;
 }
 
 export interface TransferProgress {
@@ -419,6 +420,10 @@ export interface Settings {
   ps3Trim: Ps3TrimSettings;
   storeRoot: string;
   tvEnglishOnly: boolean;
+  tvLanguageOverrides: Record<string, "show" | "hide">;
+  tvAdultBlocked: boolean;
+  tvPin: string;
+  audioLanguage: string;
   subdlApiKey: string;
   subtitles: { enabled: boolean; language: string };
   lyricsEnabled: boolean;
@@ -583,7 +588,10 @@ export interface ToyboxSummary {
 export type CompanionInput =
   | { kind: "xmb"; action: "up" | "down" | "left" | "right" | "confirm" | "back" | "context" | "guide" }
   | { kind: "media"; command: string; value?: number }
-  | { kind: "pointer"; input: { kind: string; dx?: number; dy?: number; button?: string } };
+  | { kind: "pointer"; input: { kind: string; dx?: number; dy?: number; button?: string } }
+  | { kind: "setting"; id: string; value: string }
+  | { kind: "keyboard"; text: string; done: boolean }
+  | { kind: "musicPlay"; filePath: string };
 
 export interface CompanionSession {
   deviceId: string;
@@ -776,13 +784,19 @@ export interface AxmApi {
   tvLogos(): Promise<{ folder: string; count: number; apiFolder: string; apiSource: string | null }>;
   tvRefreshLogos(): Promise<number>;
   tvLogin(account: TvAccount | null): Promise<TvStatus>;
-  tvCategories(kind: TvKind): Promise<TvCategory[]>;
-  tvItems(kind: TvKind, categoryId?: string): Promise<TvItem[]>;
+  tvCategories(kind: TvKind, adultUnlocked?: boolean): Promise<TvCategory[]>;
+  /** Language tags the provider uses ("EN", "FR", "MULTI"...), with how many rows carry each. */
+  tvLanguages(): Promise<{ tag: string; count: number; english: boolean }[]>;
+  tvItems(kind: TvKind, categoryId?: string, adultUnlocked?: boolean): Promise<TvItem[]>;
   tvEpg(streamId: string): Promise<TvProgramme[]>;
   tvStreamUrl(item: TvItem): Promise<string | null>;
   tvEpisodes(seriesId: string): Promise<TvEpisode[]>;
   tvEpisodeUrl(ep: TvEpisode): Promise<string | null>;
   tvRelayUrl(url: string): Promise<string | null>;
+  /** The settings a paired phone may change - the list, labels and current values. */
+  companionSettings(items: { id: string; title: string; group: string; kind: "toggle" | "choice"; value: string; options?: { id: string; label: string }[]; detail?: string }[]): void;
+  /** A text prompt is open (or closed, null) - phones can type for it. */
+  companionKeyboard(prompt: { title: string; label: string; value: string; secret: boolean } | null): void;
   /** SubDL subtitles for a film or episode, as WebVTT text. */
   findSubtitles(q: { title: string; year?: string; kind: "movie" | "tv"; season?: number; episode?: number }): Promise<string | null>;
   /** LRCLIB lyrics for the track: timed lines when synced, t = -1 otherwise. */

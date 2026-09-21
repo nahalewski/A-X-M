@@ -201,7 +201,48 @@ export function isEnglish(name: string): boolean {
   return !OTHER_LANGUAGE.test(name);
 }
 
-export async function categories(kind: XtreamKind, englishOnly = false): Promise<XtreamCategory[]> {
+/** The language / country tag a provider put in front of a name: "|EN| TOP" → "EN", "FR: CINEMA" → "FR". */
+export function languageTag(name: string): string | null {
+  const m = name.match(/^\s*[|\[(]?\s*([A-Za-z]{2,6}(?:-[A-Za-z]{2,3})?)\s*[|\]):\-]/);
+  return m ? m[1].toUpperCase() : null;
+}
+
+const ADULT = /(^|[\s|:\-\[(])(adult|adults|xxx|18\+|porn|erotic|erotik|sex|hentai|playboy|hustler|brazzers|for adults)([\s|:\-\])]|$)/i;
+export function isAdult(name: string): boolean {
+  return ADULT.test(name);
+}
+
+export interface TvFilter {
+  englishOnly: boolean;
+  /** Per tag, on top of englishOnly. */
+  overrides: Record<string, "show" | "hide">;
+  /** Adult rows are dropped unless the PIN was entered this session. */
+  hideAdult: boolean;
+}
+
+export function passesFilter(name: string, f: TvFilter | boolean | undefined): boolean {
+  if (f === undefined || f === false) return true;
+  if (f === true) return isEnglish(name);
+  if (f.hideAdult && isAdult(name)) return false;
+  const tag = languageTag(name);
+  const override = tag ? f.overrides[tag] : undefined;
+  if (override) return override === "show";
+  return !f.englishOnly || isEnglish(name);
+}
+
+/** Every tag across live, film and series categories, with counts - for the settings page. */
+export async function languageTags(): Promise<{ tag: string; count: number; english: boolean }[]> {
+  const counts = new Map<string, number>();
+  for (const kind of ["live", "movie", "series"] as XtreamKind[]) {
+    for (const c of await categories(kind, false)) {
+      const tag = languageTag(c.name);
+      if (tag) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].map(([tag, count]) => ({ tag, count, english: isEnglish(`|${tag}| x`) })).sort((a, b) => b.count - a.count);
+}
+
+export async function categories(kind: XtreamKind, filter: TvFilter | boolean = false): Promise<XtreamCategory[]> {
   const account = loadAccount();
   if (!account) return [];
   const rows = (await api(account, { action: CATEGORY_ACTION[kind] })) as
@@ -210,10 +251,10 @@ export async function categories(kind: XtreamKind, englishOnly = false): Promise
   if (!Array.isArray(rows)) return [];
   return rows
     .map((r) => ({ id: text(r.category_id), name: text(r.category_name) }))
-    .filter((c) => c.id && c.name && (!englishOnly || isEnglish(c.name)));
+    .filter((c) => c.id && c.name && passesFilter(c.name, filter));
 }
 
-export async function items(kind: XtreamKind, categoryId?: string, englishOnly = false): Promise<XtreamItem[]> {
+export async function items(kind: XtreamKind, categoryId?: string, filter: TvFilter | boolean = false): Promise<XtreamItem[]> {
   const account = loadAccount();
   if (!account) return [];
   const params: Record<string, string> = { action: STREAM_ACTION[kind] };
@@ -235,7 +276,7 @@ export async function items(kind: XtreamKind, categoryId?: string, englishOnly =
       epgChannelId: text(r.epg_channel_id) || undefined,
       extension: text(r.container_extension) || undefined,
     }))
-    .filter((i) => i.id && i.name && (!englishOnly || isEnglish(i.name)));
+    .filter((i) => i.id && i.name && passesFilter(i.name, filter));
 }
 
 /** What is on now and next, for the guide. Empty when the portal carries no EPG. */

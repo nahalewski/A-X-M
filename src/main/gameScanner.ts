@@ -3,18 +3,28 @@ import { scanSteamGames } from "./scanners/steamScanner";
 import { scanEpicGames } from "./scanners/epicScanner";
 import { scanXboxGames } from "./scanners/xboxScanner";
 import { scanGenericGames } from "./scanners/genericScanner";
-import { scanRetroGames, findEmulators } from "./scanners/retroScanner";
+import { scanRetroGames, findEmulators, RETRO_DEFAULT_FOLDERS } from "./scanners/retroScanner";
 import { loadSettings } from "./settingsStore";
+import { cartridgeDrives, cartridgeRetroFolders, cartridgeGameFolders } from "./cartridge";
 
 export async function scanAllGames(): Promise<GameEntry[]> {
   const settings = loadSettings();
+  // A drive on the Sabrent adapter is the "cartridge": its game folders join the scan.
+  const cartridge = await cartridgeDrives();
+  const cartRetro = cartridgeRetroFolders(cartridge);
+  const retroFolders: typeof settings.retroFolders = { ...settings.retroFolders };
+  for (const [platform, dirs] of Object.entries(cartRetro) as [keyof typeof cartRetro, string[]][]) {
+    const base = retroFolders[platform] ?? RETRO_DEFAULT_FOLDERS[platform];
+    retroFolders[platform] = [...base, ...dirs.filter((d) => !base.some((b) => b.toLowerCase() === d.toLowerCase()))];
+  }
+  const gameFolders = [...settings.extraGameFolders, ...cartridgeGameFolders(cartridge).filter((d) => !settings.extraGameFolders.some((b) => b.toLowerCase() === d.toLowerCase()))];
 
   const results = await Promise.allSettled([
     Promise.resolve().then(() => scanSteamGames()),
     Promise.resolve().then(() => scanEpicGames()),
     Promise.resolve().then(() => scanXboxGames()),
-    Promise.resolve().then(() => scanGenericGames(settings.extraGameFolders)),
-    Promise.resolve().then(() => scanRetroGames(settings.retroFolders, findEmulators(settings.emulators))),
+    Promise.resolve().then(() => scanGenericGames(gameFolders)),
+    Promise.resolve().then(() => scanRetroGames(retroFolders, findEmulators(settings.emulators))),
   ]);
 
   let games: GameEntry[] = [];

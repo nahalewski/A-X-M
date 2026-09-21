@@ -149,6 +149,13 @@ export interface Settings {
   storeRoot: string;
   /** TV Streaming: hide channels, films and shows tagged as another language. */
   tvEnglishOnly: boolean;
+  /** TV Streaming: per language tag ("FR", "MULTI"...) show or hide, on top of English Only. */
+  tvLanguageOverrides: Record<string, "show" | "hide">;
+  /** TV Streaming: adult categories and channels hidden behind a PIN. */
+  tvAdultBlocked: boolean;
+  tvPin: string;
+  /** Default audio language for videos with more than one track (ISO 639-1, "en"). */
+  audioLanguage: string;
   /** SubDL API key (subdl.com) - subtitles for Jellyfin and TV Streaming videos. */
   subdlApiKey: string;
   /** Subtitles: fetched and shown by themselves when enabled; the language is a SubDL code (EN, ES, …). */
@@ -250,6 +257,10 @@ const DEFAULTS: Settings = {
   ps3Trim: { update: true, dummy: true, languages: false },
   storeRoot: "N:\\GAME\\ROMS",
   tvEnglishOnly: true,
+  tvLanguageOverrides: {},
+  tvAdultBlocked: true,
+  tvPin: "",
+  audioLanguage: "en",
   subdlApiKey: "",
   subtitles: { enabled: true, language: "EN" },
   lyricsEnabled: true,

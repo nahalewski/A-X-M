@@ -187,6 +187,50 @@ export type GhostState = "idle" | "listening" | "thinking" | "speaking" | "scann
 export type GhostStateMessage = Frame<"ghost.state", { state: GhostState }>;
 export type GhostMessageFrame = Frame<"ghost.message", { text: string; spoken?: boolean }>;
 
+// ---------------------------------------------------------- settings --
+
+/**
+ * A menu setting the phone may change. The list is the host's: it says what each
+ * one is called, what it can be, and what it is now. The phone only ever sends
+ * back an id and one of the values it was given.
+ */
+export interface CompanionSetting {
+  id: string;
+  title: string;
+  /** "Audio", "Display", "TV Streaming"... - the phone groups by this. */
+  group: string;
+  kind: "toggle" | "choice";
+  /** "on" / "off" for a toggle; an option id for a choice. */
+  value: string;
+  options?: { id: string; label: string }[];
+  /** One line under the title, as the menu shows it. */
+  detail?: string;
+}
+export type SettingsStateMessage = Frame<"settings.state", { items: CompanionSetting[] }>;
+export type SettingsSetMessage = Frame<"settings.set", { id: string; value: string }>;
+
+// ---------------------------------------------------------- keyboard --
+
+/** The menu is asking for text; the phone can type it with its own keyboard. */
+export type KeyboardShowMessage = Frame<"keyboard.show", { title: string; label: string; value: string; secret: boolean }>;
+export type KeyboardHideMessage = Frame<"keyboard.hide", { at: number }>;
+/** What the phone typed so far; done = the user pressed enter / next. */
+export type KeyboardInputMessage = Frame<"keyboard.input", { text: string; done: boolean }>;
+
+// ------------------------------------------------------------- music --
+
+/**
+ * Browsing the music library from the phone. Folders and files are named by
+ * opaque keys the host hands out in a listing; the phone never sends a path.
+ * No key means the top level: every drive's MUSIC folder and the user's own.
+ */
+export type MusicBrowseMessage = Frame<"music.browse", { key?: string }>;
+export type MusicListingMessage = Frame<
+  "music.listing",
+  { key: string; name: string; parent?: string; entries: { key: string; name: string; kind: "folder" | "file" }[] }
+>;
+export type MusicPlayMessage = Frame<"music.play", { key: string }>;
+
 /** Anything the host wants to say went wrong, in words fit to show a user. */
 export type ErrorMessage = Frame<"link.error", { message: string; fatal?: boolean }>;
 
@@ -207,6 +251,14 @@ export type CompanionMessage =
   | ToyMetadataMessage
   | GhostStateMessage
   | GhostMessageFrame
+  | SettingsStateMessage
+  | SettingsSetMessage
+  | KeyboardShowMessage
+  | KeyboardHideMessage
+  | KeyboardInputMessage
+  | MusicBrowseMessage
+  | MusicListingMessage
+  | MusicPlayMessage
   | ErrorMessage;
 
 export type CompanionMessageType = CompanionMessage["type"];

@@ -54,6 +54,26 @@ export class TextEntry {
   private open = false;
   private onSubmit: (values: string[]) => void = () => {};
   private onCancel: () => void = () => {};
+  /** Told whenever a field is being asked for (or none, on close) - the companion keyboard follows it. */
+  private onPrompt: (prompt: { title: string; label: string; value: string; secret: boolean } | null) => void = () => {};
+
+  setOnPrompt(callback: (prompt: { title: string; label: string; value: string; secret: boolean } | null) => void): void {
+    this.onPrompt = callback;
+  }
+
+  private announce(): void {
+    const f = this.fields[this.field];
+    if (!this.open || !f) return this.onPrompt(null);
+    this.onPrompt({ title: this.titleEl.textContent ?? "", label: f.label, value: this.values[this.field] ?? "", secret: !!f.secret });
+  }
+
+  /** Text typed elsewhere (the phone) replaces the current field; done moves on. */
+  setValue(text: string, done: boolean): void {
+    if (!this.open) return;
+    this.values[this.field] = text;
+    this.render();
+    if (done) this.next();
+  }
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -112,11 +132,13 @@ export class TextEntry {
     this.titleEl.textContent = title;
     this.root.classList.remove("hidden");
     this.render();
+    this.announce();
   }
 
   close(): void {
     this.open = false;
     this.root.classList.add("hidden");
+    this.onPrompt(null);
   }
 
   handle(action: EntryAction): boolean {
@@ -241,6 +263,7 @@ export class TextEntry {
     if (this.field < this.fields.length - 1) {
       this.field++;
       this.render();
+      this.announce();
       return;
     }
     this.close();

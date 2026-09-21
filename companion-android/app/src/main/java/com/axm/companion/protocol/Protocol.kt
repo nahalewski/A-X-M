@@ -42,6 +42,14 @@ object Protocol {
     const val TOYBOX_METADATA = "toybox.metadata"
     const val GHOST_STATE = "ghost.state"
     const val GHOST_MESSAGE = "ghost.message"
+    const val SETTINGS_STATE = "settings.state"
+    const val SETTINGS_SET = "settings.set"
+    const val KEYBOARD_SHOW = "keyboard.show"
+    const val KEYBOARD_HIDE = "keyboard.hide"
+    const val KEYBOARD_INPUT = "keyboard.input"
+    const val MUSIC_BROWSE = "music.browse"
+    const val MUSIC_LISTING = "music.listing"
+    const val MUSIC_PLAY = "music.play"
 
     fun frame(type: String, payload: JSONObject): String =
         JSONObject()
@@ -154,6 +162,72 @@ data class MediaState(
         )
     }
 }
+
+/**
+ * A menu setting the host lets this phone change. The host names it, says what it
+ * can be and what it is; the phone only ever sends back an id and one of those values.
+ */
+data class CompanionSetting(
+    val id: String,
+    val title: String,
+    val group: String,
+    val kind: String,          // "toggle" or "choice"
+    val value: String,         // "on" / "off", or an option id
+    val options: List<Pair<String, String>>,   // id to label, for a choice
+    val detail: String?,
+) {
+    companion object {
+        fun list(p: JSONObject): List<CompanionSetting> {
+            val arr = p.optJSONArray("items") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val opts = o.optJSONArray("options")
+                CompanionSetting(
+                    id = o.optString("id"),
+                    title = o.optString("title"),
+                    group = o.optString("group", "Settings"),
+                    kind = o.optString("kind", "toggle"),
+                    value = o.optString("value"),
+                    options = if (opts == null) emptyList() else (0 until opts.length()).mapNotNull { j ->
+                        opts.optJSONObject(j)?.let { it.optString("id") to it.optString("label") }
+                    },
+                    detail = o.optString("detail").ifEmpty { null },
+                )
+            }
+        }
+    }
+}
+
+/** The menu is asking for text; the phone's keyboard can supply it. */
+data class KeyboardPrompt(val title: String, val label: String, val value: String, val secret: Boolean) {
+    companion object {
+        fun from(p: JSONObject) = KeyboardPrompt(
+            title = p.optString("title"),
+            label = p.optString("label"),
+            value = p.optString("value"),
+            secret = p.optBoolean("secret", false),
+        )
+    }
+}
+
+/** One folder of the host's music library. Keys are the host's; the phone never sees a path. */
+data class MusicListing(val key: String, val name: String, val parent: String?, val entries: List<MusicEntry>) {
+    companion object {
+        fun from(p: JSONObject): MusicListing {
+            val arr = p.optJSONArray("entries")
+            return MusicListing(
+                key = p.optString("key"),
+                name = p.optString("name", "Music"),
+                parent = if (p.has("parent")) p.optString("parent") else null,
+                entries = if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+                    arr.optJSONObject(i)?.let { MusicEntry(it.optString("key"), it.optString("name"), it.optString("kind") == "folder") }
+                },
+            )
+        }
+    }
+}
+
+data class MusicEntry(val key: String, val name: String, val folder: Boolean)
 
 enum class GhostState(val wire: String) {
     IDLE("idle"), LISTENING("listening"), THINKING("thinking"),

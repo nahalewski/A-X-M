@@ -36,6 +36,7 @@ import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
+import * as crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { toybox, kindOf } from "./toybox/toyboxService";
 import { findEmulators as findRetroEmulators } from "./scanners/retroScanner";
@@ -47,6 +48,7 @@ import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { nfcHub, dumpsDir as toyboxDumpsDir, relayUrlFor, mediaKeyFor } from "./toybox/nfc";
 import { downloadUrl } from "./storage";
 import { CompanionServer } from "./companion/server";
+import { CompanionSetting } from "./companion/protocol";
 import * as xtream from "./xtream";
 import { apiConfigSource, apiFolder, ensureApiExample } from "./apiKeys";
 import { logoStatus, refreshLogos } from "./networkLogos";
@@ -63,6 +65,7 @@ app.commandLine.appendSwitch("high-dpi-support", "1");
 // Let Chromium use the OS's HEVC / H.265 decoder (Windows' HEVC Video Extensions,
 // the Deck's ffmpeg), so 10-bit MKV backups play in the menu.
 app.commandLine.appendSwitch("enable-features", "PlatformHEVCDecoderSupport,PlatformHEVCEncoderSupport");
+app.commandLine.appendSwitch("enable-blink-features", "AudioVideoTracks");
 
 let mainWindow: BrowserWindow | null = null;
 let cachedGames: GameEntry[] = [];
@@ -79,6 +82,8 @@ let cachedGames: GameEntry[] = [];
  * uses, so there is one path for a scan rather than a second one that would drift.
  */
 const companionRegistry = new DeviceRegistry();
+/** Opaque keys the phone browses the music library by, so no path crosses the wire. */
+const musicKeys = new Map<string, string>();
 const companion = new CompanionServer(
   companionRegistry,
   loadSettings().systemName || "A-X-M",
@@ -88,6 +93,30 @@ const companion = new CompanionServer(
     onMediaCommand: (command, value) =>
       mainWindow?.webContents.send("axm:companionInput", { kind: "media", command, value }),
     onPointer: (input) => mainWindow?.webContents.send("axm:companionInput", { kind: "pointer", input }),
+    // Settings, the keyboard and the music library: the menu owns all three, so the
+    // frames go to the renderer, which applies them and republishes what changed.
+    onSettingsSet: (id, value) => mainWindow?.webContents.send("axm:companionInput", { kind: "setting", id, value }),
+    onKeyboardInput: (text, done) => mainWindow?.webContents.send("axm:companionInput", { kind: "keyboard", text, done }),
+    onMusicBrowse: async (key) => {
+      const dir = key ? musicKeys.get(key) ?? null : null;
+      if (key && !dir) return null;
+      const listing = browseMusic(dir);
+      const keyOf = (p: string) => {
+        const k = crypto.createHash("sha1").update(p).digest("hex").slice(0, 16);
+        musicKeys.set(k, p);
+        return k;
+      };
+      return {
+        key: listing.path ? keyOf(listing.path) : "",
+        name: listing.title,
+        parent: listing.parent ? keyOf(listing.parent) : listing.path ? "" : undefined,
+        entries: listing.entries.map((e) => ({ key: keyOf(e.filePath), name: e.name, kind: e.kind === "folder" ? ("folder" as const) : ("file" as const) })),
+      };
+    },
+    onMusicPlay: (key) => {
+      const file = musicKeys.get(key);
+      if (file) mainWindow?.webContents.send("axm:companionInput", { kind: "musicPlay", filePath: file });
+    },
     onToyScan: (scan, device) => {
       nfcHub.scan({
         reader: { id: device.deviceId, type: "companion" },
@@ -861,9 +890,14 @@ ipcMain.handle("axm:tvLogin", async (_e, account: xtream.XtreamAccount | null) =
   return xtream.status();
 });
 
-ipcMain.handle("axm:tvCategories", (_e, kind: xtream.XtreamKind) => xtream.categories(kind, loadSettings().tvEnglishOnly));
-ipcMain.handle("axm:tvItems", (_e, kind: xtream.XtreamKind, categoryId?: string) =>
-  xtream.items(kind, categoryId, loadSettings().tvEnglishOnly)
+const tvFilter = (adultUnlocked?: boolean): xtream.TvFilter => {
+  const s = loadSettings();
+  return { englishOnly: s.tvEnglishOnly, overrides: s.tvLanguageOverrides ?? {}, hideAdult: s.tvAdultBlocked && !adultUnlocked };
+};
+ipcMain.handle("axm:tvCategories", (_e, kind: xtream.XtreamKind, adultUnlocked?: boolean) => xtream.categories(kind, tvFilter(adultUnlocked)));
+ipcMain.handle("axm:tvLanguages", () => xtream.languageTags());
+ipcMain.handle("axm:tvItems", (_e, kind: xtream.XtreamKind, categoryId?: string, adultUnlocked?: boolean) =>
+  xtream.items(kind, categoryId, tvFilter(adultUnlocked))
 );
 ipcMain.handle("axm:tvEpg", (_e, streamId: string) => xtream.shortEpg(streamId));
 ipcMain.handle("axm:tvStreamUrl", (_e, item: xtream.XtreamItem) => xtream.streamUrl(item));
@@ -897,6 +931,10 @@ ipcMain.handle("axm:companionForget", (_e, deviceId: string) => companionRegistr
 
 // What is playing, for the phone's media screen. The renderer is the authority.
 let lastMediaState: { playing: boolean; title?: string; kind?: string; artworkUrl?: string } | null = null;
+ipcMain.on("axm:companionSettings", (_e, items: CompanionSetting[]) => companion.setSettingsState(items));
+ipcMain.on("axm:companionKeyboard", (_e, prompt: { title: string; label: string; value: string; secret: boolean } | null) => {
+  companion.setKeyboardPrompt(prompt);
+});
 ipcMain.on("axm:companionMedia", (_e, state: { playing: boolean; title?: string; artist?: string; album?: string; artworkUrl?: string; positionSeconds?: number; durationSeconds?: number; kind?: string }) => {
   // A cover the menu holds as a local file is handed to the phone through the
   // asset route on the companion HTTP port, on this machine's LAN address.

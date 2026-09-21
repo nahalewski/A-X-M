@@ -21,6 +21,13 @@ import com.axm.companion.net.LinkState
 import com.axm.companion.ui.AxmTheme
 import com.axm.companion.ui.ControlsScreen
 import com.axm.companion.ui.HomeScreen
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.axm.companion.protocol.KeyboardPrompt
+import com.axm.companion.ui.KeyboardSheet
+import com.axm.companion.ui.LibraryScreen
+import com.axm.companion.ui.SettingsScreen
 import com.axm.companion.ui.MediaScreen
 import com.axm.companion.ui.PairingScreen
 import com.axm.companion.ui.RemoteScreen
@@ -77,6 +84,12 @@ private fun Root(model: CompanionViewModel) {
     val scanning by model.scanning.collectAsStateWithLifecycle()
     val screen by model.screen.collectAsStateWithLifecycle()
     val media by model.client.media.collectAsStateWithLifecycle()
+    val settings by model.client.settings.collectAsStateWithLifecycle()
+    val keyboard by model.client.keyboard.collectAsStateWithLifecycle()
+    val listing by model.client.musicListing.collectAsStateWithLifecycle()
+    val visualizer = settings.firstOrNull { it.id == "visualizerStyle" }
+    // A prompt on the A-X-M screen takes this screen too, so typing can start at once.
+    var keyboardDismissed by remember { mutableStateOf<KeyboardPrompt?>(null) }
 
     // Pairing outranks everything: there is nothing useful to show behind it.
     if (link is LinkState.NeedsPairing) {
@@ -109,6 +122,12 @@ private fun Root(model: CompanionViewModel) {
         return
     }
 
+    val prompt = keyboard
+    if (prompt != null && keyboardDismissed != prompt) {
+        KeyboardSheet(prompt, onInput = model::keyboard, onDismiss = { keyboardDismissed = prompt })
+        return
+    }
+
     when (screen) {
         Screen.HOME -> home()
         Screen.REMOTE -> ControlsScreen(
@@ -117,12 +136,30 @@ private fun Root(model: CompanionViewModel) {
             onCommand = { command, value -> model.media(command, value) },
             onBack = { model.show(Screen.HOME) },
             onRoute = model::routeAudio,
+            visualizer = visualizer,
+            onVisualizer = { model.setSetting("visualizerStyle", it) },
+            onLibrary = { model.show(Screen.LIBRARY) },
         )
         Screen.MEDIA -> MediaScreen(
             media = media,
             onCommand = { command, value -> model.media(command, value) },
             onBack = { model.show(Screen.HOME) },
             onRoute = model::routeAudio,
+            visualizer = visualizer,
+            onVisualizer = { model.setSetting("visualizerStyle", it) },
+            onLibrary = { model.show(Screen.LIBRARY) },
+        )
+        Screen.SETTINGS -> SettingsScreen(
+            items = settings,
+            onSet = model::setSetting,
+            onBack = { model.show(Screen.HOME) },
+        )
+        Screen.LIBRARY -> LibraryScreen(
+            listing = listing,
+            media = media,
+            onBrowse = model::browse,
+            onPlay = model::playTrack,
+            onBack = { model.show(Screen.HOME) },
         )
         Screen.TOUCHPAD -> TouchpadScreen(
             onPointer = { kind, dx, dy, button -> model.pointer(kind, dx, dy, button) },

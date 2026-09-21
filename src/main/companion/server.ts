@@ -16,6 +16,8 @@ import {
   XmbAction,
   frame,
   parseFrame,
+  CompanionSetting,
+  MusicListingMessage,
 } from "./protocol";
 
 /**
@@ -55,6 +57,13 @@ export interface CompanionHandlers {
   onPointer?(input: PointerMessage["payload"], device: TrustedDevice): void;
   onToyScan?(scan: ToyScanMessage["payload"], device: TrustedDevice): void;
   onGhostText?(text: string, device: TrustedDevice): void;
+  /** The phone changed a menu setting (one of the ids and values the host listed). */
+  onSettingsSet?(id: string, value: string, device: TrustedDevice): void;
+  /** Text typed on the phone for the menu's open prompt. */
+  onKeyboardInput?(text: string, done: boolean, device: TrustedDevice): void;
+  /** The phone wants a folder of the music library; the answer goes back to it. */
+  onMusicBrowse?(key: string | undefined, device: TrustedDevice): Promise<MusicListingMessage["payload"] | null>;
+  onMusicPlay?(key: string, device: TrustedDevice): void;
   /** Connected, disconnected, or paired - for the menu's device list and notices. */
   onSessionsChanged?(sessions: CompanionSessionInfo[]): void;
   /** A code the user must be shown on the A-X-M screen. Null clears it. */
@@ -224,6 +233,28 @@ export class CompanionServer {
     this.broadcast("ghost.state", { state });
   }
 
+  private settingsItems: CompanionSetting[] = [];
+  private keyboardPrompt: { title: string; label: string; value: string; secret: boolean } | null = null;
+
+  /** The menu's open text prompt (or none) - phones already connected hear now, later ones on arrival. */
+  setKeyboardPrompt(prompt: { title: string; label: string; value: string; secret: boolean } | null): void {
+    this.keyboardPrompt = prompt;
+    if (prompt) this.broadcast("keyboard.show", prompt);
+    else this.broadcast("keyboard.hide", { at: Date.now() });
+  }
+
+  /** What a phone needs as soon as it is trusted: the settings list and any open prompt. */
+  private sendState(session: Session): void {
+    this.sendState(session);
+    if (this.keyboardPrompt) this.send(session, "keyboard.show", this.keyboardPrompt);
+  }
+
+  /** The menu settings phones may change; sent now and to every phone that connects later. */
+  setSettingsState(items: CompanionSetting[]): void {
+    this.settingsItems = items;
+    this.broadcast("settings.state", { items });
+  }
+
   sessionList(): CompanionSessionInfo[] {
     return [...this.sessions].map((s) => ({
       deviceId: s.trusted?.deviceId ?? s.device?.deviceId ?? "",
@@ -301,6 +332,29 @@ export class CompanionServer {
       case "ghost.message":
         if (this.allowed("ghost")) this.handlers.onGhostText?.(message.payload.text, session.trusted!);
         return;
+      case "settings.set":
+        if (typeof message.payload.id === "string" && typeof message.payload.value === "string") {
+          this.handlers.onSettingsSet?.(message.payload.id, message.payload.value, session.trusted!);
+        }
+        return;
+      case "keyboard.input":
+        if (typeof message.payload.text === "string") {
+          this.handlers.onKeyboardInput?.(message.payload.text.slice(0, 2000), !!message.payload.done, session.trusted!);
+        }
+        return;
+      case "music.browse": {
+        if (!this.allowed("mediaControl")) return;
+        const key = typeof message.payload.key === "string" ? message.payload.key : undefined;
+        void this.handlers.onMusicBrowse?.(key, session.trusted!).then((listing) => {
+          if (listing) this.send(session, "music.listing", listing);
+        });
+        return;
+      }
+      case "music.play":
+        if (this.allowed("mediaControl") && typeof message.payload.key === "string") {
+          this.handlers.onMusicPlay?.(message.payload.key, session.trusted!);
+        }
+        return;
       default:
         // Unknown but well-formed: ignored, so a newer phone talking about a
         // feature this build lacks degrades instead of being disconnected.
@@ -328,6 +382,7 @@ export class CompanionServer {
         });
         this.publishSessions();
         this.handlers.onStatus?.(`${trusted.name} connected`);
+        this.sendState(session);
         return;
       }
     }
@@ -386,6 +441,7 @@ export class CompanionServer {
     session.pairCode = null;
 
     this.send(session, "pair.result", { ok: true, token });
+    if (this.settingsItems.length) this.send(session, "settings.state", { items: this.settingsItems });
     this.handlers.onPairingCode?.(null, session.device.name);
     this.handlers.onStatus?.(`${session.device.name} paired`);
     this.publishSessions();
