@@ -134,6 +134,28 @@ export class MediaViewer {
     this.onVideoError = callback;
   }
 
+  private trackUrl: string | null = null;
+
+  /** Shows subtitles (WebVTT text) over the playing video; null clears them. */
+  setSubtitles(vtt: string | null): void {
+    for (const t of Array.from(this.videoEl.querySelectorAll("track"))) t.remove();
+    if (this.trackUrl) URL.revokeObjectURL(this.trackUrl);
+    this.trackUrl = null;
+    if (!vtt) return;
+    this.trackUrl = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
+    const track = document.createElement("track");
+    track.kind = "subtitles";
+    track.label = "Subtitles";
+    track.srclang = "en";
+    track.src = this.trackUrl;
+    track.default = true;
+    this.videoEl.appendChild(track);
+    track.addEventListener("load", () => {
+      if (track.track) track.track.mode = "showing";
+    });
+    if (track.track) track.track.mode = "showing";
+  }
+
   /** Swaps the playing entry's source in place, e.g. for a relayed copy of the same stream. */
   replaceSource(url: string): void {
     const cur = this.current();
@@ -155,6 +177,8 @@ export class MediaViewer {
   /** Opens `entry`, with the rest of `folderEntries`' files available to step through. */
   open(kind: "photo" | "video", entry: BrowseEntry, folderEntries: BrowseEntry[]): void {
     this.items = folderEntries.filter((e) => e.kind === "file" && e.url);
+    // A stream opened on its own (TV Streaming, Jellyfin) has no folder around it.
+    if (!this.items.some((e) => e.filePath === entry.filePath)) this.items = [entry];
     this.index = Math.max(0, this.items.findIndex((e) => e.filePath === entry.filePath));
     this.kind = kind;
 
@@ -197,6 +221,7 @@ export class MediaViewer {
     } else {
       this.imageEl.removeAttribute("src");
       this.detachHls();
+      this.setSubtitles(null);
       if (entry.hls && Hls.isSupported()) {
         // Chromium has no native HLS; hls.js feeds the playlist's segments through
         // Media Source Extensions. Used for anything Jellyfin has to transcode.
@@ -284,6 +309,7 @@ export class MediaViewer {
     this.kind = null;
     this.stopSlideshow();
     this.detachHls();
+    this.setSubtitles(null);
     this.videoEl.pause();
     this.videoEl.removeAttribute("src");
     this.videoEl.load();

@@ -193,7 +193,7 @@ const STREAM_ACTION: Record<XtreamKind, string> = {
  * With the filter on, anything tagged as another language is hidden; anything
  * untagged stays, since it can't be told apart.
  */
-const OTHER_LANGUAGE = /(^|[\s|:\-\[(])(fr|fra|french|de|deu|ger|german|es|esp|spa|spanish|latino|it|ita|italian|pt|por|portugu[eê]s|br|brasil|ar|arab|arabic|tr|tur|turk|ru|rus|russian|pl|pol|polish|nl|dutch|se|swe|no|nor|dk|dan|fi|fin|gr|gre|greek|ro|rom|hu|hun|cz|cze|sk|bg|bul|sr|hr|al|alb|in|ind|hindi|pk|urdu|bn|ta|tamil|te|ml|kn|pa|punjabi|cn|chi|chinese|jp|jpn|japanese|kr|kor|korean|vn|viet|th|thai|ph|fil|id|indo|my|ir|persian|farsi|il|heb|hebrew|af|kurd|somali|ex-yu|exyu|balkan|latin|latam|mx|mexico|ar-|africa|nigeria|ghana)([\s|:\-\])]|$)/i;
+const OTHER_LANGUAGE = /(^|[\s|:\-\[(])(fr|fra|french|de|deu|ger|german|es|esp|spa|spanish|latino|it|ita|italian|pt|por|portugu[eê]s|br|brasil|ar|arab|arabic|tr|tur|turk|ru|rus|russian|pl|pol|polish|nl|dutch|se|swe|no|nor|dk|dan|be|bel|belgi[eu]m?|vl|vlaams|flemish|qc|quebec|sca|scandi|nordic|ch|at|lu|fi|fin|gr|gre|greek|ro|rom|hu|hun|cz|cze|sk|bg|bul|sr|hr|al|alb|in|ind|hindi|pk|urdu|bn|ta|tamil|te|ml|kn|pa|punjabi|cn|chi|chinese|jp|jpn|japanese|kr|kor|korean|vn|viet|th|thai|ph|fil|id|indo|my|ir|persian|farsi|il|heb|hebrew|af|kurd|somali|ex-yu|exyu|balkan|latin|latam|mx|mexico|ar-|africa|nigeria|ghana)([\s|:\-\])]|$)/i;
 const ENGLISH_MARK = /(^|[\s|:\-\[(])(us|usa|uk|gb|en|eng|english|ca|canada|au|aus|nz|ie|irish|int|international)([\s|:\-\])]|$)/i;
 
 export function isEnglish(name: string): boolean {

@@ -181,6 +181,8 @@ export interface JellyfinItem {
   tmdbId?: string;
   container?: string;
   seriesName?: string;
+  season?: number;
+  episode?: number;
   streamUrl?: string;
   hls?: boolean;
 }
@@ -417,6 +419,9 @@ export interface Settings {
   ps3Trim: Ps3TrimSettings;
   storeRoot: string;
   tvEnglishOnly: boolean;
+  subdlApiKey: string;
+  subtitles: { enabled: boolean; language: string };
+  lyricsEnabled: boolean;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -778,6 +783,10 @@ export interface AxmApi {
   tvEpisodes(seriesId: string): Promise<TvEpisode[]>;
   tvEpisodeUrl(ep: TvEpisode): Promise<string | null>;
   tvRelayUrl(url: string): Promise<string | null>;
+  /** SubDL subtitles for a film or episode, as WebVTT text. */
+  findSubtitles(q: { title: string; year?: string; kind: "movie" | "tv"; season?: number; episode?: number }): Promise<string | null>;
+  /** LRCLIB lyrics for the track: timed lines when synced, t = -1 otherwise. */
+  findLyrics(artist: string, title: string, album: string, duration: number): Promise<{ synced: boolean; lines: { t: number; text: string }[]; source: string } | null>;
   tvDownload(url: string, name: string, target: string, container: string): Promise<string>;
   companionStatus(): Promise<CompanionStatus>;
   companionForget(deviceId: string): Promise<boolean>;

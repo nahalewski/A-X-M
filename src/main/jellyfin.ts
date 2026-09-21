@@ -37,6 +37,9 @@ export interface JellyfinItem {
   container?: string;
   /** Series name for an episode, so the info card can look up the show. */
   seriesName?: string;
+  /** Season and episode numbers for an episode. */
+  season?: number;
+  episode?: number;
   streamUrl?: string;
   /** True when streamUrl is an HLS playlist that needs hls.js rather than a plain src. */
   hls?: boolean;
@@ -169,6 +172,8 @@ interface RawItem {
   Overview?: string;
   ProviderIds?: { Tmdb?: string };
   SeriesName?: string;
+  IndexNumber?: number;
+  ParentIndexNumber?: number;
   MediaType?: string;
   MediaSources?: { Id?: string; Container?: string; MediaStreams?: { Type: string; Codec?: string }[] }[];
 }
@@ -251,6 +256,8 @@ function toItem(login: JellyfinLogin, raw: RawItem): JellyfinItem {
     tmdbId: raw.ProviderIds?.Tmdb,
     container: (raw.MediaSources?.[0]?.Container ?? "").split(",")[0] || undefined,
     seriesName: raw.SeriesName,
+    season: raw.Type === "Episode" ? raw.ParentIndexNumber : undefined,
+    episode: raw.Type === "Episode" ? raw.IndexNumber : undefined,
     // Direct play when the file is something the browser decodes as-is (an MP4 with
     // H.264/AAC, say). An MKV, HEVC, AC3 or DTS file would either fail outright or
     // play with no sound, so those go through the server's HLS transcode instead -

@@ -16,6 +16,7 @@ import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary"
 import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
 import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
+import { findSubtitles, findLyrics, SubtitleQuery } from "./subtitles";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
 import { listDiscs, findDiscTools, importAudioCd, backupDisc, findDiscBackup, guessDiscTitle, Disc, ImportFormat } from "./discs";
@@ -867,6 +868,10 @@ ipcMain.handle("axm:tvItems", (_e, kind: xtream.XtreamKind, categoryId?: string)
 ipcMain.handle("axm:tvEpg", (_e, streamId: string) => xtream.shortEpg(streamId));
 ipcMain.handle("axm:tvStreamUrl", (_e, item: xtream.XtreamItem) => xtream.streamUrl(item));
 ipcMain.handle("axm:tvEpisodes", (_e, seriesId: string) => xtream.episodes(seriesId));
+ipcMain.handle("axm:findSubtitles", (_e, q: SubtitleQuery) => (loadSettings().subtitles?.enabled ? findSubtitles(q) : Promise.resolve(null)));
+ipcMain.handle("axm:findLyrics", (_e, artist: string, title: string, album: string, duration: number) =>
+  loadSettings().lyricsEnabled ? findLyrics(artist ?? "", title ?? "", album ?? "", duration ?? 0) : Promise.resolve(null)
+);
 ipcMain.handle("axm:tvEpisodeUrl", (_e, ep: xtream.XtreamEpisode) => xtream.episodeUrl(ep));
 // The same stream through the local relay - a player's User-Agent, ranges passed on.
 ipcMain.handle("axm:tvRelayUrl", (_e, url: string) => (/^https?:\/\//i.test(url) ? relayUrlFor(url) : null));

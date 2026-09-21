@@ -2216,6 +2216,19 @@ async function main(): Promise<void> {
     const entry = { kind: "file" as const, name: item.name, filePath: item.id, url: item.streamUrl, hls: item.hls };
     mediaViewer.open("video", entry, [entry]);
     pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+    void fetchSubtitles(
+      item.seriesName ? { title: item.seriesName, kind: "tv", season: item.season, episode: item.episode } : { title: item.name, year: item.year, kind: "movie" },
+      item.id
+    );
+  };
+
+  /** Subtitles from SubDL for the video just opened, shown once they arrive (if it's still playing). */
+  const fetchSubtitles = async (q: { title: string; year?: string; kind: "movie" | "tv"; season?: number; episode?: number }, forPath: string) => {
+    if (!settings.subtitles?.enabled || !settings.subdlApiKey) return;
+    const vtt = await window.axm.findSubtitles(q).catch(() => null);
+    if (!vtt || mediaViewer.current()?.filePath !== forPath) return;
+    mediaViewer.setSubtitles(vtt);
+    notifier.push(`Subtitles on · ${q.title}`, "general");
   };
 
   const jfItems = (): MenuItem[] => {
@@ -2459,13 +2472,14 @@ async function main(): Promise<void> {
   };
   /** Films and episodes play straight from the portal; if the browser can't, the same stream is relayed with a player's User-Agent. */
   let tvRelayTried = "";
-  const tvPlayUrl = (name: string, url: string, hls: boolean, art?: string) => {
+  const tvPlayUrl = (name: string, url: string, hls: boolean, art?: string, subs?: { title: string; year?: string; kind: "movie" | "tv"; season?: number; episode?: number }) => {
     musicPlayer.stop();
     audio.fadeOutAmbient(400);
     videoArt = { title: name, art };
     tvRelayTried = "";
     mediaViewer.open("video", { kind: "file", name, filePath: url, url, hls }, []);
     pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+    if (subs) void fetchSubtitles(subs, url);
   };
   mediaViewer.setOnVideoError((entry) => {
     if (!/^https?:\/\//.test(entry.url ?? "") || entry.hls || tvRelayTried === entry.filePath) return;
@@ -2487,12 +2501,14 @@ async function main(): Promise<void> {
       return;
     }
     // Live is a playlist; a film is a plain file the portal serves directly.
-    tvPlayUrl(item.name, url, item.kind === "live", item.icon);
+    // Portals name films "Title (2019)"; the year helps SubDL pick the right one.
+    const m = item.name.replace(/^[A-Z]{2,3}\s*[-|:]\s*/, "").match(/^(.*?)\s*\((\d{4})\)\s*$/);
+    tvPlayUrl(item.name, url, item.kind === "live", item.icon, item.kind === "movie" ? { title: m?.[1] ?? item.name, year: m?.[2], kind: "movie" } : undefined);
   };
   const tvPlayEpisode = async (ep: TvEpisode) => {
     const url = await window.axm.tvEpisodeUrl(ep).catch(() => null);
     if (!url) return;
-    tvPlayUrl(`${tv.show?.name ?? ""} · S${ep.season} E${ep.episode} ${ep.title}`.trim(), url, false, tv.show?.icon);
+    tvPlayUrl(`${tv.show?.name ?? ""} · S${ep.season} E${ep.episode} ${ep.title}`.trim(), url, false, tv.show?.icon, tv.show ? { title: tv.show.name.replace(/^[A-Z]{2,3}\s*[-|:]\s*/, "").replace(/\s*\(\d{4}\)\s*$/, ""), kind: "tv", season: ep.season, episode: ep.episode } : undefined);
   };
   /** Y on a film or episode: save it to a drive's VIDEO folder, space permitting. */
   const tvDownloadOptions = (name: string, urlOf: () => Promise<string | null>, container: string) => {
@@ -2654,7 +2670,7 @@ async function main(): Promise<void> {
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
     fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
-    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
+    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", subtitles: "sys", subdlKey: "sys", lyrics: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
     "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
@@ -3183,6 +3199,40 @@ async function main(): Promise<void> {
           const answers = await askText("MakeMKV Key", [{ label: "Key", value: settings.makemkvKey, secret: true }]);
           if (!answers) return;
           settings = await window.axm.setSettings({ makemkvKey: answers[0].trim() });
+          xmb.refresh();
+        },
+      },
+      {
+        id: "subtitles",
+        title: "Subtitles",
+        subtitle: settings.subtitles?.enabled ? `On · ${settings.subtitles.language} · fetched from SubDL for Jellyfin and TV Streaming films and episodes` : "Off · videos play without subtitles",
+        iconUrl: "assets/icons/tv-epg.webp",
+        onConfirm: async () => {
+          showOptions("Subtitles", [
+            { label: settings.subtitles?.enabled ? "Turn off" : "Turn on", hint: "Auto-download and show subtitles when a film or episode starts", run: async () => { settings = await window.axm.setSettings({ subtitles: { ...settings.subtitles, enabled: !settings.subtitles?.enabled } }); xmb.refresh(); } },
+            ...(["EN", "ES", "FR", "DE", "IT", "PT", "NL", "JA"] as const).map((lang) => ({ label: lang, selected: settings.subtitles?.language === lang, run: async () => { settings = await window.axm.setSettings({ subtitles: { enabled: settings.subtitles?.enabled ?? true, language: lang } }); xmb.refresh(); } })),
+          ]);
+        },
+      },
+      {
+        id: "subdlKey",
+        title: "SubDL Key",
+        subtitle: settings.subdlApiKey ? `Set · ${settings.subdlApiKey.slice(0, 10)}… · subtitles come from subdl.com` : "Not set · a free key from subdl.com › API; subtitles need it",
+        iconUrl: "assets/icons/tv-epg.webp",
+        onConfirm: async () => {
+          const answers = await askText("SubDL Key", [{ label: "Key", value: settings.subdlApiKey, secret: true }]);
+          if (!answers) return;
+          settings = await window.axm.setSettings({ subdlApiKey: answers[0].trim() });
+          xmb.refresh();
+        },
+      },
+      {
+        id: "lyrics",
+        title: "Lyrics",
+        subtitle: settings.lyricsEnabled ? "On · LRCLIB lyrics for the Karaoke visualizer" : "Off · the Karaoke visualizer shows the title only",
+        iconUrl: "assets/icons/music.png",
+        onConfirm: async () => {
+          settings = await window.axm.setSettings({ lyricsEnabled: !settings.lyricsEnabled });
           xmb.refresh();
         },
       },
@@ -4803,7 +4853,7 @@ async function main(): Promise<void> {
       const art = videoArt && videoArt.title === video.name ? videoArt.art : undefined;
       state = { kind: "video", playing: !videoEl.paused && !videoEl.ended, title: video.name, artist: video.filePath.replace(/[\\/][^\\/]*$/, "").split(/[\\/]/).pop(), artworkUrl: art && /^https?:/.test(art) ? art : undefined, positionSeconds: Math.floor(videoEl.currentTime || 0), durationSeconds: isFinite(videoEl.duration) ? Math.floor(videoEl.duration) : undefined };
     } else if (track) {
-      state = { kind: "music", output: audioOutput, filePath: track.filePath, playing: audioOutput === "phone" ? phonePlaying : musicPlayer.isPlaying(), title: track.name, artist: track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-1)[0], album: track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-2, -1)[0], artworkUrl: musicArt.get(track.filePath), positionSeconds: Math.floor(musicPlayer.position()), durationSeconds: Math.floor(musicPlayer.duration()) || undefined };
+      state = { kind: "music", output: audioOutput, filePath: track.filePath, playing: audioOutput === "phone" ? phonePlaying : musicPlayer.isPlaying(), title: track.name, artist: track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-2, -1)[0], album: track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-1)[0], artworkUrl: musicArt.get(track.filePath), positionSeconds: Math.floor(musicPlayer.position()), durationSeconds: Math.floor(musicPlayer.duration()) || undefined };
     } else state = { kind: "none", playing: false };
     const key = JSON.stringify({ ...state, positionSeconds: undefined });
     // Position ticks once a second at most; anything else goes out at once.
@@ -4818,6 +4868,23 @@ async function main(): Promise<void> {
   setInterval(() => { if (!mediaViewer.isOpen() && !musicPlayer.current() && lastMediaSent !== JSON.stringify({ kind: "none", playing: false })) publishMedia(true); }, 2000);
 
   let artLookup = "";
+  /** Lyrics for the Karaoke visualizer: the file's tags name the song, LRCLIB has the words. */
+  let lyricsFor = "";
+  const fetchLyrics = async (track: { filePath: string; name: string }) => {
+    lyricsFor = track.filePath;
+    visualizer.setLyrics(null, false, settings.lyricsEnabled ? "Looking for the words…" : track.name);
+    if (!settings.lyricsEnabled) return;
+    const info = await window.axm.getSongInfo(track.filePath).catch(() => null);
+    if (lyricsFor !== track.filePath) return;
+    const folders = track.filePath.replace(/\\[^\\]*$/, "").split("\\");
+    const artist = info?.artist || folders[folders.length - 2] || "";
+    const title = info?.title || track.name.replace(/\.[a-z0-9]+$/i, "").replace(/^\d+\s*[-.]\s*/, "");
+    const lyrics = await window.axm.findLyrics(artist, title, info?.album ?? folders[folders.length - 1] ?? "", info?.durationSec || musicPlayer.duration() || 0).catch(() => null);
+    if (lyricsFor !== track.filePath) return;
+    if (lyrics?.lines.length) visualizer.setLyrics(lyrics.lines, lyrics.synced);
+    else visualizer.setLyrics(null, false, `${title} · no lyrics found`);
+  };
+  visualizer.setPositionSource(() => musicPlayer.position());
   musicPlayer.setOnChange(() => {
     publishMedia();
     const track = musicPlayer.current();
@@ -4857,6 +4924,7 @@ async function main(): Promise<void> {
     if (track.filePath !== lastTrackPath) {
       lastTrackPath = track.filePath;
       visualizer.setTrackName(track.name);
+      void fetchLyrics(track);
       xmb.refresh();
     }
   });

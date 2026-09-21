@@ -149,6 +149,12 @@ export interface Settings {
   storeRoot: string;
   /** TV Streaming: hide channels, films and shows tagged as another language. */
   tvEnglishOnly: boolean;
+  /** SubDL API key (subdl.com) - subtitles for Jellyfin and TV Streaming videos. */
+  subdlApiKey: string;
+  /** Subtitles: fetched and shown by themselves when enabled; the language is a SubDL code (EN, ES, …). */
+  subtitles: { enabled: boolean; language: string };
+  /** Lyrics from LRCLIB for the Karaoke visualizer. */
+  lyricsEnabled: boolean;
   /** What to empty out of an extracted PS3 game: the firmware update, dummy / pad files, other languages. */
   ps3Trim: { update: boolean; dummy: boolean; languages: boolean };
   /** Toybox: what Ghost does when a toy is scanned. */
@@ -244,6 +250,9 @@ const DEFAULTS: Settings = {
   ps3Trim: { update: true, dummy: true, languages: false },
   storeRoot: "N:\\GAME\\ROMS",
   tvEnglishOnly: true,
+  subdlApiKey: "",
+  subtitles: { enabled: true, language: "EN" },
+  lyricsEnabled: true,
   toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },

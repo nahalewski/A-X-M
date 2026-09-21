@@ -122,9 +122,13 @@ changing a game's artwork.
 - An **audio CD** in a drive shows as a row: Import to MP3 / AAC / Opus (ffmpeg with libcdio).
 - **Song Information** (Y): the file's tags and cover, MusicBrainz artist details, Cover Art
   Archive covers.
-- **Eleven visualizers**: the PS3's Spectrum Analyzer, Earth, Line and Waveform; the PSP's
-  Rain, Circle and Sparkle; and Tunnel, Terrain, Scope and Pulse - all in one neon palette.
-  ◀ ▶ switches on the stage; the one you pick stays behind the menu while music plays.
+- **Twelve visualizers**: the PS3's Spectrum Analyzer, Earth, Line and Waveform; the PSP's
+  Rain, Circle and Sparkle; and Tunnel, Terrain, Scope, Pulse and **Karaoke** - all in one
+  neon palette. ◀ ▶ switches on the stage; the one you pick stays behind the menu while
+  music plays.
+- **Karaoke** shows the song's words from [LRCLIB](https://lrclib.net) (no key): the line
+  being sung lights up and sweeps with the timing, the next lines wait below; behind the
+  menu just the current line shows. *Settings › Audio › Lyrics* turns it off.
 
 ### Photo and Video
 - In-app viewers: photos zoom, rotate and slideshow; MP4 video with seek. Controls drawn from
@@ -134,6 +138,10 @@ changing a game's artwork.
 - **Jellyfin**: finds servers on the LAN (or type an address), signs in once, browses your
   libraries with posters and backdrops, plays in the menu (direct play when the browser can,
   HLS transcode when it can't), and **downloads** films and episodes to any drive.
+- **Subtitles** for TV Streaming and Jellyfin films and episodes, fetched from
+  [SubDL](https://subdl.com) (your own free key) when the video starts and shown over it -
+  the right episode picked out of a season pack. *Settings › System › Subtitles* sets the
+  language or turns it off; *SubDL Key* holds the key.
 - **Information** (Y) on a film or show from TMDB (your own API key).
 - A **DVD or Blu-ray** in a drive shows as a row with its disc icon, looked up on TMDB so
   `MARVEL_STUDIOS_DOCTOR_STRANGE` reads *Doctor Strange · 2016* with a poster in Information.
@@ -256,8 +264,9 @@ SteamGridDB and TMDB keys live only in `%APPDATA%\A-X-M\axm-settings.json`.
 - **SteamGridDB** (game art): `gameArtApiKey` in the settings file, or the
   `AXM_STEAMGRIDDB_KEY` environment variable.
 - **TMDB** (film / show information): `tmdbApiKey` in the settings file.
+- **SubDL** (subtitles): `subdlApiKey` in the settings file, or *Settings › System › SubDL Key*.
 - **Jellyfin**: sign in from the Video column; only the access token is kept, never the password.
-- MusicBrainz and the Cover Art Archive need no key.
+- MusicBrainz, the Cover Art Archive and LRCLIB need no key.
 
 ## Controls
 

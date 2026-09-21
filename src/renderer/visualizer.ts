@@ -9,7 +9,9 @@
  * And several styles, after the ones the PS3 and PSP shipped with. The PS3 set:
  * the spectrum analyser (the original here), Earth, Line and Waveform. The PSP set:
  * Rain, Circle and Sparkle. Four more of our own - Tunnel, Terrain, Scope, Pulse -
- * after the neon reference art. All share one palette (cyan through violet to
+ * after the neon reference art, and Karaoke, which sings along: the track's lyrics
+ * from LRCLIB (`setLyrics`), the current line lit up and swept as the song reaches
+ * it when they're timed, scrolled gently when they're not. All share one palette (cyan through violet to
  * magenta, additive glow, mirrored floors), so switching feels like one player.
  * `setStyle` switches between them at any time.
  *
@@ -35,7 +37,14 @@ export const VISUALIZER_STYLES = [
   { id: "terrain", label: "Terrain", origin: "A-X-M" },
   { id: "scope", label: "Scope", origin: "A-X-M" },
   { id: "pulse", label: "Pulse", origin: "A-X-M" },
+  { id: "karaoke", label: "Karaoke", origin: "A-X-M" },
 ] as const;
+
+/** One line of lyrics; t is seconds into the track, or -1 when the lyrics aren't timed. */
+export interface LyricLine {
+  t: number;
+  text: string;
+}
 
 export type VisualizerStyle = (typeof VISUALIZER_STYLES)[number]["id"];
 
@@ -96,6 +105,27 @@ export class MusicVisualizer {
 
   private renderScale = 1;
   private globe: Float32Array | null = null;
+
+  /** Karaoke: the lyrics for the track, and where the player is in it. */
+  private lyrics: LyricLine[] = [];
+  private lyricsSynced = false;
+  private lyricsNote = "";
+  private position: () => number = () => 0;
+  /** Smoothed index of the current line, so the lines glide rather than jump. */
+  private lyricScroll = 0;
+
+  /** Lyrics for the current track (null clears them; the note shows while none are known). */
+  setLyrics(lines: LyricLine[] | null, synced = false, note = ""): void {
+    this.lyrics = lines ?? [];
+    this.lyricsSynced = synced && this.lyrics.length > 0;
+    this.lyricsNote = note;
+    this.lyricScroll = 0;
+  }
+
+  /** Where the track is, in seconds - read every frame by Karaoke. */
+  setPositionSource(fn: () => number): void {
+    this.position = fn;
+  }
 
   /** Fraction of the physical resolution to draw at (1 = native). */
   setRenderScale(scale: number): void {
@@ -302,6 +332,9 @@ export class MusicVisualizer {
         break;
       case "pulse":
         this.drawPulse(width, height, background);
+        break;
+      case "karaoke":
+        this.drawKaraoke(width, height, background, delta);
         break;
       case "wave":
         this.drawWave(width, height, background);
@@ -970,6 +1003,129 @@ export class MusicVisualizer {
     ctx.arc(cx, cy, base, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalCompositeOperation = "source-over";
+  }
+
+  // ---- A-X-M: Karaoke (the lyrics, lit line by line) --------------------------------
+
+  private drawKaraoke(width: number, height: number, background: boolean, delta: number): void {
+    const { ctx } = this;
+    const alpha = background ? 0.55 : 1;
+    // Behind the menu only the current line and the next show, low and to the right,
+    // clear of the columns and the now-playing card.
+    const cx = background ? width * 0.62 : width / 2;
+    const cy = background ? height * 0.8 : height * 0.5;
+    const pos = this.position();
+    const lines = this.lyrics;
+
+    // A breathing glow behind the words, so the stage isn't bare between lines.
+    ctx.globalCompositeOperation = "lighter";
+    const base = Math.min(width, height) * (background ? 0.22 : 0.34) * (1 + this.bass * 0.18);
+    const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, base);
+    halo.addColorStop(0, this.neon(0.55, 60, alpha * (0.12 + this.bass * 0.25)));
+    halo.addColorStop(0.6, this.neon(0.9, 55, alpha * (0.05 + this.energy * 0.1)));
+    halo.addColorStop(1, this.neon(0.9, 50, 0));
+    ctx.fillStyle = halo;
+    ctx.fillRect(0, 0, width, height);
+    // Faint spectrum along the bottom edge, so it still feels like a visualizer.
+    const barW = width / BAR_COUNT;
+    for (let i = 0; i < BAR_COUNT; i++) {
+      const h = this.levels[i] * height * (background ? 0.08 : 0.12);
+      ctx.fillStyle = this.neon(i / BAR_COUNT, 60, alpha * 0.22);
+      ctx.fillRect(i * barW + 1, height - h, barW - 2, h);
+    }
+    ctx.globalCompositeOperation = "source-over";
+
+    const big = Math.round(Math.min(width, height) * (background ? 0.05 : 0.075));
+    const small = Math.round(big * 0.62);
+    const family = '"Segoe UI", "Noto Sans", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    if (!lines.length) {
+      ctx.font = `600 ${small}px ${family}`;
+      ctx.fillStyle = `rgba(220, 230, 255, ${alpha * 0.7})`;
+      ctx.shadowColor = this.neon(0.5, 65, alpha * 0.8);
+      ctx.shadowBlur = 18;
+      ctx.fillText(this.lyricsNote || "Looking for the words…", cx, cy);
+      ctx.shadowBlur = 0;
+      return;
+    }
+
+    // Which line is current: by time when synced, else a slow scroll through the text.
+    let current: number;
+    let progress = 0; // how far through the current line the song is, 0..1
+    if (this.lyricsSynced) {
+      current = -1;
+      for (let i = 0; i < lines.length && lines[i].t <= pos; i++) current = i;
+      if (current >= 0) {
+        const next = lines[current + 1]?.t ?? lines[current].t + 4;
+        progress = Math.min(1, Math.max(0, (pos - lines[current].t) / Math.max(0.5, next - lines[current].t)));
+      }
+    } else {
+      current = Math.min(lines.length - 1, Math.floor(pos / 3.5));
+      progress = (pos % 3.5) / 3.5;
+    }
+    // Glide towards the current line.
+    const target = Math.max(0, current);
+    this.lyricScroll += (target - this.lyricScroll) * Math.min(1, delta * 8);
+
+    const lineGap = big * 1.5;
+    const fitFont = (text: string, size: number): number => {
+      ctx.font = `700 ${size}px ${family}`;
+      const maxW = width * 0.86;
+      const w = ctx.measureText(text).width;
+      return w > maxW ? Math.max(12, Math.floor((size * maxW) / w)) : size;
+    };
+    const first = background ? Math.max(0, current) : Math.max(0, Math.floor(this.lyricScroll) - 3);
+    const last = Math.min(lines.length - 1, background ? Math.max(0, current) + 1 : Math.ceil(this.lyricScroll) + 4);
+    for (let i = first; i <= last; i++) {
+      const text = lines[i].text || "♪";
+      const off = background ? i - Math.max(0, current) : i - this.lyricScroll;
+      const y = cy + off * lineGap;
+      if (y < -lineGap || y > height + lineGap) continue;
+      const isCurrent = i === current;
+      const dist = Math.abs(off);
+      const fade = Math.max(0, 1 - dist / 4.5);
+      if (isCurrent) {
+        const size = fitFont(text, big);
+        ctx.font = `700 ${size}px ${family}`;
+        const w = ctx.measureText(text).width;
+        // The unsung part in soft white; the sung part in neon, swept left to right.
+        ctx.shadowColor = "rgba(255,255,255,0.35)";
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = `rgba(235, 240, 255, ${alpha * 0.85})`;
+        ctx.fillText(text, cx, y);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cx - w / 2 - 4, y - size, w * progress + 4, size * 2);
+        ctx.clip();
+        const sweep = ctx.createLinearGradient(cx - w / 2, 0, cx + w / 2, 0);
+        sweep.addColorStop(0, this.neon(0, 65, alpha));
+        sweep.addColorStop(0.5, this.neon(0.5, 68, alpha));
+        sweep.addColorStop(1, this.neon(1, 65, alpha));
+        ctx.shadowColor = this.neon(0.5, 65, alpha);
+        ctx.shadowBlur = 22 + this.bass * 18;
+        ctx.fillStyle = sweep;
+        ctx.fillText(text, cx, y);
+        ctx.restore();
+        ctx.shadowBlur = 0;
+      } else {
+        const size = fitFont(text, small);
+        ctx.font = `500 ${size}px ${family}`;
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = `rgba(200, 210, 240, ${alpha * fade * (off < 0 ? 0.35 : 0.6)})`;
+        ctx.fillText(text, cx, y);
+      }
+    }
+    // A thin timing bar under the current line when the lyrics are synced.
+    if (this.lyricsSynced && current >= 0 && !background) {
+      const barY = cy + big * 0.95;
+      const barWid = width * 0.28;
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.12})`;
+      ctx.fillRect(cx - barWid / 2, barY, barWid, 3);
+      ctx.fillStyle = this.neon(0.5, 65, alpha * 0.9);
+      ctx.fillRect(cx - barWid / 2, barY, barWid * progress, 3);
+    }
   }
 
   destroy(): void {
