@@ -129,6 +129,42 @@ export interface ToyboxUserData {
   customTags: ToyCustomTag[];
   /** Figure ids, most recent first. */
   recentlyScanned: string[];
+  /** figure id -> the A-X-M game it was last launched with. Local only. */
+  lastGame?: Record<string, string>;
+}
+
+/**
+ * One scan, whatever read it. Every reader - the PC/SC script, the Android
+ * companion, a portal adapter, the test hook - ends in this event; Ghost and the
+ * menu only ever see this shape, never the hardware.
+ */
+export interface ToyboxDetectionEvent {
+  /** Null when the tag isn't in the database (an "unknown toy"). */
+  figureId: string | null;
+  ecosystem: ToyPlatform | "custom";
+  name: string;
+  character?: string;
+  variant?: string;
+  series?: string;
+  franchise?: string;
+  artwork?: { thumbnail?: string; png?: string; hero?: string };
+  /** Slugs from the record; the renderer resolves them against installed games. */
+  compatibleGameIds: string[];
+  reader: { id: string; type: "pcsc" | "companion" | "portal" | "simulated" | string };
+  /** The tag's UID, for custom mappings and removal matching. Never spoken. */
+  uid: string;
+  detectedAt: number;
+  /** A read-only copy of the tag on disk, when the reader could take one (for emulators). */
+  dumpPath?: string;
+  /** Emulator folders the copy was also placed in (Eden's amiibo folder, RPCS3's). */
+  handedTo?: string[];
+}
+
+export interface ToyboxRemovalEvent {
+  uid: string;
+  figureId: string | null;
+  reader: { id: string; type: string };
+  removedAt: number;
 }
 
 export interface ToyboxStats {

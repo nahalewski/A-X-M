@@ -398,6 +398,7 @@ export interface Settings {
   discTarget: string;
   makemkvKey: string;
   toolsSetupDone: boolean;
+  toybox: ToyboxSettings;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -461,6 +462,50 @@ export interface ToyShelfFilter {
   view: "all" | "owned" | "favorites" | "recent";
   platform?: ToyPlatform | "";
   query?: string;
+}
+
+export interface ToyboxSettings {
+  onSelect: "launch" | "navigate" | "ask";
+  suggestLast: boolean;
+  speak: boolean;
+  showCards: boolean;
+  artwork: boolean;
+  autoFocus: boolean;
+  suggestGames: boolean;
+  inGame: "full" | "small" | "voice" | "off";
+  companion: boolean;
+}
+
+export interface ToyboxDetectionEvent {
+  figureId: string | null;
+  ecosystem: ToyPlatform | "custom";
+  name: string;
+  character?: string;
+  variant?: string;
+  series?: string;
+  franchise?: string;
+  artwork?: { thumbnail?: string; png?: string; hero?: string };
+  compatibleGameIds: string[];
+  reader: { id: string; type: string };
+  uid: string;
+  detectedAt: number;
+  dumpPath?: string;
+  handedTo?: string[];
+}
+
+export interface ToyboxRemovalEvent {
+  uid: string;
+  figureId: string | null;
+  reader: { id: string; type: string };
+  removedAt: number;
+}
+
+export interface ToyboxNfcStatus {
+  pcscRunning: boolean;
+  readers: string[];
+  companionPort: number | null;
+  pythonReady: boolean;
+  lastError: string | null;
 }
 
 export interface ToyboxStats {
@@ -601,6 +646,15 @@ export interface AxmApi {
   toyboxByPlatform(platform: ToyPlatform): Promise<ToyFigure[]>;
   toyboxSearch(query: string): Promise<ToyFigure[]>;
   toyboxShelf(filter: ToyShelfFilter): Promise<ToyShelfFigure[]>;
+  toyboxSimulate(figureId: string | null): Promise<ToyboxDetectionEvent | null>;
+  toyboxSimulateRemoval(): Promise<void>;
+  toyboxNfcStatus(): Promise<ToyboxNfcStatus>;
+  toyboxDumpsDir(): Promise<string>;
+  toyboxLastGame(figureId: string): Promise<string | null>;
+  toyboxSetLastGame(figureId: string, gameId: string): Promise<void>;
+  toyboxSaveCustomTag(uid: string, label: string, figureId?: string): Promise<void>;
+  onToyboxDetected(callback: (event: ToyboxDetectionEvent) => void): void;
+  onToyboxRemoved(callback: (event: ToyboxRemovalEvent) => void): void;
   toyboxSetState(figureId: string, patch: Record<string, unknown>): Promise<unknown>;
   onArtUpdated(callback: (update: ArtUpdate) => void): void;
   quit(): Promise<void>;

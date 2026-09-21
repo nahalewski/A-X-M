@@ -37,6 +37,20 @@ const PROVENANCE = {
     license: "unlicensed",
     note: "No licence declared upstream, so all rights reserved. Local use only; do not redistribute.",
   },
+  "lego-dimensions-ellerbach": {
+    type: "metadata",
+    project: "LegoDimensions (Ellerbach)",
+    url: "https://github.com/Ellerbach/LegoDimensions",
+    license: "MIT",
+    note: "Character and vehicle identification tables (id, name, world, abilities). The portal protocol work is not used.",
+  },
+  "disney-infinity": {
+    type: "metadata",
+    project: "Disney-Infinity-NFC (skylandersNFC)",
+    url: "https://github.com/skylandersNFC/Disney-Infinity-NFC",
+    license: "unlicensed",
+    note: "Only the model-number list and the cover image references are used. No NFC dumps or keys are read, kept or shipped.",
+  },
   "lego-dimensions": {
     type: "metadata",
     project: "ldnfctags",
@@ -295,6 +309,143 @@ function importLegoDimensions() {
   return { figures, skipped };
 }
 
+/**
+ * The complete LEGO Dimensions roster comes from Ellerbach's library: 82 characters
+ * and every vehicle / gadget with its world and abilities, keyed by the id the tag
+ * carries. The ldtags.sql rows above only add wave / set / packaging where they
+ * overlap. Character pictures are referenced from ldnfctags' images folder, which
+ * names them by id.
+ */
+function importLegoDimensionsFull() {
+  const chars = path.join(SOURCES, "lego-characters.cs");
+  const vehs = path.join(SOURCES, "lego-vehicles.cs");
+  if (!fs.existsSync(chars) || !fs.existsSync(vehs)) return { figures: [], skipped: ["lego-characters.cs / lego-vehicles.cs missing (Ellerbach/LegoDimensions)"] };
+  const parse = (file, ctor) => {
+    const out = [];
+    const re = new RegExp(`new ${ctor}\\(\\s*(\\d+)\\s*,\\s*"([^"]*)"\\s*,\\s*"([^"]*)"\\s*,\\s*new List<string>\\(\\)\\s*\\{([^}]*)\\}`, "g");
+    let m;
+    for (const line of fs.readFileSync(file, "utf-8").split(/\r?\n/)) {
+      re.lastIndex = 0;
+      if ((m = re.exec(line)) !== null) out.push({ id: Number(m[1]), name: m[2].trim(), world: m[3].trim(), abilities: m[4].split(",").map((a) => a.trim().replace(/^"|"$/g, "")).filter(Boolean) });
+    }
+    return out;
+  };
+  const sqlExtras = new Map(importLegoDimensions().figures.map((f) => [f.id, f]));
+  // ldnfctags names its character pictures "NNN_Name_World_size.png"; only the number is reliable.
+  const ldTree = fs.existsSync(path.join(SOURCES, "ldnfctags-tree.json")) ? JSON.parse(fs.readFileSync(path.join(SOURCES, "ldnfctags-tree.json"), "utf-8")).tree.map((t) => t.path) : [];
+  const ldImages = new Map();
+  for (const p of ldTree) {
+    const m = p.match(/^images\/characters\/(\d+)_.*\.png$/);
+    if (m && !ldImages.has(Number(m[1]))) ldImages.set(Number(m[1]), p);
+  }
+  const figures = [];
+  const skipped = [];
+  const seen = new Set();
+  const add = (row, kind) => {
+    if (row.name === "Unknown" || /^Empty /i.test(row.name) || row.id === 0) return;
+    const id = `lego-dimensions-${kind}-${row.id}`;
+    if (seen.has(id)) {
+      skipped.push(`lego ${id}: duplicate row (${row.name})`);
+      return;
+    }
+    seen.add(id);
+    const extra = sqlExtras.get(id);
+    const image = kind === "character" && ldImages.has(row.id) ? `https://raw.githubusercontent.com/phogar/ldnfctags/master/${ldImages.get(row.id).split("/").map(encodeURIComponent).join("/")}` : undefined;
+    figures.push({
+      schemaVersion: SCHEMA_VERSION,
+      id,
+      platform: "lego-dimensions",
+      name: row.name,
+      franchise: row.world !== "Unknown" ? row.world : extra?.franchise,
+      series: extra?.series,
+      manufacturer: "LEGO / Warner Bros.",
+      variant: kind === "vehicle" ? "Vehicle" : "Character",
+      attributes: {
+        characterId: String(row.id),
+        kind,
+        ...(row.abilities.length ? { abilities: row.abilities.join(", ") } : {}),
+        ...(extra?.attributes?.packaging ? { packaging: extra.attributes.packaging } : {}),
+        ...(extra?.attributes?.set ? { set: extra.attributes.set } : {}),
+      },
+      nfc: { technology: "ntag213", identifierType: "character-variant", characterId: String(row.id), variantId: "0" },
+      media: { copyrightOwner: "LEGO / Warner Bros.", redistributable: false, ...(image ? { remoteArtwork: image } : {}) },
+      compatibleGames: ["lego-dimensions"],
+      sources: [
+        { ...PROVENANCE["lego-dimensions-ellerbach"], retrieved: new Date().toISOString().slice(0, 10) },
+        ...(extra ? [{ ...PROVENANCE["lego-dimensions"], retrieved: new Date().toISOString().slice(0, 10) }] : []),
+      ],
+    });
+  };
+  for (const c of parse(chars, "Character")) add(c, "character");
+  for (const v of parse(vehs, "Vehicle")) add(v, "vehicle");
+  return { figures, skipped };
+}
+
+// -------------------------------------------------------- disney infinity ----
+
+/**
+ * Disney Infinity figures are known by their model number (INF-1000001 is Mr.
+ * Incredible); the number is what the base reports and what RPCS3's emulated base
+ * takes, so it is the tag identifier here. The list is the community's model-number
+ * table, one section per game version and category. Pictures are the "cover" coins
+ * from the same project, matched by name (the file names carry "Franchise - Name").
+ */
+function importDisneyInfinity() {
+  const file = path.join(SOURCES, "infinity-model-numbers.md");
+  if (!fs.existsSync(file)) return { figures: [], skipped: ["infinity-model-numbers.md missing (skylandersNFC/Disney-Infinity-NFC)"] };
+  const tree = fs.existsSync(path.join(SOURCES, "infinity-tree.json")) ? JSON.parse(fs.readFileSync(path.join(SOURCES, "infinity-tree.json"), "utf-8")).tree.map((t) => t.path) : [];
+  const covers = tree.filter((p) => p.startsWith("Infinity_Images/assets") && p.endsWith(".png") && p.includes("/covers/"));
+  const norm = (t) => t.toLowerCase().replace(/\(crystal series\)/g, "crystal").replace(/^infinite /, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const coverIndex = covers.map((p) => {
+    const base = path.basename(p, ".png");
+    const dash = base.indexOf(" - ");
+    return { path: p, franchise: dash >= 0 ? base.slice(0, dash) : "", name: norm(dash >= 0 ? base.slice(dash + 3) : base), version: (p.match(/Infinity_(\d)_0/) ?? [])[1] };
+  });
+  const findCover = (name, version, category) => {
+    const n = norm(name);
+    const inCat = coverIndex.filter((c) => (category === "figure" ? c.path.includes("/Characters/") : category === "playset" ? c.path.includes("/Play_Sets/") || c.path.includes("/Toy_Box_Game/") : c.path.includes("/Power_Discs/")));
+    return inCat.find((c) => c.version === version && c.name === n) ?? inCat.find((c) => c.name === n) ?? inCat.find((c) => c.version === version && (c.name.includes(n) || n.includes(c.name))) ?? null;
+  };
+
+  const figures = [];
+  const skipped = [];
+  let section = "";
+  for (const line of fs.readFileSync(file, "utf-8").split(/\r?\n/)) {
+    const h = line.match(/^## (.*)/);
+    if (h) {
+      section = h[1];
+      continue;
+    }
+    const m = line.match(/^\|\s*INF-(\d+)\s*\|\s*(.+?)\s*\|/);
+    if (!m) continue;
+    const number = m[1];
+    const name = m[2];
+    const version = (section.match(/Infinity (\d)\.0/) ?? [])[1] ?? "";
+    const category = /figures/i.test(section) ? "figure" : /play set|toy box/i.test(section) ? "playset" : /power disc/i.test(section) ? "disc" : /base/i.test(section) ? "base" : "other";
+    if (category === "base") continue;
+    const id = `disney-infinity-${number}`;
+    const cover = findCover(name, version, category);
+    const variant = /crystal/i.test(name) ? "Crystal Series" : category === "disc" ? (/hexagonal/i.test(section) ? "Hexagonal Power Disc" : "Round Power Disc") : category === "playset" ? (/toy box/i.test(section) && !/play set/i.test(name) ? "Toy Box Game" : "Play Set") : "Figure";
+    figures.push({
+      schemaVersion: SCHEMA_VERSION,
+      id,
+      platform: "disney-infinity",
+      name: name.replace(/\s*\(Crystal Series\)/i, "").replace(/^Infinite /, ""),
+      franchise: cover?.franchise || undefined,
+      series: version ? `Disney Infinity ${version}.0` : undefined,
+      manufacturer: "Disney Interactive",
+      variant,
+      attributes: { modelNumber: `INF-${number}`, category, ...(version ? { version: `${version}.0` } : {}) },
+      nfc: { technology: "mifare-classic-1k", identifierType: "character-variant", characterId: number, variantId: "0" },
+      media: { copyrightOwner: "Disney", redistributable: false, ...(cover ? { remoteArtwork: `https://raw.githubusercontent.com/skylandersNFC/Disney-Infinity-NFC/main/${cover.path.split("/").map(encodeURIComponent).join("/")}` } : {}) },
+      compatibleGames: version === "1" ? ["disney-infinity"] : version === "2" ? ["disney-infinity-2-0"] : version === "3" ? ["disney-infinity-3-0"] : [],
+      sources: [{ ...PROVENANCE["disney-infinity"], retrieved: new Date().toISOString().slice(0, 10) }],
+    });
+    if (!cover) skipped.push(`infinity ${id}: no cover image for "${name}"`);
+  }
+  return { figures, skipped };
+}
+
 // -------------------------------------------------------------- validate ----
 
 function validate(figures) {
@@ -332,7 +483,8 @@ function validate(figures) {
 const results = {
   amiibo: importAmiibo(),
   skylanders: importSkylanders(),
-  "lego-dimensions": importLegoDimensions(),
+  "lego-dimensions": importLegoDimensionsFull(),
+  "disney-infinity": importDisneyInfinity(),
 };
 const figures = Object.values(results).flatMap((r) => r.figures);
 const skipped = Object.values(results).flatMap((r) => r.skipped);

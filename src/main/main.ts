@@ -37,6 +37,7 @@ import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 import { toybox } from "./toybox/toyboxService";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
+import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
 // requestAnimationFrame already follows the display's native refresh rate, 120Hz on
@@ -193,6 +194,8 @@ app.whenReady().then(() => {
   createWindow();
   overlayHotkey = new OverlayHotkey(toggleOverlay);
   overlayHotkey.start(loadSettings().overlayHotkey);
+  // Toy readers and the companion endpoint come up with the menu.
+  setTimeout(() => nfcHub.start(loadSettings().toybox?.companion ?? true), 4000);
   // MakeMKV reads its key from its own settings file; keep it in step with ours.
   if (loadSettings().makemkvKey) applyMakemkvKey(loadSettings().makemkvKey);
 
@@ -204,7 +207,10 @@ app.whenReady().then(() => {
 app.on("will-quit", () => overlayHotkey?.stop());
 app.on("before-quit", () => console.log("[A-X-M] quitting"));
 
-app.on("before-quit", () => stopTts());
+app.on("before-quit", () => {
+  stopTts();
+  nfcHub.stop();
+});
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
@@ -678,6 +684,15 @@ ipcMain.handle("axm:toyboxByPlatform", (_e, platform: ToyFigure["platform"]): To
 );
 
 ipcMain.handle("axm:toyboxSearch", (_e, query: string): ToyFigure[] => toybox.searchFigures(query));
+
+// The NFC hub: readers in, one detection event out. Started once the menu is up.
+ipcMain.handle("axm:toyboxSimulate", (_e, figureId: string | null) => (figureId ? nfcHub.simulate(figureId) : nfcHub.simulateUnknown()));
+ipcMain.handle("axm:toyboxSimulateRemoval", () => nfcHub.simulateRemoval());
+ipcMain.handle("axm:toyboxNfcStatus", () => nfcHub.status());
+ipcMain.handle("axm:toyboxDumpsDir", () => toyboxDumpsDir());
+ipcMain.handle("axm:toyboxLastGame", (_e, figureId: string) => toybox.lastGame(figureId));
+ipcMain.handle("axm:toyboxSetLastGame", (_e, figureId: string, gameId: string) => toybox.setLastGame(figureId, gameId));
+ipcMain.handle("axm:toyboxSaveCustomTag", (_e, uid: string, label: string, figureId?: string) => toybox.saveCustomTag({ uid, label, figureId, created: new Date().toISOString() }));
 
 /**
  * The shelf's view of the collection: figures with their picture resolved and the

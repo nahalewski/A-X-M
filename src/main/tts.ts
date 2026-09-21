@@ -122,7 +122,8 @@ export async function installTts(onProgress: (note: string, step: number, steps:
       if (!v.ok || !fs.existsSync(venvPython())) throw new Error("Couldn't create the Python environment: " + v.out.slice(-300));
     }
     onProgress("installing Chatterbox (this is a few hundred MB)", 2, steps);
-    const pip = await run(venvPython(), ["-m", "pip", "install", "--upgrade", "pip", "chatterbox-tts"], { timeout: 1_800_000 });
+    // pyscard and pycryptodome are for the Toybox NFC reader script, which shares this environment.
+    const pip = await run(venvPython(), ["-m", "pip", "install", "--upgrade", "pip", "chatterbox-tts", "pyscard", "pycryptodome"], { timeout: 1_800_000 });
     if (!pip.ok) throw new Error("pip couldn't install chatterbox-tts: " + pip.out.slice(-400));
     const nvidia = isWindows ? fs.existsSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "nvidia-smi.exe")) : (await run("nvidia-smi", ["-L"], { timeout: 10_000 })).ok;
     if (nvidia) {
@@ -207,6 +208,7 @@ function ensureWorker(): Promise<boolean> {
     });
     p.on("exit", (code) => {
       console.log("[tts] worker exited", code);
+      if (worker !== p) return; // a replaced worker; the live one carries on
       worker = null;
       readyPromise = null;
       device = null;

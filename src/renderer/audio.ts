@@ -200,6 +200,11 @@ export class AudioManager {
     this.sfx(NAV_SOUND);
   }
 
+  /** The Toybox chime: a toy landed on a reader. */
+  playNfcScan(): void {
+    this.sfx("assets/sounds/nfc-scan.ogg");
+  }
+
   playConfirm(): void {
     this.sfx("assets/sounds/confirm.ogg");
   }

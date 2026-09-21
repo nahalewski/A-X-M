@@ -70,7 +70,7 @@ export function tagKey(platform: ToyPlatform, parts: { head?: string; tail?: str
   return `${platform}:uid:${clean(parts.uid)}`;
 }
 
-const EMPTY_USER_DATA: ToyboxUserData = { collection: {}, customTags: [], recentlyScanned: [] };
+const EMPTY_USER_DATA: ToyboxUserData = { collection: {}, customTags: [], recentlyScanned: [], lastGame: {} };
 
 export class ToyboxService {
   private figures: ToyFigure[] = [];
@@ -157,9 +157,10 @@ export class ToyboxService {
         collection: parsed.collection ?? {},
         customTags: Array.isArray(parsed.customTags) ? parsed.customTags : [],
         recentlyScanned: Array.isArray(parsed.recentlyScanned) ? parsed.recentlyScanned : [],
+        lastGame: parsed.lastGame && typeof parsed.lastGame === "object" ? parsed.lastGame : {},
       };
     } catch {
-      this.userData = { collection: {}, customTags: [], recentlyScanned: [] };
+      this.userData = { collection: {}, customTags: [], recentlyScanned: [], lastGame: {} };
     }
   }
 
@@ -292,6 +293,18 @@ export class ToyboxService {
       notes: entry?.notes,
       lastScanned: new Date().toISOString(),
     };
+    this.saveUserData();
+  }
+
+  /** The game this figure was last launched with, so the next scan can offer "Resume". */
+  lastGame(figureId: string): string | null {
+    this.load();
+    return this.userData.lastGame?.[figureId] ?? null;
+  }
+
+  setLastGame(figureId: string, gameId: string): void {
+    this.load();
+    this.userData.lastGame = { ...(this.userData.lastGame ?? {}), [figureId]: gameId };
     this.saveUserData();
   }
 

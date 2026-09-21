@@ -142,6 +142,18 @@ export interface Settings {
   makemkvKey: string;
   /** The first-run tool setup has been offered / run. */
   toolsSetupDone: boolean;
+  /** Toybox: what Ghost does when a toy is scanned. */
+  toybox: {
+    onSelect: "launch" | "navigate" | "ask";
+    suggestLast: boolean;
+    speak: boolean;
+    showCards: boolean;
+    artwork: boolean;
+    autoFocus: boolean;
+    suggestGames: boolean;
+    inGame: "full" | "small" | "voice" | "off";
+    companion: boolean;
+  };
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -218,6 +230,7 @@ const DEFAULTS: Settings = {
   discTarget: "home",
   makemkvKey: "",
   toolsSetupDone: false,
+  toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },
   playlist: [],

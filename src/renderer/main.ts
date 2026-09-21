@@ -13,13 +13,14 @@ import { Assistant, Command } from "./assistant";
 import { setDictionary } from "./textEntry";
 import { MediaViewer } from "./mediaViewer";
 import { ToyShelf, TOY_PLATFORM_NAMES } from "./toybox";
+import { ToyboxDetections, resolveInstalledGames, TOY_BOXES } from "./toyboxDetect";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
 import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings } from "./types";
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -447,6 +448,7 @@ async function main(): Promise<void> {
     void toyShelf.open(filter, title);
     pushOverlay((action) => toyShelf.handle(action as Parameters<ToyShelf["handle"]>[0]));
   };
+
   const gridPicker = new GridPicker(document.getElementById("grid-picker")!);
   const textEntry = new TextEntry(document.getElementById("text-entry")!);
   const optionsPopup = new OptionsPopup(document.getElementById("options-popup")!);
@@ -501,6 +503,99 @@ async function main(): Promise<void> {
     if (settings.assistant.enabled && settings.assistant.voiceReplies && ttsStatus.engineReady && !ttsStatus.engineRunning) void window.axm.startTts().then(() => void window.axm.ttsStatus().then((t) => (ttsStatus = t)));
   };
   void refreshTts();
+  // ---- Toybox detections: reader -> hub -> Ghost -> the normal launch path ------
+  // While a Ghost card with choices is up, the d-pad goes to it.
+  let cardHandlerOpen = false;
+  assistant.setOnCardOpen((open) => {
+    if (open && !cardHandlerOpen) {
+      cardHandlerOpen = true;
+      pushOverlay((action) => assistant.handleCardAction(action));
+    } else if (!open && cardHandlerOpen) {
+      cardHandlerOpen = false;
+      popOverlay();
+    }
+  });
+  const toyDetect = new ToyboxDetections({
+    assistant,
+    games: () => games,
+    settings: () => settings.toybox,
+    ghostMuted: () => !settings.assistant.voiceReplies,
+    runningGame: () => window.axm.runningGame().catch(() => null),
+    launch: (g) => {
+      notifier.push(`Starting ${g.name}`, "general", g.iconPath);
+      void window.axm.launchGame(g.id);
+    },
+    navigateTo: (g) => {
+      if (!xmb.selectItem("game", g.id)) {
+        goCategory("game");
+        notifier.push(`${g.name} is in the Game column`, "general", g.iconPath);
+      }
+      xmb.refresh();
+    },
+    openShelf: (figureId) => {
+      openToyShelf({ view: "recent", platform: "" }, "Recently Scanned");
+      void figureId;
+    },
+    showCompatible: (event, installed) => {
+      const all = event.compatibleGameIds.length ? event.compatibleGameIds.map((id) => id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())) : [`Any ${TOY_PLATFORM_NAMES[event.ecosystem as ToyPlatform] ?? ""} game`];
+      showInfo(event.name, event.artwork?.png ?? "assets/icons/toybox.webp", null, [
+        { label: "Sub-Title", value: TOY_PLATFORM_NAMES[event.ecosystem as ToyPlatform] ?? event.ecosystem },
+        { label: "Installed", value: installed.length ? installed.map((g) => g.name).join(", ") : "None" },
+        { label: "Works with", value: all.join(", ") },
+        { label: "Details", value: "Add a game to A-X-M (Steam, Epic, Xbox, or a game folder) and Ghost will offer it on the next scan." },
+      ]);
+    },
+    notify: (text, image) => notifier.push(text, "general", image),
+    chime: () => audio.playNfcScan(),
+    lastGame: (figureId) => window.axm.toyboxLastGame(figureId).catch(() => null),
+    setLastGame: (figureId, gameId) => void window.axm.toyboxSetLastGame(figureId, gameId),
+    identifyUnknown: (event) => {
+      showOptions("Unknown Toy", [
+        {
+          label: "Identify",
+          hint: "search the database by name and map this tag to it",
+          run: async () => {
+            const a = await askText("Which toy is this?", [{ label: "Name" }]);
+            if (!a?.[0]) return;
+            const hits = await window.axm.toyboxSearch(a[0]).catch(() => []);
+            if (!hits.length) {
+              notifier.push(`Nothing in the database matches "${a[0]}"`);
+              return;
+            }
+            showOptions("Map this tag to", hits.slice(0, 12).map((f) => ({ label: f.name, hint: `${TOY_PLATFORM_NAMES[f.platform]}${f.series ? " · " + f.series : ""}`, run: async () => { await window.axm.toyboxSaveCustomTag(event.uid, f.name, f.id); notifier.push(`This tag is now ${f.name}`); } })));
+          },
+        },
+        {
+          label: "Save Custom Mapping",
+          hint: "a label for a plain NFC card",
+          run: async () => {
+            const a = await askText("Label for this tag", [{ label: "Label" }]);
+            if (a?.[0]) {
+              await window.axm.toyboxSaveCustomTag(event.uid, a[0]);
+              notifier.push(`Saved "${a[0]}"`);
+            }
+          },
+        },
+        { label: "Dismiss" },
+      ]);
+    },
+    ask: (question, options) => showOptions(question, options),
+  });
+  window.axm.onToyboxDetected((event) => void toyDetect.onDetected(event));
+  void (0 as unknown as ToyboxDetectionEvent);
+  window.axm.onToyboxRemoved((event) => toyDetect.onRemoved(event));
+  const simulateScan = async (platform: ToyPlatform | "unknown") => {
+    if (platform === "unknown") {
+      await window.axm.toyboxSimulate(null);
+      return;
+    }
+    const list = await window.axm.toyboxShelf({ view: "all", platform }).catch(() => []);
+    const withArt = list.filter((f) => f.artUrl);
+    const pick = (withArt.length ? withArt : list)[Math.floor(Math.random() * Math.max(1, (withArt.length ? withArt : list).length))];
+    if (pick) await window.axm.toyboxSimulate(pick.id);
+    else notifier.push("No figures for that platform in the database");
+  };
+
   // The external tools (ffmpeg, HandBrakeCLI, MakeMKV, Python, the voice engine).
   let toolsSummary = "Checking…";
   const refreshTools = async () => {
@@ -797,6 +892,30 @@ async function main(): Promise<void> {
               { question: "Do you want to quit the game?", horizontal: true }
             ),
         },
+        ...(toyDetect.currentFigure()
+          ? [{
+              label: `Toybox · ${toyDetect.currentFigure()!.name}`,
+              run: () => {
+                const f = toyDetect.currentFigure()!;
+                assistant.showCard({
+                  id: `toybox-overlay:${f.uid}`,
+                  title: f.name,
+                  subtitle: TOY_PLATFORM_NAMES[f.ecosystem as ToyPlatform] ?? f.ecosystem,
+                  message: `Current game: ${running.name}`,
+                  image: f.artwork?.png ? { src: f.artwork.png, fit: "contain", fallbacks: ["assets/toybox/silhouette-toy.svg"] } : undefined,
+                  choices: [
+                    { id: "info", label: "Character Info" },
+                    { id: "toybox", label: "Toybox" },
+                  ],
+                  onChoice: (id) => {
+                    assistant.closeCard();
+                    if (id === "info") showInfo(f.name, f.artwork?.png ?? "assets/icons/toybox.webp", null, [{ label: "Sub-Title", value: TOY_PLATFORM_NAMES[f.ecosystem as ToyPlatform] ?? f.ecosystem }, { label: "Series", value: f.series ?? "" }, { label: "Franchise", value: f.franchise ?? "" }, { label: "Variant", value: f.variant ?? "" }, { label: "Installed games", value: resolveInstalledGames(f, games).map((g) => g.name).join(", ") || "None" }]);
+                    else openToyShelf({ view: "recent", platform: "" }, "Recently Scanned");
+                  },
+                });
+              },
+            }]
+          : []),
         { label: "Controller Settings", run: () => { xmb.setActiveCategory("settings"); xmb.refresh(); notifier.push("Settings › System › Controller"); } },
         { label: "Turn Off the System", run: () => confirmPower("Turn Off the System", "shutdown") },
         { label: "Return to Game", run: () => void window.axm.overlayClose() },
@@ -2121,7 +2240,7 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | { month: number };
   /** Which group each root row files under; anything unlisted stays at the top level. */
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
@@ -2275,7 +2394,7 @@ async function main(): Promise<void> {
         const group = SETTINGS_GROUPS[item.id];
         settingLabels.push({ name: item.title, go: () => { goCategory("settings"); if (group) go(group); else go("root"); xmb.refresh(); } });
       }
-      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["theme settings", "theme"]] as const) {
+      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["toybox settings", "toybox"], ["theme settings", "theme"]] as const) {
         settingLabels.push({ name, go: () => { goCategory("settings"); if (v === "network") void netOpen(); else go(v as SettingsView); } });
       }
       const all = allRootItems();
@@ -2285,6 +2404,7 @@ async function main(): Promise<void> {
         { id: "group-network", title: "Network", subtitle: "Connection status, Wi-Fi, connection test, media server, Bluetooth", iconUrl: "assets/icons/network-settings.webp", onConfirm: () => { void netOpen(); } },
         { id: "group-sys", title: "System", subtitle: "System information, controller, Steam, game folders, in-game menu", iconUrl: "assets/icons/settings-system.webp", onConfirm: () => go("sys") },
         { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconGlyph: "◈", onConfirm: () => go("assistant") },
+        { id: "group-toybox", title: "Toybox", subtitle: "What Ghost does when a toy is scanned, readers, the companion app", iconUrl: "assets/icons/toybox.webp", onConfirm: () => go("toybox") },
       ];
       const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
       // Theme first, then the groups, then whatever else is unfiled (About, Exit).
@@ -3089,6 +3209,90 @@ async function main(): Promise<void> {
       { id: "as-note", title: "What Ghost understands", subtitle: "launch <game> · play <playlist or song> · go to <column or setting> · next track · stop music · quit game · turn off · help", iconGlyph: "ⓘ" },
     ];
 
+    // ---- Toybox --------------------------------------------------------------------------
+    let nfcStatus: { pcscRunning: boolean; readers: string[]; companionPort: number | null; pythonReady: boolean; lastError: string | null } | null = null;
+    void window.axm.toyboxNfcStatus().then((st) => (nfcStatus = st)).catch(() => {});
+    const saveToybox = async (partial: Partial<ToyboxSettings>) => {
+      settings = await window.axm.setSettings({ toybox: { ...settings.toybox, ...partial } });
+      xmb.refresh();
+    };
+    const onOff = (v: boolean) => (v ? "On" : "Off");
+    const toyboxSettingsItems = (): MenuItem[] => {
+      const t = settings.toybox;
+      void window.axm.toyboxNfcStatus().then((st) => (nfcStatus = st)).catch(() => {});
+      return [
+        {
+          id: "tb-readers",
+          title: "NFC Readers",
+          subtitle: nfcStatus ? (nfcStatus.readers.length ? nfcStatus.readers.join(", ") : nfcStatus.pcscRunning ? "Listening · no PC/SC reader plugged in" : nfcStatus.lastError ?? "Reader support not running") : "Checking…",
+          iconUrl: "assets/icons/toybox.webp",
+          onConfirm: async () => {
+            const st = await window.axm.toyboxNfcStatus();
+            showInfo("NFC Readers", "assets/icons/toybox.webp", null, [
+              { label: "Sub-Title", value: st.pcscRunning ? "PC/SC reader service running" : "PC/SC reader service not running" },
+              { label: "Readers", value: st.readers.length ? st.readers.join(", ") : "None found - plug in an ACR122U or another PC/SC reader" },
+              { label: "Companion", value: st.companionPort ? `Listening on port ${st.companionPort} for the Android companion / portal adapters` : "Off" },
+              { label: "Python", value: st.pythonReady ? "Ready" : "Not installed · Settings › System › Install Tools" },
+              { label: "Details", value: st.lastError ?? "Amiibo, Skylanders, Disney Infinity and LEGO Dimensions tags are identified on this device; nothing is written to a tag and no dump leaves the machine." },
+            ]);
+          },
+        },
+        {
+          id: "tb-onselect",
+          title: "When Selecting a Game from Ghost",
+          subtitle: { launch: "Launch Immediately", navigate: "Navigate to Game", ask: "Ask Every Time" }[t.onSelect],
+          iconGlyph: "▶",
+          onConfirm: () => showOptions("When Selecting a Game from Ghost", (["launch", "navigate", "ask"] as const).map((v) => ({ label: { launch: "Launch Immediately", navigate: "Navigate to Game", ask: "Ask Every Time" }[v], hint: { launch: "start the game", navigate: "move the cursor to it, like a disc insert", ask: "Ghost asks which" }[v], selected: t.onSelect === v, run: () => saveToybox({ onSelect: v }) }))),
+        },
+        {
+          id: "tb-ingame",
+          title: "Toybox Notifications During Gameplay",
+          subtitle: { full: "Full Ghost Card", small: "Small Notification", voice: "Voice Only", off: "Off" }[t.inGame],
+          iconGlyph: "▭",
+          onConfirm: () => showOptions("During Gameplay", (["full", "small", "voice", "off"] as const).map((v) => ({ label: { full: "Full Ghost Card", small: "Small Notification", voice: "Voice Only", off: "Off" }[v], selected: t.inGame === v, run: () => saveToybox({ inGame: v }) }))),
+        },
+        { id: "tb-speak", title: "Speak Toybox Detections", subtitle: onOff(t.speak), iconGlyph: "♫", onConfirm: () => saveToybox({ speak: !t.speak }) },
+        { id: "tb-cards", title: "Show Toybox Detection Cards", subtitle: onOff(t.showCards), iconGlyph: "▭", onConfirm: () => saveToybox({ showCards: !t.showCards }) },
+        { id: "tb-art", title: "Character Artwork", subtitle: onOff(t.artwork), iconGlyph: "◈", onConfirm: () => saveToybox({ artwork: !t.artwork }) },
+        { id: "tb-focus", title: "Auto Focus New Figure", subtitle: t.autoFocus ? "On · a new figure replaces the card" : "Off · the first figure keeps the card", iconGlyph: "◎", onConfirm: () => saveToybox({ autoFocus: !t.autoFocus }) },
+        { id: "tb-games", title: "Suggest Compatible Games", subtitle: onOff(t.suggestGames), iconGlyph: "▶", onConfirm: () => saveToybox({ suggestGames: !t.suggestGames }) },
+        { id: "tb-last", title: "Suggest Last Played Game", subtitle: t.suggestLast ? "On · \"Resume with…\"" : "Off", iconGlyph: "↻", onConfirm: () => saveToybox({ suggestLast: !t.suggestLast }) },
+        { id: "tb-companion", title: "Companion App", subtitle: t.companion ? `On · phones on this Wi-Fi can send scans${nfcStatus?.companionPort ? ` to port ${nfcStatus.companionPort}` : ""}` : "Off · restart to apply", iconGlyph: "◉", onConfirm: () => saveToybox({ companion: !t.companion }) },
+        {
+          id: "tb-files",
+          title: "Figure Files for Emulators",
+          subtitle: "Read-only copies of scanned toys, for Eden / yuzu (Load Amiibo) and RPCS3's portal dialogs",
+          iconUrl: "assets/icons/folder.png",
+          onConfirm: async () => {
+            const dir = await window.axm.toyboxDumpsDir();
+            showInfo("Figure Files for Emulators", "assets/icons/toybox.webp", null, [
+              { label: "Folder", value: dir },
+              { label: "Amiibo", value: "Eden / yuzu / Ryujinx: File › Load Amiibo, pick the figure's .bin here. The copy is made when the amiibo is scanned." },
+              { label: "Skylanders", value: "RPCS3: Utilities › Skylanders Portal › Load Slot, pick the .sky here. A real portal plugged into this PC works directly through RPCS3's USB passthrough." },
+              { label: "Disney Infinity", value: "RPCS3: Utilities › Infinity Base › Load, pick the .bin here (5 sectors, the layout RPCS3 expects). A real base works through USB passthrough." },
+              { label: "LEGO Dimensions", value: "RPCS3: Utilities › Dimensions Toypad, or a real toy pad through USB passthrough. Tags are identified here; RPCS3 makes its own tag files." },
+              { label: "Details", value: "Nothing is ever written back to a toy, and these files never leave this machine. The emulators have no way to load a figure from outside their own windows, so this folder is the hand-off." },
+            ]);
+          },
+        },
+        {
+          id: "tb-test",
+          title: "Test a Scan",
+          subtitle: "Pretend a toy landed on the reader",
+          iconGlyph: "▶",
+          onConfirm: () =>
+            showOptions("Test a Scan", [
+              { label: "Amiibo", run: () => void simulateScan("amiibo") },
+              { label: "Skylander", run: () => void simulateScan("skylanders") },
+              { label: "Disney Infinity figure", run: () => void simulateScan("disney-infinity") },
+              { label: "LEGO Dimensions tag", run: () => void simulateScan("lego-dimensions") },
+              { label: "Unknown tag", run: () => void simulateScan("unknown") },
+              { label: "Remove the toy", run: () => void window.axm.toyboxSimulateRemoval() },
+            ]),
+        },
+      ];
+    };
+
     // ---- Date and Time ----------------------------------------------------------------
     let clock: ClockInfo | null = null;
     let sysHostName = "";
@@ -3566,7 +3770,7 @@ async function main(): Promise<void> {
         if (view === "root") return false;
         if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
         else if (view === "network" && netView !== "root") netSub("root");
-        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant") go("root");
+        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -3583,6 +3787,7 @@ async function main(): Promise<void> {
         if (view === "sys") return "Settings › System";
         if (view === "network") return net.busy || net.status || (netView === "wifi" ? "Settings › Network › Internet Connection Settings" : netView === "register" ? "Settings › Network › Register Device" : netView === "registered" ? "Settings › Network › Registered Device List" : "Settings › Network");
         if (view === "assistant") return "Settings › Assistant";
+        if (view === "toybox") return "Settings › Toybox";
         if (view === "datetime") return "Settings › System › Date and Time";
         if (view === "power") return "Settings › System › Power Save";
         if (view === "chat") return "Settings › System › Chat";
@@ -3603,6 +3808,7 @@ async function main(): Promise<void> {
         }
         if (view === "network") return networkItems();
         if (view === "assistant") return assistantItems();
+        if (view === "toybox") return toyboxSettingsItems();
         if (view === "datetime") return dateTimeItems();
         if (view === "power") return powerItems();
         if (view === "chat") return chatItems();
@@ -3623,6 +3829,13 @@ async function main(): Promise<void> {
    * never reads the database files, so a scan, Ghost and this column all agree.
    */
   let toybox: ToyboxSummary | null = null;
+  // Which of the per-ecosystem toy box pictures exist (they come from a sprite sheet).
+  const toyBoxIcons = new Set<string>();
+  for (const [id, src] of Object.entries(TOY_BOXES)) {
+    const probe = new Image();
+    probe.onload = () => { toyBoxIcons.add(id); xmb.refresh(); };
+    probe.src = src;
+  }
   const refreshToybox = async () => {
     toybox = await window.axm.toyboxSummary().catch(() => null);
     xmb.refresh();
@@ -3640,7 +3853,7 @@ async function main(): Promise<void> {
           id: `toybox-${id}`,
           title,
           subtitle: `${n} figure${n === 1 ? "" : "s"}`,
-          iconUrl: "assets/icons/toybox.webp",
+          iconUrl: toyBoxIcons.has(id) ? TOY_BOXES[id] : "assets/icons/toybox.webp",
           onConfirm: () => openToyShelf({ view: "all", platform: id as ToyPlatform }, title),
         },
       ];
