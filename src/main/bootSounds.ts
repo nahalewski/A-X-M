@@ -175,9 +175,25 @@ export function resolveMenuMusic(enabled: boolean): AvailableSound | null {
  * These do ship with A-X-M, unlike the sounds, so they are always available and
  * are referenced by a bundle-relative path the renderer can use directly.
  */
-export const LAUNCH_IMAGE_FOR: Record<"ps1" | "ps2" | "ps3" | "psp", string> = {
+export const LAUNCH_IMAGE_FOR: Record<string, string> = {
   ps1: "assets/launch/ps1.webp",
   ps2: "assets/launch/ps2.webp",
   ps3: "assets/launch/ps3.webp",
   psp: "assets/launch/psp.webp",
+  switch: "assets/launch/switch.webp",
+  wii: "assets/launch/wii.webp",
+  wiiu: "assets/launch/wiiu.webp",
+  ds: "assets/launch/ds.webp",
+  dsi: "assets/launch/dsi.webp",
 };
+
+/**
+ * Whether a platform has a splash of its own.
+ *
+ * The map is keyed loosely because the splash is independent of the sounds:
+ * a platform can have artwork here long before the scanner knows how to find
+ * its games, and asking for one it does not have simply returns nothing.
+ */
+export function hasLaunchImage(platform: string): boolean {
+  return platform in LAUNCH_IMAGE_FOR;
+}

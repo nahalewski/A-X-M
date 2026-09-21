@@ -1268,20 +1268,25 @@ async function main(): Promise<void> {
    */
   const launchWithSplash = async (game: GameEntry): Promise<void> => {
     const platform = game.platform ?? "";
-    const isConsole = game.source === "retro" && (LAUNCH_PLATFORMS as readonly string[]).includes(platform);
 
-    if (isConsole) {
-      const key = platform as (typeof LAUNCH_PLATFORMS)[number];
-      if (settings.launchSounds[key]) {
-        const sound = await window.axm.launchSound(key, true).catch(() => null);
-        if (sound) {
-          const clip = new Audio(sound.url);
-          clip.volume = settings.sfxVolume;
-          // A file on a drive that has been pulled should not stop the launch.
-          void clip.play().catch(() => undefined);
+    if (game.source === "retro" && platform) {
+      // The sound and the splash are separate things. Only the four PlayStation
+      // platforms have a launch-sound toggle, but artwork exists for the
+      // Nintendo ones too and should show whether or not a sound plays.
+      if ((LAUNCH_PLATFORMS as readonly string[]).includes(platform)) {
+        const key = platform as (typeof LAUNCH_PLATFORMS)[number];
+        if (settings.launchSounds[key]) {
+          const sound = await window.axm.launchSound(key, true).catch(() => null);
+          if (sound) {
+            const clip = new Audio(sound.url);
+            clip.volume = settings.sfxVolume;
+            // A file on a drive that has been pulled should not stop the launch.
+            void clip.play().catch(() => undefined);
+          }
         }
       }
-      if (settings.launchSplashEnabled) void showLaunchSplash(key, game.name);
+      // Returns without drawing anything when that platform has no artwork.
+      if (settings.launchSplashEnabled) void showLaunchSplash(platform, game.name);
     }
 
     await window.axm.launchGame(game.id);
