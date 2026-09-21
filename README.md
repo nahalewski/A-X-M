@@ -66,6 +66,17 @@ changing a game's artwork.
   RetroAchievements (sign in once with username + web API key).
 - Guide button while a game runs: **Quit Game**, Controller Settings, Turn Off the System.
 - Saved Data Utility and Game Data Utility, like the PS3's.
+- **HD Texture Packs** (Y on a PS1 / PS2 game): the packs A-X-M's curated list
+  (`assets/textures-db/index.json`) has for the game's serial - read from the file name or
+  the disc's SYSTEM.CNF - each with Download, Enable, Disable, Delete. A pack lands in
+  `ROOT\TEXTURES\<platform>\<SERIAL>\` and is linked into DuckStation's / PCSX2's own
+  `textures\<SERIAL>\replacements` folder (the emulator's replacement switch is turned on
+  in its ini). **About & Credits** at the bottom of Game names every pack author and the
+  community collections to find more.
+- **ROOT drive**: with *rootDrive* set (N: by default) the columns list that one drive only,
+  laid out as `GAME MUSIC PHOTO VIDEO SAVE TEXTURES PATCHES NFC`; NFC holds the toy
+  backups by brand (AMIIBO, SKYLANDERS, DISNEY INFINITY, LEGO DIMENSIONS - each tag copy with
+  the figure's picture beside it). Game folders elsewhere (G:\GAMES) still scan.
 - **Memory Card Utility**: virtual PlayStation (128 KB) and PlayStation 2 (8 MB, fully
   formatted) memory cards, created from the PS3-style "Select the internal memory card to be
   created" screen and copied straight into DuckStation's and PCSX2's own card folders.

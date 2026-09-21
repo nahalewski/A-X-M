@@ -184,9 +184,9 @@ export class MemoryCardUtility {
   }
 
   private async createCard(kind: "ps1" | "ps2"): Promise<void> {
-    const a = await this.deps.askText(kind === "ps1" ? "New PlayStation Memory Card" : "New PlayStation 2 Memory Card", [{ label: "Name", value: kind === "ps1" ? "Memory Card" : "PS2 Memory Card" }]);
+    const a = await this.deps.askText(kind === "ps1" ? "New PlayStation Memory Card" : "New PlayStation 2 Memory Card", [{ label: "Name", value: kind === "ps1" ? "PS1 Memory Card" : "PS2 Memory Card" }]);
     if (!a) return;
-    const card = await window.axm.memcardCreate(kind, a[0] || "Memory Card");
+    const card = await window.axm.memcardCreate(kind, a[0] || (kind === "ps1" ? "PS1 Memory Card" : "PS2 Memory Card"));
     await this.reload();
     this.deps.notify(`${card.name} created`, this.cardIcon(card));
     const emu = this.emulators.find((e) => e.kind === kind && e.installPath);

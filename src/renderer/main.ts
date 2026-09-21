@@ -340,9 +340,10 @@ async function main(): Promise<void> {
       .map((d): MenuItem => {
         // A drive on the Sabrent adapter is a cartridge: its games, under its own icon.
         const cart = kind === "game" && isCartridge(d.drive);
+        const root = (settings.rootDrive || "").toUpperCase() === d.drive.toUpperCase();
         return {
           id: `drive-${kind}-${d.drive}`,
-          title: cart ? `Cartridge (${d.drive})` : `${d.drive} Drive`,
+          title: cart ? `Cartridge (${d.drive})` : root ? `ROOT (${d.drive})` : `${d.drive} Drive`,
           subtitle: cart ? "Plugged into the SATA adapter · its games" : `${kind.toUpperCase()} folder`,
           iconUrl: cart ? "assets/icons/cartridge.png" : "assets/icons/hdd.webp",
           iconClass: cart ? "cartridge" : `hdd hdd-${kind}`,
@@ -2058,6 +2059,23 @@ async function main(): Promise<void> {
       })),
       ...discRows(["ps1", "ps2"]),
       ...gameRows(),
+      {
+        id: "game-about",
+        title: "About & Credits",
+        subtitle: "Apollo Save Tool, the texture pack authors, and the community collections",
+        iconUrl: "assets/icons/about.webp",
+        onConfirm: () => void window.axm.textureDb().then((db) => {
+          const authors = [...new Set(db.games.flatMap((g) => g.packs.map((p) => `${p.author} - ${p.name} (github.com/${p.repo})`)))];
+          showInfo("About & Credits", "assets/icons/about.webp", null, [
+            { label: "Apollo Save Tool", value: "Damian \"bucanero\" Parrino: apollo-lib (the patch engine A-X-M ports), apollo-patches (the cheat database) and apollo-saves (the community saves). GPL-3.0." },
+            { label: "HD texture packs", value: authors.join("\n") },
+            { label: "Collections", value: db.moreSources.map((s) => `${s.name}\n${s.url}`).join("\n") },
+            { label: "Emulators", value: "DuckStation (stenzek) and PCSX2, whose card formats and texture folders these are; RPCS3, PPSSPP, Eden, shadPS4, Kyty." },
+            { label: "Memory cards", value: "Ross Ridge's ps2mc / mymc notes on the PS2 card filesystem." },
+            { label: "Thank you", value: "To everyone above, and to every author whose name is in a patch header or a pack's README. Full notices: assets/THIRD_PARTY_LICENSES.md." },
+          ]);
+        }),
+      },
     ];
 
     /** Games the scanner found under a drive's GAME folder. */
@@ -5090,6 +5108,44 @@ async function main(): Promise<void> {
           xmb.refresh();
         }
   };
+  /**
+   * HD Texture Packs, for a PS1 / PS2 game: the packs the curated list has for its
+   * serial, each with Download / Enable / Disable / Delete. The pack lands in
+   * ROOT\TEXTURES and is linked into the emulator's own textures folder.
+   */
+  const textureProgress = new Map<string, string>();
+  window.axm.onTextureProgress(({ slug, note }) => textureProgress.set(slug, note));
+  const hdTexturePacks = async (game: GameEntry) => {
+    const r = await window.axm.texturePacksFor(game.id);
+    const platform = game.platform as "ps1" | "ps2";
+    if (!r) { notifier.push("Texture packs need a disc image the menu can read"); return; }
+    if (!r.status) {
+      showInfo(`HD Texture Packs · ${game.name}`, game.iconPath, null, [
+        { label: "Serial", value: r.serial ?? "not found in the image" },
+        { label: "Packs", value: "None in A-X-M's list for this game yet." },
+        { label: "Where to look", value: "Game › About & Credits lists the community collections; a pack you unpack by hand into ROOT\\TEXTURES\\" + platform + "\\<SERIAL>\\<name>\\ can be linked from here once it's added to assets/textures-db." },
+      ]);
+      return;
+    }
+    const st = r.status;
+    const act = async (fn: () => Promise<{ ok: boolean; message: string }>) => { const x = await fn(); notifier.push(x.message, "install", game.iconPath); void hdTexturePacks(game); };
+    showOptions(`HD Texture Packs · ${st.game.title}`, [
+      ...st.packs.map(({ pack, slug, installed }) => ({
+        label: pack.name,
+        hint: [installed ? (installed.enabled ? "ON" : "downloaded") : `${pack.sizeMb ? `${pack.sizeMb >= 1024 ? `${(pack.sizeMb / 1024).toFixed(1)} GB` : `${pack.sizeMb} MB`}` : "size unknown"}`, `by ${pack.author}`, textureProgress.get(slug) ?? ""].filter(Boolean).join(" · "),
+        selected: !!installed?.enabled,
+        children: [
+          ...(!installed ? [{ label: "Download Pack", hint: `${pack.repo} · into ROOT\\TEXTURES\\${platform}\\${st.serial}`, run: () => act(() => window.axm.textureInstall(platform, st.serial, slug)) }] : []),
+          ...(installed && !installed.enabled ? [{ label: "Enable Pack", hint: st.emulator.texturesDir ? `links into ${st.emulator.texturesDir}\\${st.serial}\\replacements` : "run the emulator once first", run: () => act(() => window.axm.textureEnable(platform, st.serial, slug)) }] : []),
+          ...(installed?.enabled ? [{ label: "Disable Pack", run: () => act(() => window.axm.textureDisable(platform, st.serial, slug)) }] : []),
+          ...(installed ? [{ label: "Download again", hint: "refreshes from the source", run: () => act(() => window.axm.textureInstall(platform, st.serial, slug)) }, { label: "Delete Pack", children: [{ label: `Yes, delete ${pack.name}`, run: () => act(() => window.axm.textureDelete(platform, st.serial, slug)) }, { label: "No" }] }] : []),
+          { label: "About this pack", run: () => showInfo(pack.name, game.iconPath, null, [{ label: "Author", value: pack.author }, { label: "Source", value: `github.com/${pack.repo}` }, { label: "Size", value: pack.sizeMb ? `about ${pack.sizeMb} MB` : "not listed" }, ...(pack.license ? [{ label: "Licence", value: pack.license }] : []), ...(pack.notes ? [{ label: "Notes", value: pack.notes }] : []), { label: "Serial", value: st.serial }]) },
+        ],
+      })),
+      { label: "Where to find more", run: () => void window.axm.textureDb().then((db) => showInfo("HD Texture Packs", undefined, null, db.moreSources.map((s) => ({ label: s.name, value: s.url })))) },
+    ]);
+  };
+
   xmb.setOnGameContext((game) => {
     const profiles: (1 | 2 | 3 | null)[] = [null, 1, 2, 3];
     showOptions(game.name, [
@@ -5108,6 +5164,7 @@ async function main(): Promise<void> {
         })),
       },
       { label: "Change Artwork…", hint: "SteamGridDB", run: () => changeArtwork(game) },
+      ...(game.source === "retro" && (game.platform === "ps1" || game.platform === "ps2") ? [{ label: "HD Texture Packs", hint: game.platform === "ps1" ? "DuckStation" : "PCSX2", run: () => hdTexturePacks(game) }] : []),
       ...(game.installDir && game.source !== "xbox" ? [{ label: "Open Folder", run: () => void window.axm.openFolder(game.installDir) }] : []),
       {
         label: "Information",

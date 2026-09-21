@@ -235,7 +235,8 @@ export function titleName(platform: ApolloPlatform, titleId: string): string | n
     for (const list of ["ps1titleid.txt", "ps2titleid.txt", "psptitleid.txt", "psvtitleid.txt"]) {
       try {
         for (const line of fs.readFileSync(path.join(patchesDir(), list), "latin1").split(/\r?\n/)) {
-          const m = line.match(/^([A-Za-z0-9-]+)\s+(.+)$/);
+          // "SLUS21258 .hack//G.U." in the PS2 list, "SLUS01411;Yu-Gi-Oh!" in the PS1 one.
+          const m = line.match(/^([A-Za-z0-9-]+)[;\t ]+(.+)$/);
           if (m) titleNames.set(normaliseTitleId(m[1]), m[2].trim());
         }
       } catch {

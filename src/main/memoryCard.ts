@@ -1,7 +1,7 @@
 import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Ps2Card, formatPs2Image } from "./ps2card";
+import { Ps2Card, formatPs2Image, fullWidthToAscii } from "./ps2card";
 
 /**
  * Virtual PlayStation and PlayStation 2 memory cards.
@@ -141,19 +141,8 @@ function readPs1Saves(file: string): CardSave[] {
     // entry only carries a product code, which tells a person nothing.
     const start = i * PS1_BLOCK;
     let title = "";
-    if (card.toString("latin1", start, start + 2) === "SC") {
-      const raw = card.subarray(start + 4, start + 68);
-      for (let k = 0; k < raw.length; k++) {
-        const byte = raw[k];
-        if (byte === 0) break;
-        if ((byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xef)) {
-          k++;
-          continue;
-        }
-        if (byte >= 0x20 && byte < 0x7f) title += String.fromCharCode(byte);
-      }
-      title = title.replace(/\s{2,}/g, " ").trim();
-    }
+    // Shift-JIS full-width, as every PS1 title is written; the shared decoder reads it.
+    if (card.toString("latin1", start, start + 2) === "SC") title = fullWidthToAscii(card.subarray(start + 4, start + 68));
 
     saves.push({
       name,

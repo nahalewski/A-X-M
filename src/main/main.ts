@@ -17,6 +17,8 @@ import * as memcardImport from "./memoryCardImport";
 import * as apolloDb from "./apollo/database";
 import * as apollo from "./apollo/service";
 import * as companionSaves from "./apollo/companionSaves";
+import { rootDrive, ensureRootLayout } from "./rootDrive";
+import * as texturePacks from "./texturePacks";
 import * as ps2cardModule from "./ps2card";
 import { browseMedia, BrowseKind, BrowseListing, listMediaDrives, createMediaFolder, MediaDrive } from "./mediaBrowser";
 import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary";
@@ -52,7 +54,7 @@ import { storeCatalogue, storeInstall, StoreItem } from "./store";
 import { execFile } from "node:child_process";
 import type { RetroPlatform } from "./types";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
-import { nfcHub, dumpsDir as toyboxDumpsDir, relayUrlFor, mediaKeyFor } from "./toybox/nfc";
+import { nfcHub, dumpsDir as toyboxDumpsDir, relayUrlFor, mediaKeyFor, migrateBackupsToRoot } from "./toybox/nfc";
 import { downloadUrl } from "./storage";
 import { CompanionServer } from "./companion/server";
 import { CompanionSetting } from "./companion/protocol";
@@ -299,6 +301,8 @@ app.whenReady().then(() => {
   overlayHotkey = new OverlayHotkey(toggleOverlay);
   overlayHotkey.start(loadSettings().overlayHotkey);
   // Toy readers and the companion endpoint come up with the menu.
+  ensureRootLayout();
+  setTimeout(() => migrateBackupsToRoot(), 6000);
   setTimeout(() => nfcHub.start(loadSettings().toybox?.companion ?? true), 4000);
   setTimeout(() => void apolloDb.autoUpdate().then(() => mainWindow?.webContents.send("axm:apolloProgress", { note: "" })), 8000);
   // Listening from the start: the phone should find A-X-M without anything being
@@ -650,7 +654,12 @@ ipcMain.handle(
 
 ipcMain.handle("axm:getAnkerStatus", (): Promise<AnkerStatus> => readAnkerStatus());
 ipcMain.handle("axm:getMediaDrives", (): MediaDrive[] => listMediaDrives());
-ipcMain.handle("axm:getVolumes", (): Promise<VolumeInfo[]> => listVolumes());
+ipcMain.handle("axm:getVolumes", async (): Promise<VolumeInfo[]> => {
+  // Copy targets, exports and the like: only ROOT (and this PC) when ROOT is set.
+  const all = await listVolumes();
+  const only = rootDrive();
+  return only ? all.filter((v) => v.system || v.drive.toUpperCase() === only) : all;
+});
 ipcMain.handle("axm:createMediaFolder", (_e, parentDir: string, name: string): string => createMediaFolder(parentDir, name));
 ipcMain.handle("axm:getSongInfo", (_e, filePath: string): Promise<SongInfo | null> => getSongInfo(filePath));
 ipcMain.handle("axm:getScreenInfo", (_e, title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null> =>
@@ -976,6 +985,21 @@ ipcMain.handle("axm:memcardImportPs2", (_e, id: string, source: string) => {
     return { ok: false, message: (err as Error).message };
   }
 });
+// ---- HD texture packs: the curated list, and a game's packs on / off ----
+ipcMain.handle("axm:textureDb", () => texturePacks.textureDb());
+ipcMain.handle("axm:texturePacksFor", async (_e, gameId: string) => {
+  const game = cachedGames.find((g) => g.id === gameId);
+  if (!game || (game.platform !== "ps1" && game.platform !== "ps2") || !game.romPath) return null;
+  const serial = await texturePacks.serialOf(game.romPath);
+  const status = await texturePacks.packStatus(game.platform, serial, game.name);
+  return { serial, status };
+});
+ipcMain.handle("axm:textureInstall", (_e, platform: "ps1" | "ps2", serial: string, slug: string) =>
+  texturePacks.installPack(platform, serial, slug, (note) => mainWindow?.webContents.send("axm:textureProgress", { slug, note }))
+);
+ipcMain.handle("axm:textureEnable", (_e, platform: "ps1" | "ps2", serial: string, slug: string) => texturePacks.enablePack(platform, serial, slug));
+ipcMain.handle("axm:textureDisable", (_e, platform: "ps1" | "ps2", serial: string, slug: string) => texturePacks.disablePack(platform, serial, slug));
+ipcMain.handle("axm:textureDelete", (_e, platform: "ps1" | "ps2", serial: string, slug: string) => texturePacks.deletePack(platform, serial, slug));
 ipcMain.handle("axm:apolloStatus", () => apolloDb.apolloStatus());
 ipcMain.handle("axm:apolloUpdatePatches", () => apolloDb.updatePatches((note) => mainWindow?.webContents.send("axm:apolloProgress", { note })));
 ipcMain.handle("axm:apolloUpdateSaves", () => apolloDb.updateSaves((note) => mainWindow?.webContents.send("axm:apolloProgress", { note })));

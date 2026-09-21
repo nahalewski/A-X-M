@@ -429,6 +429,7 @@ export interface Settings {
   lyricsEnabled: boolean;
   apollo: { autoUpdate: boolean; offline: boolean; location: string };
   memcardSyncToPhone: boolean;
+  rootDrive: string;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -594,6 +595,11 @@ export interface MemoryCard { id: string; name: string; kind: CardKind; filePath
 export interface CardSave { name: string; title: string; sizeBytes: number; blocks?: number; files?: string[] }
 export interface EmulatorCards { id: "duckstation" | "pcsx2"; name: string; kind: CardKind; installPath: string | null; dataPath: string | null; cardFolder: string | null; cardFolderFromConfig: boolean; defaultCardFolder: string; cards: string[] }
 export interface ImportCandidate { filePath: string; fileName: string; kind: CardKind | null; format: string; saves: { name: string; title: string; blocks: number }[]; supported: boolean; reason?: string }
+export interface TexturePack { name: string; author: string; source: "github"; repo: string; branch?: string; asset?: string; path?: string; sizeMb: number; license?: string; notes?: string }
+export interface TextureGame { platform: "ps1" | "ps2"; title: string; serials: string[]; packs: TexturePack[] }
+export interface TextureDb { note: string; moreSources: { name: string; url: string }[]; games: TextureGame[] }
+export interface InstalledPack { platform: "ps1" | "ps2"; serial: string; slug: string; name: string; repo: string; folder: string; installedAt: string; enabled: boolean; linkedAt: string | null }
+export interface PackStatus { game: TextureGame; serial: string; packs: { pack: TexturePack; slug: string; installed: InstalledPack | null }[]; emulator: { found: boolean; dataPath: string | null; texturesDir: string | null } }
 export interface SaveRef { cardId: string; save: string }
 export interface ApolloOption { tag: string; choices: { value: string; label: string }[] }
 export interface ApolloCode { id: number; name: string; type: "sw" | "bsd" | "python"; lines: string[]; options: ApolloOption[]; target: { folder: string | null; file: string }; group: string | null; isDefault: boolean; isInfo: boolean; isRequired: boolean; order: "le" | "be" | null }
@@ -832,6 +838,14 @@ export interface AxmApi {
   memcardScanDrive(root: string): Promise<{ ps1: ImportCandidate[]; ps2: ImportCandidate[] }>;
   memcardImportPs1(id: string, source: string, only?: string[]): Promise<{ ok: boolean; imported: number; message: string }>;
   memcardImportPs2(id: string, source: string): Promise<{ ok: boolean; message: string }>;
+  // ---- HD texture packs ----
+  textureDb(): Promise<TextureDb>;
+  texturePacksFor(gameId: string): Promise<{ serial: string | null; status: PackStatus | null } | null>;
+  textureInstall(platform: string, serial: string, slug: string): Promise<{ ok: boolean; message: string }>;
+  textureEnable(platform: string, serial: string, slug: string): Promise<{ ok: boolean; message: string }>;
+  textureDisable(platform: string, serial: string, slug: string): Promise<{ ok: boolean; message: string }>;
+  textureDelete(platform: string, serial: string, slug: string): Promise<{ ok: boolean; message: string }>;
+  onTextureProgress(callback: (p: { slug: string; note: string }) => void): void;
   // ---- Apollo Save Tool ----
   apolloStatus(): Promise<ApolloStatus>;
   apolloUpdatePatches(): Promise<{ ok: boolean; message: string; count: number }>;

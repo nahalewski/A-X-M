@@ -7,6 +7,8 @@ import { app, BrowserWindow } from "electron";
 import { isWindows } from "../platform";
 import { toybox } from "./toyboxService";
 import { artUrl } from "./artwork";
+import { rootFolder, NFC_FOLDERS } from "../rootDrive";
+import { fileURLToPath } from "node:url";
 import { handOff } from "./bridge";
 import { ToyboxDetectionEvent, ToyboxRemovalEvent, ToyFigure, ToyPlatform } from "./types";
 
@@ -46,6 +48,45 @@ export interface RawScan {
 /** Where tag copies go: the folder Eden / yuzu / RPCS3's portal dialogs are pointed at. */
 export function dumpsDir(): string {
   return path.join(app.getPath("userData"), "toybox", "figures");
+}
+
+/** Where a brand's backups go: ROOT\NFC\<BRAND> when there is a ROOT drive, else the app's own folder. */
+export function backupDirFor(ecosystem: string): string {
+  const onRoot = rootFolder("NFC", NFC_FOLDERS[ecosystem] ?? ecosystem.toUpperCase());
+  return onRoot ?? dumpsDir();
+}
+
+/**
+ * Tag copies kept in the app's folder before there was a ROOT drive move to
+ * ROOTNFC<BRAND>, each with the figure's picture beside it. Files are named
+ * "Name (platform-id).ext", so the brand and the figure are read off the name.
+ */
+export function migrateBackupsToRoot(): void {
+  let names: string[] = [];
+  try {
+    names = fs.readdirSync(dumpsDir());
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const m = name.match(/\(((amiibo|skylanders|disney-infinity|lego-dimensions)-[^)]+)\)\.(bin|sky)$/);
+    if (!m) continue;
+    const dir = rootFolder("NFC", NFC_FOLDERS[m[2]]);
+    if (!dir) return;
+    try {
+      const target = path.join(dir, name);
+      if (!fs.existsSync(target)) fs.copyFileSync(path.join(dumpsDir(), name), target);
+      const figure = toybox.getFigureById(m[1]);
+      const art = figure ? artUrl(figure) : null;
+      if (art?.startsWith("file:")) {
+        const src = fileURLToPath(art);
+        const pic = path.join(dir, name.replace(/\.(bin|sky)$/, path.extname(src) || ".png"));
+        if (!fs.existsSync(pic)) fs.copyFileSync(src, pic);
+      }
+    } catch {
+      /* the next scan writes it again */
+    }
+  }
 }
 
 const RESCAN_AFTER_MS = 30_000;
@@ -306,10 +347,22 @@ export class NfcHub {
     if (raw.dump && raw.dumpExt) {
       // The copy is named after the figure so an emulator's file picker reads well.
       try {
-        fs.mkdirSync(dumpsDir(), { recursive: true });
+        const dir = backupDirFor(event.ecosystem);
+        fs.mkdirSync(dir, { recursive: true });
         const base = (figure ? `${figure.name} (${figure.id})` : raw.uid).replace(/[<>:"/\|?*]/g, "");
-        const file = path.join(dumpsDir(), `${base}.${raw.dumpExt}`);
+        const file = path.join(dir, `${base}.${raw.dumpExt}`);
         fs.writeFileSync(file, Buffer.from(raw.dump, "base64"));
+        // The figure's picture beside its tag, so the folder reads as a shelf.
+        const art = event.artwork?.png;
+        if (art?.startsWith("file:")) {
+          try {
+            const src = fileURLToPath(art);
+            const pic = path.join(dir, `${base}${path.extname(src) || ".png"}`);
+            if (!fs.existsSync(pic)) fs.copyFileSync(src, pic);
+          } catch {
+            /* no picture: the tag copy still stands */
+          }
+        }
         event.dumpPath = file;
         event.handedTo = handOff(event.ecosystem, file);
       } catch (err) {

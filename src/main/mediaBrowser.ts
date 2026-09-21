@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { rootDrive } from "./rootDrive";
 import { listDriveRoots, driveLabel, isSystemRoot } from "./platform";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -60,8 +61,11 @@ const DRIVE_FOLDERS = { photo: ["PHOTO", "PHOTOS"], video: ["VIDEO", "VIDEOS"], 
 
 export function listMediaDrives(): MediaDrive[] {
   const drives: MediaDrive[] = [];
+  const only = rootDrive();
   for (const root of listDriveRoots()) {
     if (isSystemRoot(root)) continue;
+    // With a ROOT drive set, it is the only drive the columns list.
+    if (only && root.slice(0, 2).toUpperCase() !== only) continue;
     // "N:" on Windows; the mount point itself on Linux (path.join copes with both).
     const drive = process.platform === "win32" ? root.slice(0, 2).toUpperCase() : root;
     let names: string[];

@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { rootDrive } from "./rootDrive";
 import { listDriveRoots, driveLabel } from "./platform";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -35,11 +36,14 @@ const listDrives = listDriveRoots;
 
 /** Configured roots if set, otherwise the usual Windows music locations. */
 export function getMusicRoots(): string[] {
-  const configured = loadSettings().musicFolders;
+  // With a ROOT drive set, folders added by hand on other drives stay out of the menu too.
+  const only = rootDrive();
+  const configured = loadSettings().musicFolders.filter((f) => !only || !/^[A-Za-z]:/.test(f) || f.slice(0, 2).toUpperCase() === only);
   const roots = configured.length > 0 ? [...configured] : [path.join(os.homedir(), "Music")];
   // A drive's MUSIC folder is always a root, so a stick with music on it just shows
   // up - and so a folder made or copied there is browsable straight away.
   for (const drive of listDrives()) {
+    if (only && drive.slice(0, 2).toUpperCase() !== only) continue;
     for (const name of ["MUSIC", "Music"]) {
       const candidate = path.join(drive, name);
       if (roots.some((r) => path.resolve(r).toLowerCase() === path.resolve(candidate).toLowerCase())) continue;

@@ -460,7 +460,11 @@ export function ps2Time(d: Date): Buffer {
 /** The two title lines from icon.sys (Shift-JIS full-width text, ASCII where it can be). */
 export function iconSysTitle(sys: Buffer): string {
   if (sys.length < 0xc0 || sys.toString("latin1", 0, 4) !== "PS2D") return "";
-  const raw = sys.subarray(0xc0, 0xc0 + 68);
+  return fullWidthToAscii(sys.subarray(0xc0, 0xc0 + 68));
+}
+
+/** Shift-JIS full-width text (what PS1 and PS2 save titles are written in) as plain ASCII. */
+export function fullWidthToAscii(raw: Buffer): string {
   let out = "";
   for (let i = 0; i + 1 < raw.length; i += 2) {
     const hi = raw[i];

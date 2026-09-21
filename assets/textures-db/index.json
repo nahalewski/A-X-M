@@ -1,0 +1,76 @@
+{
+  "note": "A-X-M's curated HD texture pack list. Each pack names where it comes from and what it needs; A-X-M downloads it into ROOT\\TEXTURES and links it into the emulator's own textures folder. Credits are shown in Game > About & Credits.",
+  "moreSources": [
+    { "name": "PCSX2 HD Texture Pack group (GBAtemp)", "url": "https://gbatemp.net/threads/pcsx2-hd-texture-packs.626945/" },
+    { "name": "Panda_Venom's PCSX2 texture pack list (GBAtemp)", "url": "https://gbatemp.net/threads/pcsx2-texture-packs.624386/" },
+    { "name": "GitHub topic: pcsx2", "url": "https://github.com/topics/pcsx2" },
+    { "name": "EmuDeck PCSX2 docs (texture packs)", "url": "https://github.com/EmuDeck/emudeck.github.io/blob/main/docs/emulators/steamos/pcsx2.md" },
+    { "name": "DuckStation texture replacement wiki", "url": "https://github.com/stenzek/duckstation/wiki/Texture-Replacement" }
+  ],
+  "games": [
+    {
+      "platform": "ps2",
+      "title": "Crash Twinsanity",
+      "serials": ["SLUS-20909", "SLES-52568", "SLPM-65801"],
+      "packs": [
+        { "name": "Crash Twinsanity HD Texture Pack", "author": "CRASHARKI", "source": "github", "repo": "CRASHARKI/ctwin-tp", "branch": "main", "sizeMb": 160, "notes": "Characters, crates, UI, level cards and icons. Delete the old replacements before updating, as the author says." }
+      ]
+    },
+    {
+      "platform": "ps2",
+      "title": "Metal Gear Solid 2: Substance",
+      "serials": ["SLUS-20554"],
+      "packs": [
+        { "name": "MGS2 HD UI", "author": "NathanHigley", "source": "github", "repo": "NathanHigley/MGS2-HD-UI", "asset": "MGS2-HD-UI\\.zip$", "sizeMb": 14, "notes": "HUD and menus redrawn in HD." }
+      ]
+    },
+    {
+      "platform": "ps2",
+      "title": "The Warriors",
+      "serials": ["SLUS-21215"],
+      "packs": [
+        { "name": "Xbox Texture Pack", "author": "eternights", "source": "github", "repo": "eternights/XboxTexturePack.TheWarriors", "asset": "\\.zip$", "sizeMb": 145, "notes": "The Xbox release's textures ported to PCSX2." }
+      ]
+    },
+    {
+      "platform": "ps2",
+      "title": "WipEout Fusion",
+      "serials": ["SCES-50005", "SLUS-20462"],
+      "packs": [
+        { "name": "WipEout Fusion HD Texture Pack", "author": "sethvm / NR74W", "source": "github", "repo": "sethvm/WipEout-Fusion-HD-Texture-Pack", "branch": "master", "path": "textures/serial/replacements", "sizeMb": 700, "notes": "Turn on Precache Textures in PCSX2 too, as the pack's notes say." }
+      ]
+    },
+    {
+      "platform": "ps2",
+      "title": "Speed Racer: The Videogame",
+      "serials": ["SLUS-21812"],
+      "packs": [
+        { "name": "Speed Racer HD Texture Pack", "author": "BMT619", "source": "github", "repo": "BMT619/Speed-Racer-PCSX2-HD-Texture-Pack", "asset": "SLUS-21812\\.zip$", "sizeMb": 1134, "notes": "Upscaled with Upscayl." }
+      ]
+    },
+    {
+      "platform": "ps2",
+      "title": "Armored Core 2: Another Age",
+      "serials": ["SLUS-20249"],
+      "packs": [
+        { "name": "AC2AA HD 4x", "author": "KaedeIchigo", "source": "github", "repo": "KaedeIchigo/ac2aa-hd-texture-pack", "asset": "part[0-9]+\\.zip$", "sizeMb": 2840, "license": "MIT (code) - see ASSET-NOTICE.md", "notes": "Two zip parts, both downloaded. Community testing release." }
+      ]
+    },
+    {
+      "platform": "ps2",
+      "title": "Mortal Kombat: Armageddon",
+      "serials": ["SLUS-21410"],
+      "packs": [
+        { "name": "MK Armageddon HD Textures", "author": "ckiscxrsed", "source": "github", "repo": "ckiscxrsed/Mortal-Kombat-Armageddon-HD-Textures", "asset": "\\.(zip|rar|7z)$", "sizeMb": 0, "notes": "AI-upscaled. The release is a .rar; 7-Zip unpacks it." }
+      ]
+    },
+    {
+      "platform": "ps1",
+      "title": "Parasite Eve II",
+      "serials": ["SLUS-01042", "SLUS-01055"],
+      "packs": [
+        { "name": "Parasite Eve 2 HD Remaster", "author": "faligame", "source": "github", "repo": "faligame/Parasite-Eve-2-HD-Remaster", "asset": "\\.zip$", "sizeMb": 0, "notes": "Includes a DuckStation-compatible HD texture engine. No public release yet - the download waits until the author publishes one." }
+      ]
+    }
+  ]
+}

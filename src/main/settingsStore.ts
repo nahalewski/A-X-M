@@ -162,6 +162,13 @@ export interface Settings {
   subtitles: { enabled: boolean; language: string };
   /** Lyrics from LRCLIB for the Karaoke visualizer. */
   lyricsEnabled: boolean;
+  /**
+   * ROOT: the one drive the menu shows for media, saves, textures, patches and NFC
+   * backups ("N:"), laid out as GAME, MUSIC, PHOTO, VIDEO, SAVE, TEXTURES, PATCHES,
+   * NFC. Other drives stay out of the menu; game folders elsewhere (G:\GAMES) still scan.
+   * "" shows every drive, as before.
+   */
+  rootDrive: string;
   /** Companion: phones keep a copy of every save on the cards, refreshed as they change. */
   memcardSyncToPhone: boolean;
   /** Apollo Save Tool databases: weekly refresh, offline (never fetch), where they live ("" = userData). */
@@ -270,6 +277,7 @@ const DEFAULTS: Settings = {
   lyricsEnabled: true,
   apollo: { autoUpdate: true, offline: false, location: "" },
   memcardSyncToPhone: true,
+  rootDrive: "N:",
   toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },
