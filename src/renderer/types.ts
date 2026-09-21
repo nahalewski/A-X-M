@@ -483,6 +483,23 @@ export interface ToyShelfFilter {
   kind?: string;
 }
 
+export interface StoreItem {
+  id: string;
+  kind: "game" | "emulator";
+  platform: RetroPlatform;
+  name: string;
+  path: string | null;
+  sizeBytes: number;
+  installed: boolean;
+  libraryDir: string;
+  emulatorName: string;
+  emulatorInstalled: boolean;
+  note?: string;
+  iconPath?: string;
+  heroPath?: string;
+  needsPrep?: string;
+}
+
 export interface Ps3TrimSettings {
   update: boolean;
   dummy: boolean;
@@ -763,6 +780,10 @@ export interface AxmApi {
   preparePs3(gameId: string, trim: Ps3TrimSettings | null): Promise<{ dir: string; keySource: string | null; decrypted: boolean; freed: number; iso: string; isoBytes: number }>;
   deleteDiscImage(gameId: string): Promise<boolean>;
   installEmulator(platform: RetroPlatform): Promise<boolean>;
+  desktopShortcut(platform: RetroPlatform): Promise<boolean>;
+  storeCatalogue(): Promise<StoreItem[]>;
+  storeInstall(item: StoreItem): Promise<string>;
+  onStoreArt(callback: (u: { id: string; iconPath?: string; heroPath?: string }) => void): void;
   toyboxSimulate(figureId: string | null): Promise<ToyboxDetectionEvent | null>;
   toyboxSimulateRemoval(): Promise<void>;
   toyboxNfcStatus(): Promise<ToyboxNfcStatus>;

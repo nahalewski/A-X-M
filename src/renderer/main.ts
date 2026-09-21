@@ -14,13 +14,14 @@ import { setDictionary } from "./textEntry";
 import { MediaViewer } from "./mediaViewer";
 import { ToyShelf, TOY_PLATFORM_NAMES } from "./toybox";
 import { ToyboxDetections, resolveInstalledGames, TOY_BOXES } from "./toyboxDetect";
+import { StoreApp } from "./store";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
 import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession } from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -449,6 +450,71 @@ async function main(): Promise<void> {
       ]);
     },
   });
+  /** Every emulator install ends with this one question, like a setup wizard's last page. */
+  const offerShortcut = (platform: RetroPlatform, name: string) =>
+    showOptions(`${name} is installed`, [
+      { label: "Add a desktop shortcut", run: async () => { const ok = await window.axm.desktopShortcut(platform); notifier.push(ok ? `${name} is on the desktop` : "Couldn't make the shortcut", "install"); } },
+      { label: "No shortcut", hint: "it runs from the Retro column either way" },
+    ]);
+  const findRetroGame = (item: StoreItem) => games.find((g) => g.source === "retro" && g.platform === item.platform && g.name.toLowerCase().replace(/[^a-z0-9]+/g, "") === item.name.toLowerCase().replace(/[^a-z0-9]+/g, ""));
+  const storeApp = new StoreApp(document.body, {
+    onClose: () => popOverlay(),
+    onInstall: async (item, store) => {
+      store.setBusy(item.id, true);
+      try {
+        if (item.kind === "emulator") {
+          notifier.push(`Installing ${item.name}`, "install", item.iconPath);
+          const ok = await window.axm.installEmulator(item.platform);
+          notifier.push(ok ? `${item.name} installed` : `${item.name} didn't install`, "install", item.iconPath);
+          if (ok) offerShortcut(item.platform, item.name);
+        } else {
+          notifier.push(`Adding ${item.name} to your library`, "install", item.iconPath);
+          await window.axm.storeInstall(item);
+          notifier.push(`${item.name} is in your library`, "install", item.iconPath);
+        }
+        games = await window.axm.getGames();
+      } catch (e) {
+        notifier.push(`${item.name}: ${String((e as Error).message ?? e)}`, "install");
+      }
+      store.setBusy(item.id, false);
+      await store.reload();
+      xmb.refresh();
+    },
+    onPlay: (item) => {
+      const g = findRetroGame(item);
+      if (!g) return;
+      if (!g.emulator) {
+        notifier.push(`${g.emulatorName ?? "The emulator"} isn't installed - it's in the Emulators tab`, "install");
+        return;
+      }
+      notifier.push(`Starting ${g.name}`, "general", g.iconPath);
+      void window.axm.launchGame(g.id);
+    },
+    onPrepare: (item, store) => {
+      const g = findRetroGame(item);
+      if (!g) return;
+      // The Retro column's own preparation flow, so the trim toggles and the delete offer are the same.
+      storeApp.close();
+      popOverlay();
+      goCategory("retro");
+      xmb.selectItem("retro", g.id) || notifier.push("Open PlayStation 3 in Retro and press A on the game");
+      void store;
+    },
+    onInfo: (item) =>
+      showInfo(item.name, item.iconPath ?? `assets/icons/retro-${item.platform}.png`, item.path, [
+        { label: "Sub-Title", value: item.kind === "emulator" ? `${RETRO_NAMES[item.platform]} emulator` : `${RETRO_NAMES[item.platform]} · ${item.emulatorName}` },
+        { label: "Where", value: item.path ?? "" },
+        { label: "Size", value: item.sizeBytes ? `${(item.sizeBytes / 1073741824).toFixed(2)} GB` : "" },
+        { label: "Library", value: item.installed ? "In your library" : `Adds to ${item.libraryDir}` },
+        ...(item.note ? [{ label: "Needs", value: item.note }] : []),
+        ...(item.needsPrep ? [{ label: "Note", value: item.needsPrep }] : []),
+      ]),
+  });
+  const openStore = (tab = "explore") => {
+    void storeApp.open(tab);
+    pushOverlay((action) => storeApp.handle(action as Parameters<StoreApp["handle"]>[0]));
+  };
+
   const openToyShelf = (filter: Parameters<ToyShelf["open"]>[0], title: string) => {
     void toyShelf.open(filter, title);
     pushOverlay((action) => toyShelf.handle(action as Parameters<ToyShelf["handle"]>[0]));
@@ -2730,7 +2796,7 @@ async function main(): Promise<void> {
             go("companion");
           },
         },
-        { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconGlyph: "◈", onConfirm: () => go("assistant") },
+        { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconUrl: "assets/icons/settings-assistant.png", onConfirm: () => go("assistant") },
         { id: "group-toybox", title: "Toybox", subtitle: "What Ghost does when a toy is scanned, readers, the companion app", iconUrl: "assets/icons/toybox.webp", onConfirm: () => go("toybox") },
       ];
       const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
@@ -4186,7 +4252,7 @@ async function main(): Promise<void> {
     const offerEmulator = (p: RetroPlatform) => {
       const e = emuOf(p);
       showOptions(`${RETRO_NAMES[p]} needs ${e?.name ?? "an emulator"}`, [
-        ...(e?.winget || e?.github ? [{ label: `Install ${e.name}`, hint: e.winget ? "through winget, a few minutes" : "from its GitHub release into C:\\Emulators", run: async () => { notifier.push(`Installing ${e.name}`, "install"); const ok = await window.axm.installEmulator(p); notifier.push(ok ? `${e.name} installed` : `${e.name} didn't install`, "install"); games = await window.axm.getGames(); refreshEmulators(); } }] : []),
+        ...(e?.winget || e?.github ? [{ label: `Install ${e.name}`, hint: e.winget ? "through winget, a few minutes" : "from its GitHub release into C:\\Emulators", run: async () => { notifier.push(`Installing ${e.name}`, "install"); const ok = await window.axm.installEmulator(p); notifier.push(ok ? `${e.name} installed` : `${e.name} didn't install`, "install"); games = await window.axm.getGames(); refreshEmulators(); if (ok) offerShortcut(p, e.name); } }] : []),
         { label: "Where to get it", run: () => showInfo(e?.name ?? "Emulator", `assets/icons/retro-${p}.png`, null, [{ label: "Sub-Title", value: RETRO_NAMES[p] }, { label: "Details", value: EMULATOR_SITES[p] }, ...(e?.note ? [{ label: "Needs", value: e.note }] : []), { label: "Or", value: "Point A-X-M at an existing copy: Settings › System › Emulators" }]) },
         { label: "Not now" },
       ]);
@@ -4436,12 +4502,9 @@ async function main(): Promise<void> {
       label: "Store",
       iconUrl: "assets/icons/store.webp",
       getItems: () => [
-        {
-          id: "store-empty",
-          title: "The Store is not set up yet",
-          subtitle: "This is where getting new things will live",
-          iconUrl: "assets/icons/store.webp",
-        },
+        { id: "store-open", title: "Open Store", subtitle: `Your shelf on ${settings.storeRoot} and the emulators that play it`, iconUrl: "assets/icons/store.webp", onConfirm: () => openStore("explore") },
+        { id: "store-emulators", title: "Emulators", subtitle: "RPCS3, PCSX2, DuckStation, PPSSPP, Eden, shadPS4, Kyty - install with one press", iconUrl: "assets/icons/retro-ps3.png", iconClass: "disc", onConfirm: () => openStore("emulators") },
+        ...RETRO_ORDER.map((p) => ({ id: `store-${p}`, title: RETRO_NAMES[p], subtitle: `${RETRO_NAMES[p]} games on the shelf`, iconUrl: `assets/icons/retro-${p}.png`, iconClass: "disc", onConfirm: () => openStore(p) })),
       ],
     };
   }

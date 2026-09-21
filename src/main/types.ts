@@ -30,4 +30,4 @@ export interface GameEntry {
   extractedDir?: string;
 }
 
-export type RetroPlatform = "ps3" | "ps2" | "ps1" | "psp" | "switch";
+export type RetroPlatform = "ps5" | "ps4" | "ps3" | "ps2" | "ps1" | "psp" | "switch";

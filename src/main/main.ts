@@ -38,6 +38,7 @@ import { spawn } from "node:child_process";
 import { toybox, kindOf } from "./toybox/toyboxService";
 import { findEmulators as findRetroEmulators } from "./scanners/retroScanner";
 import { preparePs3, installFromGithub } from "./retro";
+import { storeCatalogue, storeInstall, StoreItem } from "./store";
 import { execFile } from "node:child_process";
 import type { RetroPlatform } from "./types";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
@@ -384,6 +385,20 @@ ipcMain.handle("axm:launchGame", (_e, gameId: string): void => {
 });
 
 ipcMain.handle("axm:retroEmulators", () => findRetroEmulators(loadSettings().emulators));
+ipcMain.handle("axm:storeCatalogue", () => storeCatalogue(cachedGames));
+// A desktop shortcut for an emulator, only when the user said yes to it.
+ipcMain.handle("axm:desktopShortcut", (_e, platform: RetroPlatform): boolean => {
+  const emu = findRetroEmulators(loadSettings().emulators).find((x) => x.platform === platform);
+  if (!emu?.exe) return false;
+  const link = path.join(app.getPath("desktop"), `${emu.name}.lnk`);
+  return shell.writeShortcutLink(link, "create", { target: emu.exe, cwd: path.dirname(emu.exe), description: `${emu.name} (installed by A-X-M)` });
+});
+ipcMain.handle("axm:storeInstall", async (_e, item: StoreItem): Promise<string> => {
+  const dst = await storeInstall(item);
+  cachedGames = await scanAllGames();
+  void fetchMissingArt();
+  return dst;
+});
 ipcMain.handle("axm:installEmulator", async (_e, platform: RetroPlatform): Promise<boolean> => {
   const emu = findRetroEmulators(loadSettings().emulators).find((x) => x.platform === platform);
   if (!emu || (!emu.winget && !emu.github)) return false;

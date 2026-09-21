@@ -143,8 +143,10 @@ export interface Settings {
   /** The first-run tool setup has been offered / run. */
   toolsSetupDone: boolean;
   /** Retro: where the console games are, per platform, and the emulators to use. */
-  retroFolders: Partial<Record<"ps3" | "ps2" | "ps1" | "psp" | "switch", string[]>>;
-  emulators: Partial<Record<"ps3" | "ps2" | "ps1" | "psp" | "switch", string>>;
+  retroFolders: Partial<Record<"ps5" | "ps4" | "ps3" | "ps2" | "ps1" | "psp" | "switch", string[]>>;
+  emulators: Partial<Record<"ps5" | "ps4" | "ps3" | "ps2" | "ps1" | "psp" | "switch", string>>;
+  /** The Store's shelf: N:\GAME\ROMS by default, one folder per platform. */
+  storeRoot: string;
   /** What to empty out of an extracted PS3 game: the firmware update, dummy / pad files, other languages. */
   ps3Trim: { update: boolean; dummy: boolean; languages: boolean };
   /** Toybox: what Ghost does when a toy is scanned. */
@@ -238,6 +240,7 @@ const DEFAULTS: Settings = {
   retroFolders: {},
   emulators: {},
   ps3Trim: { update: true, dummy: true, languages: false },
+  storeRoot: "N:\\GAME\\ROMS",
   toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },

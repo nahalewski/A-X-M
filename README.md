@@ -68,6 +68,54 @@ changing a game's artwork.
 - Saved Data Utility and Game Data Utility, like the PS3's.
 - Launcher rows for Steam, Epic Games, Battle.net, GeForce NOW and Xbox Cloud Gaming.
 
+### Retro
+- A **Retro** column for console games through emulators: **PS5 · PS4 · PS3 · PS2 · PS1 · PSP ·
+  Nintendo Switch**, each with its console as the icon and SteamGridDB box art for the games.
+  Folders are `G:\GAMES\PS3` (and PS2, PS1, PSP, PS4, PS5), `K:\Switch Games` and
+  `G:\GAMES\SWITCH` by default. Switch updates and DLC are skipped; PS3 folder games read
+  their title from PARAM.SFO; RPCS3's own games folder is listed too.
+- The emulators: **RPCS3**, **PCSX2**, **DuckStation**, **PPSSPP**, **Eden**, **shadPS4**,
+  **Kyty**. A game whose emulator is missing offers to install it - headless, through winget
+  or straight from the emulator's GitHub release into `C:\Emulators` - and then asks once
+  whether you want a desktop shortcut. PCSX2 and DuckStation still need a BIOS from your own
+  console; Eden needs your own keys and firmware; the rows say so.
+- **PS3 disc images**: an `.iso` row says whether it is encrypted. *Decrypt and extract for
+  RPCS3* finds the disc key (a `.dkey` beside the image, or your own key collection - every
+  candidate is proven against the disc's EBOOT before it is used), decrypts it, extracts it
+  with 7-Zip into `C:\rpcs3\games`, and offers to delete the image. **Trim while
+  extracting** empties the firmware update, all-zero dummy / padding files and (off by
+  default) other-language files, keeping the names so the game still finds them, with a
+  `TRIMMED.txt` log. The progress toast speaks plainly: *Getting Skylanders ready to play ·
+  unlocking the disc · 42%*.
+- Every retro game is an ordinary game to the rest of the menu: Ghost launches it, Toybox
+  offers it when a matching toy is scanned, the Y options apply.
+
+### Store
+- Laid out like a console store page - a tab strip, a page for the selected thing with its
+  art, tags, facts and one big button, and a strip of tiles - with nobody's logo but A-X-M's.
+  It sells nothing: it is **your own shelf on drive N** (`N:\GAME\ROMS\PS1`, `PS2`, `PS3`,
+  `PS4`, `PS5`, `PSP`, `Switch`) and the **Emulators** tab. *Add to Library* copies a
+  game into its platform's folder; *Install* fetches an emulator; a PS3 image goes on to the
+  Retro column's own decrypt flow.
+
+### Toybox
+- A toys-to-life collection - **Amiibo, Skylanders, Disney Infinity, LEGO Dimensions** -
+  each brand its own toy box, with sub-folders (Figures, Cards, Power Discs, Play Sets,
+  Vehicles, Traps, Legendaries…) and counts of what you own, on a bookshelf drawn from a
+  sprite sheet that grows with the collection, from a three-cubby unit to 4x4 units you page
+  through. Owned figures get a tick; mark owned / favourite / wanted, filter, search, or say
+  "hey ghost, open my shelf". 2,273 figures; the database and artwork are pulled locally by
+  the import scripts and never committed (they belong to their publishers).
+- **NFC**: put a toy on an **ACR122U** (or scan it with the Android companion, or send it
+  from any adapter to `POST http://<pc>:47311/toybox/scan`) and the chime plays, Ghost says
+  what it is - *Hulkbuster detected. Would you like to play Disney Infinity 3.0?* - and shows
+  a card with the figure's art and the games you have installed. Pick with the d-pad, or just
+  talk: "play giants", "the second one", "yes", "not now". Remembers the last game per figure,
+  keeps a grace period when a toy is lifted, swaps figures in place, and follows a *during
+  gameplay* setting. Amiibo, Skylanders, Disney Infinity (MIFARE Mini) and LEGO Dimensions
+  tags are identified on the device; nothing is written to a tag. Read-only copies land
+  where Eden (amiibo) and RPCS3 (Skylanders / Infinity) load figures from.
+
 ### Music
 - Browses your music folder-by-folder, plus any drive's `MUSIC` folder.
 - Named **playlists**, **shuffle**, play/pause from anywhere, now-playing bar.
@@ -81,6 +129,8 @@ changing a game's artwork.
 ### Photo and Video
 - In-app viewers: photos zoom, rotate and slideshow; MP4 video with seek. Controls drawn from
   PS-style button sheets.
+- **TV Streaming**: an Xtream Codes provider as an app in Video - Live TV, Movies and Series
+  in the provider's own categories, played in the menu; the password never reaches the page.
 - **Jellyfin**: finds servers on the LAN (or type an address), signs in once, browses your
   libraries with posters and backdrops, plays in the menu (direct play when the browser can,
   HLS transcode when it can't), and **downloads** films and episodes to any drive.
@@ -94,11 +144,6 @@ changing a game's artwork.
   hasn't been ripped is ripped first and starts when it's done. An **audio CD** imports to MP3 /
   AAC / Opus / FLAC. Where it all goes is *Settings › System › Disc Backup Location*.
   PS1 / PS2 discs show in Game with their own icons.
-- **Toybox**: a toys-to-life collection (Amiibo, Skylanders, LEGO Dimensions) on a bookshelf
-  drawn from a sprite sheet - the shelf grows with the collection, from a three-cubby unit to
-  4x4 units you page through. Mark figures owned / favourite / wanted, filter by platform,
-  search, or ask Ghost to "open my shelf". The figure database and artwork are pulled locally
-  and never committed (they belong to their publishers).
 - **Copy** songs, pictures and videos to any drive's `MUSIC` / `PHOTO` / `VIDEO` folder and
   back to this PC; make folders inside them from the menu. A drive with those folders gets
   its own row, and keeps a greyed row when it's unplugged.
@@ -106,6 +151,20 @@ changing a game's artwork.
 ### Browser
 - A pop-up browser **inside** the menu (not Edge): D-pad scrolls and moves through history,
   Y reloads, B closes; Google, YouTube TV, Xbox Cloud Gaming and GeForce NOW one press away.
+
+### Companion app
+- **A-X-M Companion** (Android, in `companion-android/`) finds the menu on the LAN, pairs with
+  a code once, then drives the menu and the media transport from the phone, and scans amiibo
+  with the phone's NFC into the same Toybox flow.
+
+### Ghost
+- The voice assistant. Say "hey ghost", then *launch Batman*, *play playlist chill*, *go to
+  network settings*, *copy the Blu-ray to storage*, *open my shelf*, *next track*, *quit
+  game*, *turn off*. Offline recognition (Vosk); Ghost only appears while awake, with a
+  resizable chat bubble. His **voice is cloned** from one short clip by Chatterbox (MIT)
+  running locally - no cloud, no fallback voice, and he doesn't hear himself. Cards with
+  artwork and choices answer without the wake word. Menu music ducks while he listens or
+  talks.
 
 ### Settings
 Grouped like a console's:
@@ -147,6 +206,9 @@ Grouped like a console's:
 | ![Tunnel visualizer](docs/screenshots/08-visualizer-tunnel.jpg) | ![Settings](docs/screenshots/09-settings.jpg) |
 | ![Menu at 720p](docs/screenshots/10-720p.jpg) | ![System Information](docs/screenshots/11-system-info.jpg) |
 | ![Jellyfin with backdrop](docs/screenshots/13-jellyfin.jpg) | ![Video player](docs/screenshots/14-video-player.jpg) |
+| ![Store](docs/screenshots/15-store.jpg) | ![Retro column](docs/screenshots/16-retro.jpg) |
+| ![Toybox shelf](docs/screenshots/17-toybox-shelf.jpg) | ![Toybox folders](docs/screenshots/18-toybox-folders.jpg) |
+| ![Ghost card after an NFC scan](docs/screenshots/19-ghost-card.jpg) | ![PSP games, with a PS3 disc being readied](docs/screenshots/20-retro-psp.jpg) |
 
 ## Resolution and performance
 
@@ -199,13 +261,18 @@ SteamGridDB and TMDB keys live only in `%APPDATA%\A-X-M\axm-settings.json`.
 
 ## Controls
 
-| | Xbox | PlayStation | Keyboard |
-| --- | --- | --- | --- |
-| Move | D-pad / left stick | D-pad / left stick | Arrows / WASD |
-| Select | A | ✕ | Enter |
-| Back | B | ○ | Esc / Backspace |
-| Options | Y | △ | Y |
-| In-game menu | Guide | PS | Alt+Home (configurable; map M1 to it in Armoury Crate) |
+| | Xbox | PlayStation | Nintendo Switch | Keyboard |
+| --- | --- | --- | --- | --- |
+| Move | D-pad / left stick | D-pad / left stick | D-pad / left stick | Arrows / WASD |
+| Select | A | ✕ | A (B with *Swap Confirm* on) | Enter |
+| Back | B | ○ | B (A with *Swap Confirm* on) | Esc / Backspace |
+| Options | Y | △ | X | Y |
+| In-game menu | Guide | PS | Home | Alt+Home (configurable; map M1 to it in Armoury Crate) |
+| Ghost card | ↑↓ choose, A pick, B dismiss, Y more | same | same | same |
+| Store | ↑↓ tabs / button / tiles, ←→ move, A press, Y info, B back | same | same | same |
+
+Two controllers at once are fine (the Ally's own pad plus a DualSense, say): one press is
+one move. The footer draws the glyphs of whichever pad is first.
 
 ## Credits
 

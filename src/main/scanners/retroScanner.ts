@@ -18,16 +18,21 @@ import { inspectPs3Iso } from "../retro";
  *   Switch  .nsp .xci .nsz .xcz (base titles only)     -> Eden
  */
 
-export const RETRO_PLATFORMS: RetroPlatform[] = ["ps3", "ps2", "ps1", "psp", "switch"];
+export const RETRO_PLATFORMS: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
 
-export const RETRO_NAMES: Record<RetroPlatform, string> = { ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
+export const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
+
+/** The folder name each platform uses under a library root (G:\GAMES\<x>, N:\GAME\ROMS\<x>). */
+export const RETRO_FOLDER_NAMES: Record<RetroPlatform, string> = { ps5: "PS5", ps4: "PS4", ps3: "PS3", ps2: "PS2", ps1: "PS1", psp: "PSP", switch: "Switch" };
 
 export const RETRO_DEFAULT_FOLDERS: Record<RetroPlatform, string[]> = {
+  ps5: ["G:\\GAMES\\PS5"],
+  ps4: ["G:\\GAMES\\PS4"],
   ps3: ["G:\\GAMES\\PS3"],
   ps2: ["G:\\GAMES\\PS2"],
   ps1: ["G:\\GAMES\\PS1"],
   psp: ["G:\\GAMES\\PSP"],
-  switch: ["K:\\Switch Games"],
+  switch: ["K:\\Switch Games", "G:\\GAMES\\SWITCH"],
 };
 
 export interface EmulatorInfo {
@@ -36,9 +41,15 @@ export interface EmulatorInfo {
   exe: string | null;
   /** winget id for Install Tools. */
   winget: string | null;
+  /** GitHub release to fetch when there is no winget package: repo, asset pattern, exe inside. */
+  github?: { repo: string; asset: RegExp; exe: string };
+  /** What it still needs from the user (a BIOS, keys) - shown, never fetched. */
+  note?: string;
 }
 
 const EXT: Record<RetroPlatform, string[]> = {
+  ps5: [".pkg", ".elf"],
+  ps4: [".pkg"],
   ps3: [".iso"],
   ps2: [".iso", ".chd", ".bin", ".cso", ".gz", ".zso"],
   ps1: [".cue", ".chd", ".pbp", ".m3u", ".iso", ".bin", ".img", ".ecm"],
@@ -53,30 +64,60 @@ function firstExisting(cands: string[]): string | null {
   return cands.find((c) => c && fs.existsSync(c)) ?? null;
 }
 
+export const EMULATORS_DIR = "C:\\Emulators";
+
 function programDirs(): string[] {
-  return [process.env.ProgramFiles ?? "C:\\Program Files", process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", path.join(process.env.LOCALAPPDATA ?? "", "Programs"), "C:\\Emulators", "D:\\Emulators", "G:\\GAMES\\Emulators", "C:\\"];
+  return [process.env.ProgramFiles ?? "C:\\Program Files", process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", path.join(process.env.LOCALAPPDATA ?? "", "Programs"), EMULATORS_DIR, "D:\\Emulators", "G:\\GAMES\\Emulators", "C:\\"];
+}
+
+function biosNote(dir: string | null, pattern: RegExp, what: string): string | undefined {
+  if (!dir) return undefined;
+  try {
+    return fs.readdirSync(dir).some((f) => pattern.test(f)) ? undefined : what;
+  } catch {
+    return what;
+  }
 }
 
 /** Where each emulator is, if anywhere; the user's own paths win. */
 export function findEmulators(configured: Partial<Record<RetroPlatform, string>> = {}): EmulatorInfo[] {
   const dirs = programDirs();
   const look = (names: string[]) => firstExisting(dirs.flatMap((d) => names.map((n) => path.join(d, n))));
-  const pick = (platform: RetroPlatform, name: string, winget: string | null, auto: string | null): EmulatorInfo => {
+  const pick = (platform: RetroPlatform, name: string, winget: string | null, auto: string | null, extra: Partial<EmulatorInfo> = {}): EmulatorInfo => {
     const own = configured[platform];
-    return { platform, name, exe: own && fs.existsSync(own) ? own : auto, winget };
+    return { platform, name, exe: own && fs.existsSync(own) ? own : auto, winget, ...extra };
   };
+  const pcsx2 = look(["PCSX2\\pcsx2-qt.exe", "PCSX2 2\\pcsx2-qt.exe", "pcsx2\\pcsx2-qt.exe", "PCSX2\\pcsx2.exe"]);
+  const wingetPkgs = path.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "WinGet", "Packages");
+  const wingetExe = (prefix: string, exe: string): string | null => {
+    try {
+      const d = fs.readdirSync(wingetPkgs).find((n) => n.startsWith(prefix));
+      return d && fs.existsSync(path.join(wingetPkgs, d, exe)) ? path.join(wingetPkgs, d, exe) : null;
+    } catch {
+      return null;
+    }
+  };
+  const duck = look(["DuckStation\\duckstation-qt-x64-ReleaseLTCG.exe", "duckstation\\duckstation-qt-x64-ReleaseLTCG.exe", "DuckStation\\duckstation-qt.exe"]) ?? wingetExe("Stenzek.DuckStation", "duckstation-qt-x64-ReleaseLTCG.exe");
+  const appData = process.env.APPDATA ?? "";
+  const docs = path.join(process.env.USERPROFILE ?? "", "Documents");
   return [
-    pick("ps3", "RPCS3", null, look(["rpcs3\\rpcs3.exe", "RPCS3\\rpcs3.exe"])),
-    pick("ps2", "PCSX2", "PCSX2Team.PCSX2", look(["PCSX2\\pcsx2-qt.exe", "PCSX2 2\\pcsx2-qt.exe", "pcsx2\\pcsx2-qt.exe", "PCSX2\\pcsx2.exe"])),
-    pick("ps1", "DuckStation", "Stenzek.DuckStation", look(["DuckStation\\duckstation-qt-x64-ReleaseLTCG.exe", "duckstation\\duckstation-qt-x64-ReleaseLTCG.exe", "DuckStation\\duckstation-qt.exe"])),
+    pick("ps5", "Kyty", null, look(["Kyty\\launcher.exe", "kyty\\launcher.exe"]), { github: { repo: "InoriRus/Kyty", asset: /^Kyty-.*\.zip$/i, exe: "launcher.exe" }, note: "Kyty is an early experiment - it boots a handful of homebrew and samples, not retail PS5 games" }),
+    pick("ps4", "shadPS4", null, look(["shadPS4\\shadPS4.exe", "shadps4\\shadPS4.exe", "shadPS4\\shadps4.exe"]), { github: { repo: "shadps4-emu/shadPS4", asset: /^shadps4-win64-sdl-.*\.zip$/i, exe: "shadPS4.exe" } }),
+    pick("ps3", "RPCS3", null, look(["rpcs3\\rpcs3.exe", "RPCS3\\rpcs3.exe"]), { github: { repo: "RPCS3/rpcs3-binaries-win", asset: /win64_msvc\.7z$/i, exe: "rpcs3.exe" } }),
+    pick("ps2", "PCSX2", "PCSX2Team.PCSX2", pcsx2, { note: biosNote(pcsx2 ? [path.join(docs, "PCSX2", "bios"), path.join(path.dirname(pcsx2), "bios")].find((d) => fs.existsSync(d)) ?? path.join(docs, "PCSX2", "bios") : null, /\.bin$/i, "needs a PS2 BIOS (scph*.bin) in Documents\\PCSX2\\bios - from your own console") }),
+    pick("ps1", "DuckStation", "Stenzek.DuckStation", duck, { note: biosNote(duck ? [path.join(docs, "DuckStation", "bios"), path.join(path.dirname(duck), "bios")].find((d) => fs.existsSync(d)) ?? path.join(docs, "DuckStation", "bios") : null, /\.bin$/i, "needs a PS1 BIOS (scph*.bin) in Documents\\DuckStation\\bios - from your own console") }),
     pick("psp", "PPSSPP", "PPSSPPTeam.PPSSPP", look(["PPSSPP\\PPSSPPWindows64.exe", "ppsspp\\PPSSPPWindows64.exe", "PPSSPP\\PPSSPPWindows.exe"])),
-    pick("switch", "Eden", null, look(["eden\\eden.exe", "Eden\\eden.exe", "yuzu\\yuzu.exe", "yuzu-windows-msvc\\yuzu.exe"])),
+    pick("switch", "Eden", null, look(["eden\\eden.exe", "Eden\\eden.exe", "yuzu\\yuzu.exe", "yuzu-windows-msvc\\yuzu.exe"]), { note: fs.existsSync(path.join(appData, "eden", "keys", "prod.keys")) || fs.existsSync(path.join(appData, "yuzu", "keys", "prod.keys")) ? undefined : "needs prod.keys and firmware from your own Switch (Eden: File > Install keys / firmware)" }),
   ];
 }
 
 /** The command line each emulator takes to boot straight into a game, full screen. */
 export function launchArgsFor(platform: RetroPlatform, rom: string): string[] {
   switch (platform) {
+    case "ps5":
+      return [rom];
+    case "ps4":
+      return [rom];
     case "ps3":
       return ["--no-gui", rom];
     case "ps2":
@@ -119,6 +160,32 @@ function walk(dir: string, depth: number, out: string[]): void {
       if (depth > 0 && !SKIP_DIRS.test(e.name)) walk(full, depth - 1, out);
     } else out.push(full);
   }
+}
+
+/** An extracted PS4 package carries its title in sce_sys/param.sfo (same SFO layout as the PS3). */
+function ps4Title(dir: string): string | null {
+  return ps3Title(path.join(dir, "sce_sys")) ?? sfoTitle(path.join(dir, "sce_sys", "param.sfo"));
+}
+
+function sfoTitle(sfo: string): string | null {
+  if (!fs.existsSync(sfo)) return null;
+  try {
+    const buf = fs.readFileSync(sfo);
+    const keyTable = buf.readUInt32LE(8);
+    const dataTable = buf.readUInt32LE(12);
+    const count = buf.readUInt32LE(16);
+    for (let i = 0; i < count; i++) {
+      const e = 20 + i * 16;
+      const keyOff = buf.readUInt16LE(e);
+      const len = buf.readUInt32LE(e + 4);
+      const dataOff = buf.readUInt32LE(e + 12);
+      const key = buf.toString("utf8", keyTable + keyOff, buf.indexOf(0, keyTable + keyOff));
+      if (key === "TITLE") return buf.toString("utf8", dataTable + dataOff, dataTable + dataOff + len).replace(/\0+$/, "").trim();
+    }
+  } catch {
+    /* not an SFO */
+  }
+  return null;
 }
 
 function ps3FolderGames(root: string): { dir: string; eboot: string; name: string }[] {
@@ -197,6 +264,20 @@ export function scanRetroGames(folders: Partial<Record<RetroPlatform, string[]>>
       if (platform === "ps3") {
         for (const g of ps3FolderGames(root)) games.push(entry("ps3", g.eboot, g.name, g.dir));
       }
+      if (platform === "ps4" || platform === "ps5") {
+        let subs: fs.Dirent[] = [];
+        try {
+          subs = fs.readdirSync(root, { withFileTypes: true });
+        } catch {
+          subs = [];
+        }
+        for (const e of subs) {
+          if (!e.isDirectory()) continue;
+          const dir = path.join(root, e.name);
+          const eboot = firstExisting([path.join(dir, "eboot.bin"), path.join(dir, "sce_sys", "..", "eboot.bin")]);
+          if (eboot) games.push(entry(platform, eboot, ps4Title(dir) ?? cleanName(e.name), dir));
+        }
+      }
       const files: string[] = [];
       walk(root, 2, files);
       for (const file of files) {
@@ -214,6 +295,10 @@ export function scanRetroGames(folders: Partial<Record<RetroPlatform, string[]>>
           seenTitles.add(key);
         }
         const name = cleanName(file);
+        if (platform === "ps4" || platform === "ps5") {
+          games.push(entry(platform, file, name, path.dirname(file), { needsPrep: platform === "ps4" ? "Package - install it in shadPS4 (its Qt build) or extract it here as a folder" : "Package - Kyty runs extracted samples only" }));
+          continue;
+        }
         if (platform === "ps3") {
           let encrypted = true;
           try {
