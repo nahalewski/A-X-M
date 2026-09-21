@@ -41,6 +41,7 @@ import { getPowerSettings, setPowerPlan, setPowerTimeout, powerAction, getClock,
 import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairBluetooth, unpairBluetooth, WifiNetwork, BluetoothDevice } from "./network";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
 import { getGameInfo, updateDatabase, databaseStatus, clearCache as clearGameDbCache, cacheLocation, GameInfo, DbPlatform } from "./gameDb";
+import { listPackages, installPackage, mountImage, dismountImage, packagesFolder, installFolder, PcPackage } from "./pcIso";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
@@ -696,7 +697,31 @@ ipcMain.handle("axm:getGameInfo", (_e, platform: DbPlatform, name: string, fileP
 ipcMain.handle("axm:updateGameDb", (_e, platform: DbPlatform) => updateDatabase(platform));
 ipcMain.handle("axm:gameDbStatus", () => databaseStatus());
 ipcMain.handle("axm:clearGameDbCache", () => clearGameDbCache());
-ipcMain.handle("axm:gameDbLocation", () => cacheLocation()
+ipcMain.handle("axm:gameDbLocation", () => cacheLocation());
+
+// ---- PC disc images: Install Package Files ---------------------------------
+/**
+ * Lists the disc images, filling in box art where SteamGridDB has it.
+ *
+ * The lookups are cached by gameArt, so asking again costs nothing; a package
+ * whose art has not resolved keeps artUrl null and the menu shows a plain disc
+ * for it, which is the intended look until the real artwork turns up.
+ */
+ipcMain.handle("axm:listPcPackages", async (): Promise<PcPackage[]> => {
+  const packages = listPackages();
+  if (!isGameArtConfigured()) return packages;
+  await Promise.all(
+    packages.map(async (pkg) => {
+      pkg.artUrl = await resolveArt(pkg.name, "grid").catch(() => null);
+    }),
+  );
+  return packages;
+});
+ipcMain.handle("axm:pcPackageFolders", () => ({ images: packagesFolder(), installs: installFolder() }));
+ipcMain.handle("axm:mountPcPackage", (_e, filePath: string) => mountImage(filePath));
+ipcMain.handle("axm:dismountPcPackage", (_e, filePath: string) => dismountImage(filePath));
+ipcMain.handle("axm:installPcPackage", (_e, filePath: string) =>
+  installPackage(filePath, (note) => mainWindow?.webContents.send("axm:pcInstallProgress", { filePath, note }))
 );
 ipcMain.handle("axm:copyMedia", (_e, kind: TransferKind, source: string, target: string): Promise<string> => copyMedia(kind, source, target));
 ipcMain.handle(

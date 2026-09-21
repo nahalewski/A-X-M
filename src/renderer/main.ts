@@ -21,7 +21,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform} from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform, PcPackage} from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -1881,7 +1881,9 @@ async function main(): Promise<void> {
    * descends into it the same way the music library does; B comes back out.
    */
   function gamesCategory(): Category {
-    let view: "root" | "saves" | "gamedata" | "steam" | "drive" | "trophies" | "trophy-list" | "trophy-game" | "memcards" = "root";
+    let view: "root" | "saves" | "gamedata" | "steam" | "drive" | "trophies" | "trophy-list" | "trophy-game" | "memcards" | "pcpackages" = "root";
+    let pcPackages: PcPackage[] = [];
+    let pcInstallHint = "";
     // Virtual PS / PS2 memory cards, the saves on them, and Apollo's cheats.
     const memcards = new MemoryCardUtility({
       refresh: () => xmb.refresh(),
@@ -1974,6 +1976,18 @@ async function main(): Promise<void> {
       saves = await window.axm.getSaves();
       go("saves");
     };
+
+    const openPcPackages = async () => {
+      pcInstallHint = "";
+      pcPackages = await window.axm.listPcPackages();
+      go("pcpackages");
+    };
+
+    // The installer reports what it is doing; show it on the footer as it goes.
+    window.axm.onPcInstallProgress(({ note }) => {
+      pcInstallHint = note;
+      if (view === "pcpackages") xmb.refresh();
+    });
 
     const openSteam = async () => {
       steamLibrary = await window.axm.getSteamLibrary();
@@ -2093,6 +2107,13 @@ async function main(): Promise<void> {
         onConfirm: async () => { await refreshVolumes(); view = "memcards"; await memcards.open(); },
       },
       {
+        id: "install-package-files",
+        title: "Install Package Files",
+        subtitle: "PC disc images in GAME\PCISO · mount and install",
+        iconUrl: "assets/icons/folder.png",
+        onConfirm: () => void openPcPackages(),
+      },
+      {
         id: "game-data-utility",
         title: "Game Data Utility",
         subtitle: "Installed game files",
@@ -2186,6 +2207,79 @@ async function main(): Promise<void> {
       }));
     };
 
+    /**
+     * The PC disc images waiting in PCISO.
+     *
+     * Each shows a plain silver disc until SteamGridDB has artwork for it, which
+     * is why the disc art is deliberately generic - it reads as "a disc we have
+     * not identified yet" rather than as a wrong cover.
+     */
+    const pcPackageItems = (): MenuItem[] => {
+      if (pcPackages.length === 0) {
+        return [{
+          id: "pcpackages-empty",
+          title: "No disc images found",
+          subtitle: "Put .iso files in GAME\PCISO on the ROOT drive",
+          iconUrl: "assets/icons/disc-pc.webp",
+        }];
+      }
+      return pcPackages.map((pkg) => ({
+        id: pkg.id,
+        title: pkg.name,
+        subtitle: pkg.installed
+          ? `Installed · ${fmtBytes(pkg.sizeBytes)}`
+          : `Disc image · ${fmtBytes(pkg.sizeBytes)}`,
+        iconUrl: pkg.artUrl ?? "assets/icons/disc-pc.webp",
+        onConfirm: () => installPcPackage(pkg),
+        onInfo: () =>
+          showInfo(pkg.name, pkg.artUrl ?? "assets/icons/disc-pc.webp", pkg.filePath, [
+            { label: "Sub-Title", value: pkg.installed ? "Installed" : "Not installed yet" },
+            { label: "Image", value: pkg.filePath },
+            { label: "Installs to", value: pkg.installPath ?? "" },
+          ]),
+      }));
+    };
+
+    /**
+     * Installs a package, or offers to open it again when it is already in.
+     *
+     * Mounting and installing can take a long while on a repack, so the footer
+     * carries the running commentary and the list is refreshed afterwards so the
+     * row flips to "Installed".
+     */
+    const installPcPackage = async (pkg: PcPackage) => {
+      const run = async () => {
+        pcInstallHint = `Starting ${pkg.name}`;
+        xmb.refresh();
+        const out = await window.axm.installPcPackage(pkg.filePath);
+        pcInstallHint = out.message;
+        notifier.push(out.message, out.ok ? "install" : undefined);
+        pcPackages = await window.axm.listPcPackages();
+        games = await window.axm.scanGames();
+        xmb.refresh();
+      };
+
+      if (pkg.installed) {
+        showOptions(pkg.name, [
+          { label: "Open install folder", run: () => window.axm.openFolder(pkg.installPath ?? "") },
+          { label: "Install again", hint: "Overwrites what is there", run: () => void run() },
+          {
+            label: "Mount only",
+            hint: "Browse the disc yourself",
+            run: () => {
+              void (async () => {
+                const m = await window.axm.mountPcPackage(pkg.filePath);
+                notifier.push(m.message);
+                if (m.ok && m.drive) window.axm.openFolder(m.drive);
+              })();
+            },
+          },
+        ]);
+        return;
+      }
+      void run();
+    };
+
     const gameDataItems = (): MenuItem[] => {
       // WindowsApps is ACL-locked, so an Xbox install folder can't be opened anyway.
       const rows = games.filter((g) => !g.hidden && g.installDir && g.source !== "xbox");
@@ -2216,6 +2310,7 @@ async function main(): Promise<void> {
       },
       footerHint: () => {
         if (view === "saves") return "Saved Data Utility";
+        if (view === "pcpackages") return pcInstallHint || `Install Package Files · ${pcPackages.length} image(s)`;
         if (view === "memcards") return memcards.hint();
         if (view === "gamedata") return "Game Data Utility";
         if (view === "drive") return driveFolder;
@@ -2231,6 +2326,7 @@ async function main(): Promise<void> {
       },
       getItems: () => {
         if (view === "saves") return savesItems();
+        if (view === "pcpackages") return pcPackageItems();
         if (view === "memcards") return memcards.items();
         if (view === "gamedata") return gameDataItems();
         if (view === "steam") return steamItems();

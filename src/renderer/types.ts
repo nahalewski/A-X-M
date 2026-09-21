@@ -269,6 +269,16 @@ export interface GameInfo {
   matchedBy: "serial" | "release name" | "title" | "none";
 }
 
+export interface PcPackage {
+  id: string;
+  name: string;
+  filePath: string;
+  sizeBytes: number;
+  installed: boolean;
+  installPath: string | null;
+  artUrl: string | null;
+}
+
 export interface GameDbStatus {
   platform: DbPlatform;
   name: string;
@@ -818,6 +828,12 @@ export interface AxmApi {
   gameDbStatus(): Promise<GameDbStatus[]>;
   clearGameDbCache(): Promise<{ ok: boolean; message: string }>;
   gameDbLocation(): Promise<string>;
+  listPcPackages(): Promise<PcPackage[]>;
+  pcPackageFolders(): Promise<{ images: string | null; installs: string | null }>;
+  mountPcPackage(filePath: string): Promise<{ ok: boolean; drive?: string; message: string }>;
+  dismountPcPackage(filePath: string): Promise<boolean>;
+  installPcPackage(filePath: string): Promise<{ ok: boolean; message: string; installPath?: string; interactive?: boolean }>;
+  onPcInstallProgress(cb: (p: { filePath: string; note: string }) => void): void;
   copyMedia(kind: "music" | "photo" | "video", source: string, target: string): Promise<string>;
   jellyfinDownload(login: JellyfinLogin, itemId: string, name: string, kind: "music" | "video", target: string, container: string): Promise<string>;
   onTransfer(callback: (progress: TransferProgress) => void): void;

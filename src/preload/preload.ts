@@ -205,6 +205,12 @@ const api = {
   gameDbStatus: () => ipcRenderer.invoke("axm:gameDbStatus"),
   clearGameDbCache: () => ipcRenderer.invoke("axm:clearGameDbCache"),
   gameDbLocation: () => ipcRenderer.invoke("axm:gameDbLocation"),
+  listPcPackages: () => ipcRenderer.invoke("axm:listPcPackages"),
+  pcPackageFolders: () => ipcRenderer.invoke("axm:pcPackageFolders"),
+  mountPcPackage: (filePath: string) => ipcRenderer.invoke("axm:mountPcPackage", filePath),
+  dismountPcPackage: (filePath: string) => ipcRenderer.invoke("axm:dismountPcPackage", filePath),
+  installPcPackage: (filePath: string) => ipcRenderer.invoke("axm:installPcPackage", filePath),
+  onPcInstallProgress: (cb: (p: { filePath: string; note: string }) => void) => ipcRenderer.on("axm:pcInstallProgress", (_e, p) => cb(p)),
   copyMedia: (kind: string, source: string, target: string) => ipcRenderer.invoke("axm:copyMedia", kind, source, target),
   jellyfinDownload: (login: unknown, itemId: string, name: string, kind: string, target: string, container: string) =>
     ipcRenderer.invoke("axm:jellyfinDownload", login, itemId, name, kind, target, container),
