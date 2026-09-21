@@ -162,6 +162,10 @@ export interface Settings {
   subtitles: { enabled: boolean; language: string };
   /** Lyrics from LRCLIB for the Karaoke visualizer. */
   lyricsEnabled: boolean;
+  /** Companion: phones keep a copy of every save on the cards, refreshed as they change. */
+  memcardSyncToPhone: boolean;
+  /** Apollo Save Tool databases: weekly refresh, offline (never fetch), where they live ("" = userData). */
+  apollo: { autoUpdate: boolean; offline: boolean; location: string };
   /** What to empty out of an extracted PS3 game: the firmware update, dummy / pad files, other languages. */
   ps3Trim: { update: boolean; dummy: boolean; languages: boolean };
   /** Toybox: what Ghost does when a toy is scanned. */
@@ -264,6 +268,8 @@ const DEFAULTS: Settings = {
   subdlApiKey: "",
   subtitles: { enabled: true, language: "EN" },
   lyricsEnabled: true,
+  apollo: { autoUpdate: true, offline: false, location: "" },
+  memcardSyncToPhone: true,
   toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },

@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /** Which screen the user is on. The host can also drive this, later. */
-enum class Screen { HOME, REMOTE, MEDIA, TOUCHPAD, TOYBOX, GHOST, SETTINGS, LIBRARY }
+enum class Screen { HOME, REMOTE, MEDIA, TOUCHPAD, TOYBOX, GHOST, SETTINGS, LIBRARY, SAVES, CHEATS }
 
 /**
  * Holds the link and everything the screens read.
@@ -140,6 +140,44 @@ class CompanionViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun pointer(kind: String, dx: Float = 0f, dy: Float = 0f, button: String? = null) =
         client.sendPointer(kind, dx, dy, button)
+
+    // ---- memory card saves: the offline copies, and Apollo through the host ----
+
+    val store = com.axm.companion.saves.SaveStore(app)
+    private val _localSaves = MutableStateFlow(store.all())
+    val localSaves: StateFlow<List<com.axm.companion.saves.SaveStore.LocalSave>> = _localSaves.asStateFlow()
+
+    /** The save whose cheats page is open. */
+    private val _cheatsFor = MutableStateFlow<Pair<String, String>?>(null)
+    val cheatsFor: StateFlow<Pair<String, String>?> = _cheatsFor.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            // Every copy the host sends lands in the store; the list on screen follows.
+            client.saveFiles.collect { f ->
+                store.put(f.cardId, f.save, f.title, f.kind, f.fileName, f.base64, f.sha1, f.at)
+                _localSaves.value = store.all()
+            }
+        }
+        viewModelScope.launch {
+            // Auto-sync: whatever the host lists that the phone lacks (or holds an older copy of) is asked for.
+            client.saves.collect { listing ->
+                if (listing == null || !listing.autoSync) return@collect
+                for (card in listing.cards) for (s in card.saves) {
+                    val local = store.get(card.id, s.name)
+                    if (s.sha1.isNotEmpty() && local?.sha1 != s.sha1) client.requestSave(card.id, s.name)
+                }
+            }
+        }
+    }
+
+    fun fetchSave(cardId: String, save: String) = client.requestSave(cardId, save)
+    fun pushSave(cardId: String, save: String) { store.base64Of(cardId, save)?.let { client.pushSave(cardId, save, it) } }
+    fun deleteLocal(cardId: String, save: String) { store.delete(cardId, save); _localSaves.value = store.all() }
+    fun openCheats(cardId: String, save: String) { _cheatsFor.value = cardId to save; client.requestCheats(cardId, save); show(Screen.CHEATS) }
+    fun applyCheats(selections: List<Pair<String, Map<String, String>>>, preview: Boolean) { _cheatsFor.value?.let { (c, s) -> client.applyCheats(c, s, selections, preview) } }
+    fun undoLastEdit(cardId: String, save: String) = client.restoreSave(cardId, save)
+    fun clearResult() = client.clearSaveResult()
 
     /** A menu setting changed from the phone. The host applies it and lists again. */
     fun setSetting(id: String, value: String) = client.sendSetting(id, value)

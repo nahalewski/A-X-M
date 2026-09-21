@@ -70,7 +70,7 @@ import com.axm.companion.protocol.XmbAction
 /* ------------------------------------------------------------------ pieces -- */
 
 @Composable
-private fun Panel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+fun Panel(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Box(
         modifier
             .clip(RoundedCornerShape(18.dp))
@@ -180,6 +180,11 @@ fun HomeScreen(
             }
         }
 
+        if (link !is LinkState.Connected) {
+            Spacer(Modifier.height(4.dp))
+            Text("OFFLINE", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
+            ModeRow("Memory Card Saves", "The copies kept on this phone") { onOpen(Screen.SAVES) }
+        }
         if (link is LinkState.Connected) {
             Spacer(Modifier.height(4.dp))
             Text("MODES", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
@@ -187,6 +192,7 @@ fun HomeScreen(
             ModeRow("Media", "What is playing") { onOpen(Screen.MEDIA) }
             ModeRow("Music Library", "Pick a song from the PC's music from here") { onOpen(Screen.LIBRARY) }
             ModeRow("Touchpad", "Move the pointer") { onOpen(Screen.TOUCHPAD) }
+            ModeRow("Memory Card Saves", "Copies of the PS / PS2 saves, Apollo cheats, undo") { onOpen(Screen.SAVES) }
             ModeRow("A-X-M Settings", "The menu's settings, changed from the phone") { onOpen(Screen.SETTINGS) }
         }
     }

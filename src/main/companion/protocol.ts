@@ -231,6 +231,45 @@ export type MusicListingMessage = Frame<
 >;
 export type MusicPlayMessage = Frame<"music.play", { key: string }>;
 
+// --------------------------------------------------------------- saves ----
+
+/**
+ * Memory card saves on the phone: a copy of each save the menu manages, kept
+ * offline, and Apollo's cheats run on the host at the phone's request. The
+ * phone names saves by the card id and save name the host listed; the bytes
+ * travel base64 in both directions. The host is the only thing that touches a
+ * card, so an edit from the phone and one from the TV are the same code path.
+ */
+export interface SaveListing {
+  cards: { id: string; name: string; kind: "ps1" | "ps2"; saves: { name: string; title: string; size: number; sha1: string }[] }[];
+  /** True while the host will push copies on its own (Settings › Companion). */
+  autoSync: boolean;
+}
+export type SavesListMessage = Frame<"saves.list", SaveListing>;
+/** A copy of one save: .mcs blocks (PS1) or .psu (PS2), base64. */
+export type SavesFileMessage = Frame<"saves.file", { cardId: string; save: string; title: string; kind: "ps1" | "ps2"; fileName: string; base64: string; sha1: string; at: string }>;
+export type SavesRequestMessage = Frame<"saves.request", { cardId: string; save: string }>;
+/** The phone's copy back onto the card, replacing what's there (the card is backed up first). */
+export type SavesPushMessage = Frame<"saves.push", { cardId: string; save: string; base64: string }>;
+export type SavesCheatsMessage = Frame<"saves.cheats", { cardId: string; save: string }>;
+export type SavesPatchesMessage = Frame<
+  "saves.patches",
+  {
+    cardId: string;
+    save: string;
+    gameName: string | null;
+    productCode: string;
+    region: string;
+    attribution: string[];
+    error?: string;
+    codes: { key: string; name: string; group: string | null; isInfo: boolean; isRequired: boolean; isDefault: boolean; type: string; targets: string[]; options: { tag: string; choices: { value: string; label: string }[] }[] }[];
+  }
+>;
+export type SavesApplyMessage = Frame<"saves.apply", { cardId: string; save: string; selections: { key: string; options: Record<string, string> }[]; preview?: boolean }>;
+export type SavesRestoreMessage = Frame<"saves.restore", { cardId: string; save: string }>;
+/** What came of an apply / push / restore, in words, plus a preview when one was asked for. */
+export type SavesResultMessage = Frame<"saves.result", { cardId: string; save: string; ok: boolean; message: string; preview?: { name: string; changed: number; first: { offset: number; from: string; to: string }[] }[] }>;
+
 /** Anything the host wants to say went wrong, in words fit to show a user. */
 export type ErrorMessage = Frame<"link.error", { message: string; fatal?: boolean }>;
 
@@ -259,6 +298,15 @@ export type CompanionMessage =
   | MusicBrowseMessage
   | MusicListingMessage
   | MusicPlayMessage
+  | SavesListMessage
+  | SavesFileMessage
+  | SavesRequestMessage
+  | SavesPushMessage
+  | SavesCheatsMessage
+  | SavesPatchesMessage
+  | SavesApplyMessage
+  | SavesRestoreMessage
+  | SavesResultMessage
   | ErrorMessage;
 
 export type CompanionMessageType = CompanionMessage["type"];

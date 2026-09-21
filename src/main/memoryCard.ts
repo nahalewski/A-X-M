@@ -1,6 +1,7 @@
 import { app } from "electron";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Ps2Card, formatPs2Image } from "./ps2card";
 
 /**
  * Virtual PlayStation and PlayStation 2 memory cards.
@@ -36,6 +37,8 @@ export interface CardSave {
   sizeBytes: number;
   /** PS1 only: how many of the fifteen blocks this save occupies. */
   blocks?: number;
+  /** PS2 only: the files inside the save directory. */
+  files?: string[];
 }
 
 // ---------------------------------------------------------------- layout ----
@@ -164,57 +167,9 @@ function readPs1Saves(file: string): CardSave[] {
 
 // ------------------------------------------------------------------- PS2 ----
 
-/**
- * An empty PS2 card.
- *
- * The superblock describes the geometry and where the allocatable area starts;
- * the indirect FAT, the FAT itself and the root directory follow. Pages are
- * written with their spare area left clear, which is what an emulator expects
- * from a file-backed card rather than a dumped physical one.
- *
- * If any of this is off, PCSX2 treats the card as unformatted and formats it
- * itself on first mount, so a game never sees a half-made card.
- */
-function buildPs2(): Buffer {
-  const card = Buffer.alloc(PS2_SIZE, 0xff);
-
-  const superblock = Buffer.alloc(PS2_PAGE_DATA, 0);
-  superblock.write("Sony PS2 Memory Card Format ", 0, "latin1");
-  superblock.write("1.2.0.0", 28, "latin1");
-
-  superblock.writeUInt16LE(PS2_PAGE_DATA, 40); // page length
-  superblock.writeUInt16LE(2, 42); // pages per cluster
-  superblock.writeUInt16LE(16, 44); // pages per erase block
-  superblock.writeUInt16LE(0xff00, 46);
-  superblock.writeUInt32LE(8192, 48); // clusters on the card
-  superblock.writeUInt32LE(41, 52); // first allocatable cluster
-  superblock.writeUInt32LE(8135, 56); // last allocatable cluster
-  superblock.writeUInt32LE(0, 60); // root directory cluster
-  superblock.writeUInt32LE(1023, 64); // backup block 1
-  superblock.writeUInt32LE(1022, 68); // backup block 2
-
-  // Indirect FAT: one cluster, at 8. Everything after is unused.
-  superblock.writeUInt32LE(8, 80);
-  for (let i = 1; i < 32; i++) superblock.writeInt32LE(-1, 80 + i * 4);
-  // Bad block list: none.
-  for (let i = 0; i < 32; i++) superblock.writeInt32LE(-1, 208 + i * 4);
-
-  superblock.writeUInt8(2, 336); // card type: PS2
-  superblock.writeUInt8(0x2b, 337); // flags: ECC present, erase needed
-
-  card.fill(0, 0, PS2_PAGE);
-  superblock.copy(card, 0);
-
-  return card;
-}
-
-/**
- * PS2 saves are directories in the card's filesystem. Walking the FAT properly is
- * a job for the emulator; here the count is what the menu needs, and an
- * unformatted or empty card honestly reports nothing.
- */
-function readPs2Saves(_file: string): CardSave[] {
-  return [];
+/** PS2 saves are the directories under the card's root; ps2card.ts walks the FAT. */
+function readPs2Saves(file: string): CardSave[] {
+  return Ps2Card.open(file).listSaves().map((s) => ({ name: s.name, title: s.title, sizeBytes: s.sizeBytes, files: s.files.map((f) => f.name) }));
 }
 
 // ------------------------------------------------------------------ index ----
@@ -263,7 +218,7 @@ export function createCard(kind: CardKind, name: string): MemoryCard {
     file = path.join(cardsDir(), `${base}.${extension}`);
   }
 
-  fs.writeFileSync(file, kind === "ps1" ? buildPs1() : buildPs2());
+  fs.writeFileSync(file, kind === "ps1" ? buildPs1() : formatPs2Image());
 
   // New cards land in slot 1 until both are taken, matching what a console does.
   const usedSlots = cards.filter((c) => c.kind === kind).map((c) => c.slot);
@@ -332,7 +287,11 @@ export function readSaves(id: string): CardSave[] {
 export function cardUsage(id: string): { usedBlocks: number; totalBlocks: number } | null {
   const card = loadIndex().find((c) => c.id === id);
   if (!card) return null;
-  if (card.kind !== "ps1") return { usedBlocks: 0, totalBlocks: 0 };
+  if (card.kind !== "ps1") {
+    // PS2: count in KB of the 8 MB, from what the saves hold.
+    const used = readSaves(id).reduce((sum, s) => sum + s.sizeBytes, 0);
+    return { usedBlocks: Math.ceil(used / 1024), totalBlocks: 8135 };
+  }
   const used = readSaves(id).reduce((sum, s) => sum + (s.blocks ?? 1), 0);
   return { usedBlocks: used, totalBlocks: 15 };
 }

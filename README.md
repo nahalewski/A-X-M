@@ -66,6 +66,20 @@ changing a game's artwork.
   RetroAchievements (sign in once with username + web API key).
 - Guide button while a game runs: **Quit Game**, Controller Settings, Turn Off the System.
 - Saved Data Utility and Game Data Utility, like the PS3's.
+- **Memory Card Utility**: virtual PlayStation (128 KB) and PlayStation 2 (8 MB, fully
+  formatted) memory cards, created from the PS3-style "Select the internal memory card to be
+  created" screen and copied straight into DuckStation's and PCSX2's own card folders.
+  Lists the saves on each card, imports raw cards, DexDrive dumps, .psu and .psv saves from
+  any drive's SAVE folder, exports cards and single saves. Y on a save opens the sidebar:
+  **Edit Save › Apollo Cheats** - the verified save-edit patches from
+  [Apollo Save Tool](https://github.com/bucanero/apollo-patches), matched to the save's
+  title id, region and files (never invented), with option values, *Preview Changes* (every
+  byte that would change), *Apply Selected* (a timestamped backup of the whole card first,
+  read back and verified, restored on any failure), *Restore Backup* and *Undo Last Edit*;
+  **Save Database** - community saves from apollo-saves, downloaded and put on the card; and
+  a copy to the phone. The Save Wizard / Game Genie codes and BSD scripts run in a TypeScript
+  port of Apollo's engine (GPL-3.0; credited in About & Thanks). Databases update weekly
+  or from *Settings › System › Apollo Save Tool* (offline mode, location, clear cache).
 - Launcher rows for Steam, Epic Games, Battle.net, GeForce NOW and Xbox Cloud Gaming.
 
 ### Retro
@@ -164,6 +178,11 @@ changing a game's artwork.
 - **A-X-M Companion** (Android, in `companion-android/`) finds the menu on the LAN, pairs with
   a code once, then drives the menu and the media transport from the phone, and scans amiibo
   with the phone's NFC into the same Toybox flow.
+- **Memory Card Saves** on the phone: a copy of every save on the cards, refreshed whenever
+  one changes (Settings › Companion), kept offline; from the phone, refresh or put a copy
+  back on the card, run Apollo Cheats through the same engine the menu uses, undo the last
+  edit. The Settings page mirrors the menu's own settings; the Music Library page picks
+  songs; a text prompt on the TV is typed on the phone's keyboard.
 
 ### Ghost
 - The voice assistant. Say "hey ghost", then *launch Batman*, *play playlist chill*, *go to

@@ -28,6 +28,8 @@ import com.axm.companion.protocol.KeyboardPrompt
 import com.axm.companion.ui.KeyboardSheet
 import com.axm.companion.ui.LibraryScreen
 import com.axm.companion.ui.SettingsScreen
+import com.axm.companion.ui.SavesScreen
+import com.axm.companion.ui.CheatsScreen
 import com.axm.companion.ui.MediaScreen
 import com.axm.companion.ui.PairingScreen
 import com.axm.companion.ui.RemoteScreen
@@ -87,6 +89,10 @@ private fun Root(model: CompanionViewModel) {
     val settings by model.client.settings.collectAsStateWithLifecycle()
     val keyboard by model.client.keyboard.collectAsStateWithLifecycle()
     val listing by model.client.musicListing.collectAsStateWithLifecycle()
+    val saves by model.client.saves.collectAsStateWithLifecycle()
+    val localSaves by model.localSaves.collectAsStateWithLifecycle()
+    val savePatches by model.client.savePatches.collectAsStateWithLifecycle()
+    val saveResult by model.client.saveResult.collectAsStateWithLifecycle()
     val visualizer = settings.firstOrNull { it.id == "visualizerStyle" }
     // A prompt on the A-X-M screen takes this screen too, so typing can start at once.
     var keyboardDismissed by remember { mutableStateOf<KeyboardPrompt?>(null) }
@@ -118,7 +124,9 @@ private fun Root(model: CompanionViewModel) {
     // Losing the link drops back to home rather than leaving a remote on screen
     // whose buttons would quietly go nowhere.
     if (link !is LinkState.Connected) {
-        home()
+        if (screen == Screen.SAVES) {
+            SavesScreen(listing = null, local = localSaves, connected = false, result = saveResult, onFetch = model::fetchSave, onPush = model::pushSave, onCheats = model::openCheats, onUndo = model::undoLastEdit, onDelete = model::deleteLocal, onClearResult = model::clearResult, onBack = { model.show(Screen.HOME) })
+        } else home()
         return
     }
 
@@ -153,6 +161,16 @@ private fun Root(model: CompanionViewModel) {
             items = settings,
             onSet = model::setSetting,
             onBack = { model.show(Screen.HOME) },
+        )
+        Screen.SAVES -> SavesScreen(
+            listing = saves, local = localSaves, connected = true, result = saveResult,
+            onFetch = model::fetchSave, onPush = model::pushSave, onCheats = model::openCheats, onUndo = model::undoLastEdit, onDelete = model::deleteLocal,
+            onClearResult = model::clearResult, onBack = { model.show(Screen.HOME) },
+        )
+        Screen.CHEATS -> CheatsScreen(
+            patches = savePatches, result = saveResult,
+            onApply = model::applyCheats, onClearResult = model::clearResult,
+            onBack = { model.clearResult(); model.show(Screen.SAVES) },
         )
         Screen.LIBRARY -> LibraryScreen(
             listing = listing,

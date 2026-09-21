@@ -50,6 +50,15 @@ object Protocol {
     const val MUSIC_BROWSE = "music.browse"
     const val MUSIC_LISTING = "music.listing"
     const val MUSIC_PLAY = "music.play"
+    const val SAVES_LIST = "saves.list"
+    const val SAVES_FILE = "saves.file"
+    const val SAVES_REQUEST = "saves.request"
+    const val SAVES_PUSH = "saves.push"
+    const val SAVES_CHEATS = "saves.cheats"
+    const val SAVES_PATCHES = "saves.patches"
+    const val SAVES_APPLY = "saves.apply"
+    const val SAVES_RESTORE = "saves.restore"
+    const val SAVES_RESULT = "saves.result"
 
     fun frame(type: String, payload: JSONObject): String =
         JSONObject()
@@ -228,6 +237,95 @@ data class MusicListing(val key: String, val name: String, val parent: String?, 
 }
 
 data class MusicEntry(val key: String, val name: String, val folder: Boolean)
+
+/** The memory card saves the host manages, with a hash per save so the phone knows what it lacks. */
+data class SaveListing(val cards: List<SaveCard>, val autoSync: Boolean) {
+    companion object {
+        fun from(p: JSONObject): SaveListing {
+            val arr = p.optJSONArray("cards")
+            val cards = if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+                arr.optJSONObject(i)?.let { c ->
+                    val s = c.optJSONArray("saves")
+                    SaveCard(
+                        id = c.optString("id"), name = c.optString("name"), kind = c.optString("kind"),
+                        saves = if (s == null) emptyList() else (0 until s.length()).mapNotNull { j ->
+                            s.optJSONObject(j)?.let { SaveEntry(it.optString("name"), it.optString("title"), it.optLong("size"), it.optString("sha1")) }
+                        },
+                    )
+                }
+            }
+            return SaveListing(cards, p.optBoolean("autoSync", true))
+        }
+    }
+}
+data class SaveCard(val id: String, val name: String, val kind: String, val saves: List<SaveEntry>)
+data class SaveEntry(val name: String, val title: String, val size: Long, val sha1: String)
+
+/** A copy of one save, base64, as the host exports it. */
+data class SaveFile(val cardId: String, val save: String, val title: String, val kind: String, val fileName: String, val base64: String, val sha1: String, val at: String) {
+    companion object {
+        fun from(p: JSONObject) = SaveFile(
+            p.optString("cardId"), p.optString("save"), p.optString("title"), p.optString("kind"),
+            p.optString("fileName"), p.optString("base64"), p.optString("sha1"), p.optString("at"),
+        )
+    }
+}
+
+/** Apollo's answer for one save: the codes that fit it. */
+data class SavePatches(val cardId: String, val save: String, val gameName: String?, val productCode: String, val region: String, val attribution: List<String>, val error: String?, val codes: List<PatchCode>) {
+    companion object {
+        fun from(p: JSONObject): SavePatches {
+            val arr = p.optJSONArray("codes")
+            val attr = p.optJSONArray("attribution")
+            return SavePatches(
+                cardId = p.optString("cardId"), save = p.optString("save"),
+                gameName = p.optString("gameName").ifEmpty { null }, productCode = p.optString("productCode"), region = p.optString("region"),
+                attribution = if (attr == null) emptyList() else (0 until attr.length()).map { attr.optString(it) },
+                error = p.optString("error").ifEmpty { null },
+                codes = if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+                    arr.optJSONObject(i)?.let { c ->
+                        val opts = c.optJSONArray("options")
+                        val targets = c.optJSONArray("targets")
+                        PatchCode(
+                            key = c.optString("key"), name = c.optString("name"), group = c.optString("group").ifEmpty { null },
+                            isInfo = c.optBoolean("isInfo"), isRequired = c.optBoolean("isRequired"), isDefault = c.optBoolean("isDefault"),
+                            type = c.optString("type"),
+                            targets = if (targets == null) emptyList() else (0 until targets.length()).map { targets.optString(it) },
+                            options = if (opts == null) emptyList() else (0 until opts.length()).mapNotNull { j ->
+                                opts.optJSONObject(j)?.let { o ->
+                                    val ch = o.optJSONArray("choices")
+                                    PatchOption(o.optString("tag"), if (ch == null) emptyList() else (0 until ch.length()).mapNotNull { k -> ch.optJSONObject(k)?.let { it.optString("value") to it.optString("label") } })
+                                }
+                            },
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
+data class PatchCode(val key: String, val name: String, val group: String?, val isInfo: Boolean, val isRequired: Boolean, val isDefault: Boolean, val type: String, val targets: List<String>, val options: List<PatchOption>)
+data class PatchOption(val tag: String, val choices: List<Pair<String, String>>)
+
+/** What came of an apply, push or restore. */
+data class SaveResult(val cardId: String, val save: String, val ok: Boolean, val message: String, val preview: List<String>) {
+    companion object {
+        fun from(p: JSONObject): SaveResult {
+            val pv = p.optJSONArray("preview")
+            val lines = mutableListOf<String>()
+            if (pv != null) for (i in 0 until pv.length()) {
+                val f = pv.optJSONObject(i) ?: continue
+                val first = f.optJSONArray("first")
+                lines += "${f.optString("name")}: ${f.optInt("changed")} byte(s)"
+                if (first != null) for (k in 0 until minOf(first.length(), 12)) {
+                    val c = first.optJSONObject(k) ?: continue
+                    lines += "  0x%06X: %s → %s".format(c.optInt("offset"), c.optString("from"), c.optString("to"))
+                }
+            }
+            return SaveResult(p.optString("cardId"), p.optString("save"), p.optBoolean("ok"), p.optString("message"), lines)
+        }
+    }
+}
 
 enum class GhostState(val wire: String) {
     IDLE("idle"), LISTENING("listening"), THINKING("thinking"),

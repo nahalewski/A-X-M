@@ -27,6 +27,8 @@ const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: 
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
 const RETRO_DEFAULTS: Record<RetroPlatform, string> = { ps5: "G:\\GAMES\\PS5", ps4: "G:\\GAMES\\PS4", ps3: "G:\\GAMES\\PS3", ps2: "G:\\GAMES\\PS2", ps1: "G:\\GAMES\\PS1", psp: "G:\\GAMES\\PSP", switch: "K:\\Switch Games" };
 const EMULATOR_SITES: Record<RetroPlatform, string> = { ps5: "Kyty from github.com/InoriRus/Kyty (or Install above) - an experiment, not a way to play retail PS5 games", ps4: "shadPS4 from shadps4.net (or Install above)", ps3: "RPCS3 from rpcs3.net (or Install above)", ps2: "PCSX2 from pcsx2.net (or Install above)", ps1: "DuckStation from duckstation.org (or Install above)", psp: "PPSSPP from ppsspp.org (or Install above)", switch: "Eden - put eden.exe in C:\\eden" };
+import { MemoryCardUtility, showApolloDatabaseOptions } from "./memoryCardUtility";
+import { ChoiceScreen, ScreenChoice } from "./choiceScreen";
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -525,6 +527,7 @@ async function main(): Promise<void> {
   };
 
   const gridPicker = new GridPicker(document.getElementById("grid-picker")!);
+  const choiceScreen = new ChoiceScreen(document.getElementById("choice-screen")!);
   const textEntry = new TextEntry(document.getElementById("text-entry")!);
   const optionsPopup = new OptionsPopup(document.getElementById("options-popup")!);
   const infoCard = new InfoCard(document.getElementById("info-card")!);
@@ -1039,6 +1042,18 @@ async function main(): Promise<void> {
         () => { popOverlay(); resolve(null); }
       );
       pushOverlay((a) => textEntry.handle(a as Parameters<TextEntry["handle"]>[0]));
+    });
+
+  /** The PS3-style centred choice screen (a title, a short list, a note along the bottom). */
+  const pickFromScreen = (title: string, choices: ScreenChoice[]): Promise<ScreenChoice | null> =>
+    new Promise((resolve) => {
+      choiceScreen.show(
+        title,
+        choices,
+        (c) => { popOverlay(); resolve(c); },
+        () => { popOverlay(); resolve(null); }
+      );
+      pushOverlay((a) => choiceScreen.handle(a as Parameters<ChoiceScreen["handle"]>[0]));
     });
 
   const pickFromGrid = (title: string, choices: GridChoice[]): Promise<GridChoice | null> =>
@@ -1788,7 +1803,21 @@ async function main(): Promise<void> {
    * descends into it the same way the music library does; B comes back out.
    */
   function gamesCategory(): Category {
-    let view: "root" | "saves" | "gamedata" | "steam" | "drive" | "trophies" | "trophy-list" | "trophy-game" = "root";
+    let view: "root" | "saves" | "gamedata" | "steam" | "drive" | "trophies" | "trophy-list" | "trophy-game" | "memcards" = "root";
+    // Virtual PS / PS2 memory cards, the saves on them, and Apollo's cheats.
+    const memcards = new MemoryCardUtility({
+      refresh: () => xmb.refresh(),
+      enterLevel: (key) => xmb.enterLevel("games", key),
+      resetSelection: () => xmb.resetSelection("games"),
+      showOptions,
+      showInfo: (title, art, rows) => showInfo(title, art, null, rows),
+      askText: (title, fields) => askText(title, fields),
+      pickScreen: pickFromScreen,
+      notify: (text, icon) => notifier.push(text, "general", icon),
+      volumes: () => volumes,
+      sendToPhone: (cardId, save) => window.axm.companionSendSave(cardId, save),
+      phoneConnected: () => (companionState?.sessions.filter((s) => s.paired).length ?? 0) > 0,
+    });
     let trophySource: "steam" | "ra" = "steam";
     let trophyGames: TrophyGame[] = [];
     let trophyError: string | null = null;
@@ -1978,6 +2007,14 @@ async function main(): Promise<void> {
         onConfirm: () => openSaves(),
       },
       {
+        id: "memory-card-utility",
+        title: "Memory Card Utility",
+        subtitle: "PS and PS2 memory cards · saves, cheats, backups",
+        iconUrl: "assets/icons/memcard-utility.webp",
+        iconClass: "memcard",
+        onConfirm: async () => { await refreshVolumes(); view = "memcards"; await memcards.open(); },
+      },
+      {
         id: "game-data-utility",
         title: "Game Data Utility",
         subtitle: "Installed game files",
@@ -2075,6 +2112,7 @@ async function main(): Promise<void> {
       iconUrl: "assets/icons/games.svg",
       onBack: () => {
         if (view === "root") return false;
+        if (view === "memcards") { if (!memcards.back()) go("root"); return true; }
         if (view === "trophy-game") go("trophy-list");
         else if (view === "trophy-list") go("trophies");
         else go("root");
@@ -2082,6 +2120,7 @@ async function main(): Promise<void> {
       },
       footerHint: () => {
         if (view === "saves") return "Saved Data Utility";
+        if (view === "memcards") return memcards.hint();
         if (view === "gamedata") return "Game Data Utility";
         if (view === "drive") return driveFolder;
         if (view === "trophies") return "Trophy Collection";
@@ -2096,6 +2135,7 @@ async function main(): Promise<void> {
       },
       getItems: () => {
         if (view === "saves") return savesItems();
+        if (view === "memcards") return memcards.items();
         if (view === "gamedata") return gameDataItems();
         if (view === "steam") return steamItems();
         if (view === "drive") return driveItems();
@@ -2806,7 +2846,7 @@ async function main(): Promise<void> {
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme" | "tv"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
     fpsCounter: "display", hardwareInfo: "display", batteryPercent: "display",
-    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", subtitles: "tv", subdlKey: "tv", lyrics: "audio", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
+    musicVolume: "audio", ambientTrack: "audio", importFormat: "audio", trophies: "sys", discTools: "sys", installTools: "sys", discTarget: "sys", makemkvKey: "sys", subtitles: "tv", subdlKey: "tv", lyrics: "audio", apolloDb: "sys", sfxVolume: "audio", navSounds: "audio", musicShuffle: "audio", addMusicFolder: "audio",
     "system-info": "sys", controller: "sys", "system-name": "sys", "system-language": "sys", datetime: "sys", powersave: "sys", chat: "sys", notifications: "sys", dictionary: "sys", steamHandsOff: "sys", steamInstallDrive: "sys", overlayHotkey: "sys", addFolder: "sys", rescan: "sys",
     "saved-data-utility": "sys", "game-data-utility": "sys", "steam-library": "sys",
     wallpaper: "theme", introSparkle: "theme",
@@ -2842,6 +2882,13 @@ async function main(): Promise<void> {
           await window.axm.companionSetEnabled(!state.enabled);
           await refreshCompanion();
         },
+      },
+      {
+        id: "companion-saves",
+        title: "Memory Card Saves on the Phone",
+        subtitle: settings.memcardSyncToPhone ? "On · the phone keeps a copy of every save and refreshes it as they change" : "Off · copies go over only when you send one",
+        iconUrl: "assets/icons/memcard-utility.webp",
+        onConfirm: async () => { settings = await window.axm.setSettings({ memcardSyncToPhone: !settings.memcardSyncToPhone }); window.axm.memcardsChanged(); xmb.refresh(); },
       },
       {
         id: "companion-howto",
@@ -3372,6 +3419,13 @@ async function main(): Promise<void> {
           settings = await window.axm.setSettings({ lyricsEnabled: !settings.lyricsEnabled });
           xmb.refresh();
         },
+      },
+      {
+        id: "apolloDb",
+        title: "Apollo Save Tool",
+        subtitle: "Cheat and community save databases for the Memory Card Utility · update, auto-update, offline, location, cache",
+        iconUrl: "assets/icons/memcard-utility.webp",
+        onConfirm: () => showApolloDatabaseOptions({ showOptions, notify: (text, icon) => notifier.push(text, "general", icon), volumes: () => volumes }),
       },
       {
         id: "discTools",

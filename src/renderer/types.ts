@@ -427,6 +427,8 @@ export interface Settings {
   subdlApiKey: string;
   subtitles: { enabled: boolean; language: string };
   lyricsEnabled: boolean;
+  apollo: { autoUpdate: boolean; offline: boolean; location: string };
+  memcardSyncToPhone: boolean;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -585,6 +587,25 @@ export interface ToyboxSummary {
 }
 
 /** Input forwarded from a paired phone, shaped so the menu treats it as local. */
+// ---- Memory cards and Apollo ----
+
+export type CardKind = "ps1" | "ps2";
+export interface MemoryCard { id: string; name: string; kind: CardKind; filePath: string; sizeBytes: number; slot: 1 | 2; createdAt: string }
+export interface CardSave { name: string; title: string; sizeBytes: number; blocks?: number; files?: string[] }
+export interface EmulatorCards { id: "duckstation" | "pcsx2"; name: string; kind: CardKind; installPath: string | null; dataPath: string | null; cardFolder: string | null; cardFolderFromConfig: boolean; defaultCardFolder: string; cards: string[] }
+export interface ImportCandidate { filePath: string; fileName: string; kind: CardKind | null; format: string; saves: { name: string; title: string; blocks: number }[]; supported: boolean; reason?: string }
+export interface SaveRef { cardId: string; save: string }
+export interface ApolloOption { tag: string; choices: { value: string; label: string }[] }
+export interface ApolloCode { id: number; name: string; type: "sw" | "bsd" | "python"; lines: string[]; options: ApolloOption[]; target: { folder: string | null; file: string }; group: string | null; isDefault: boolean; isInfo: boolean; isRequired: boolean; order: "le" | "be" | null }
+export interface MatchedCode { patchFile: string; patchTitle: string | null; author: string | null; source: "apollo" | "custom"; code: ApolloCode; targets: string[] }
+export interface SaveIdentity { platform: string; titleId: string; productCode: string; region: string; gameName: string | null; files: { name: string; size: number }[] }
+export interface PatchMatch { identity: SaveIdentity; codes: MatchedCode[]; hidden: number; attribution: string[] }
+export interface ApolloSelection { patchFile: string; codeId: number; options: Record<string, string> }
+export interface ApolloPreview { ok: boolean; error?: string; files: { name: string; before: number; after: number; changed: number; first: { offset: number; from: string; to: string }[] }[]; log: string[]; added: string[] }
+export interface BackupInfo { id: string; at: string; cardId: string; save: string; applied: string[]; note: string }
+export interface CommunitySave { platform: string; titleId: string; zip: string; description: string; local: string | null; iconUrl: string | null }
+export interface ApolloStatus { location: string; patchesUpdatedAt: string | null; savesUpdatedAt: string | null; patchCounts: Record<string, number>; saveTitleCounts: Record<string, number>; customCount: number; autoUpdate: boolean; offline: boolean; cacheBytes: number }
+
 export type CompanionInput =
   | { kind: "xmb"; action: "up" | "down" | "left" | "right" | "confirm" | "back" | "context" | "guide" }
   | { kind: "media"; command: string; value?: number }
@@ -797,6 +818,39 @@ export interface AxmApi {
   companionSettings(items: { id: string; title: string; group: string; kind: "toggle" | "choice"; value: string; options?: { id: string; label: string }[]; detail?: string }[]): void;
   /** A text prompt is open (or closed, null) - phones can type for it. */
   companionKeyboard(prompt: { title: string; label: string; value: string; secret: boolean } | null): void;
+  // ---- Memory Card Utility ----
+  memcardOverview(): Promise<{ managed: MemoryCard[]; emulators: EmulatorCards[] }>;
+  memcardCreate(kind: CardKind, name: string): Promise<MemoryCard>;
+  memcardRename(id: string, name: string): Promise<MemoryCard | null>;
+  memcardSlot(id: string, slot: 1 | 2): Promise<MemoryCard | null>;
+  memcardDelete(id: string): Promise<boolean>;
+  memcardSaves(id: string): Promise<{ saves: CardSave[]; usage: { usedBlocks: number; totalBlocks: number } | null }>;
+  memcardPublish(id: string, emulator: string): Promise<{ ok: boolean; message: string }>;
+  memcardAdopt(emulator: string, file: string, name: string): Promise<{ ok: boolean; message: string }>;
+  memcardExport(id: string, save: string | null, folder: string): Promise<{ ok: boolean; message: string; file?: string }>;
+  memcardInspect(file: string): Promise<ImportCandidate>;
+  memcardScanDrive(root: string): Promise<{ ps1: ImportCandidate[]; ps2: ImportCandidate[] }>;
+  memcardImportPs1(id: string, source: string, only?: string[]): Promise<{ ok: boolean; imported: number; message: string }>;
+  memcardImportPs2(id: string, source: string): Promise<{ ok: boolean; message: string }>;
+  // ---- Apollo Save Tool ----
+  apolloStatus(): Promise<ApolloStatus>;
+  apolloUpdatePatches(): Promise<{ ok: boolean; message: string; count: number }>;
+  apolloUpdateSaves(): Promise<{ ok: boolean; message: string; count: number }>;
+  apolloClearCache(): Promise<void>;
+  apolloSetLocation(location: string): Promise<void>;
+  apolloFind(ref: SaveRef): Promise<PatchMatch | { error: string } | null>;
+  apolloPreview(ref: SaveRef, selections: ApolloSelection[]): Promise<ApolloPreview>;
+  apolloApply(ref: SaveRef, selections: ApolloSelection[], note?: string): Promise<{ ok: boolean; message: string; backupId?: string; log: string[] }>;
+  apolloBackups(ref: SaveRef): Promise<BackupInfo[]>;
+  apolloRestore(ref: SaveRef, backupId?: string): Promise<{ ok: boolean; message: string }>;
+  apolloCommunity(ref: SaveRef | { platform: string; titleId: string }): Promise<{ gameName: string | null; titleId: string; saves: CommunitySave[] }>;
+  apolloImportCommunity(cardId: string, platform: string, titleId: string, zip: string): Promise<{ ok: boolean; message: string }>;
+  onApolloProgress(callback: (p: { note: string }) => void): void;
+  /** A copy of the save to every paired phone. */
+  companionSendSave(cardId: string, save: string): Promise<void>;
+  /** The menu changed a card (edit, import, restore): phones get the new list. */
+  memcardsChanged(): void;
+  onMemcardsChanged(callback: (c: { cardId: string; save: string }) => void): void;
   /** SubDL subtitles for a film or episode, as WebVTT text. */
   findSubtitles(q: { title: string; year?: string; kind: "movie" | "tv"; season?: number; episode?: number }): Promise<string | null>;
   /** LRCLIB lyrics for the track: timed lines when synced, t = -1 otherwise. */

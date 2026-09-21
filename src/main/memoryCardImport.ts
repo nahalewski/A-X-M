@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CardKind } from "./memoryCard";
+import { readPsu, readPsvPs2, iconSysTitle } from "./ps2card";
 
 /**
  * Bringing existing saves onto a virtual card.
@@ -196,16 +197,21 @@ export function inspect(filePath: string): ImportCandidate {
       };
     }
 
-    if (ext === ".psu") {
-      const files = psuEntries(filePath);
-      const name = path.basename(filePath, ext);
+    if (ext === ".psu" || ext === ".psv") {
+      // PS2 saves: read whole by ps2card.ts and written onto a card as a directory.
+      const buf = fs.readFileSync(filePath);
+      const bundle = ext === ".psv" ? readPsvPs2(buf) : readPsu(buf);
+      if (!bundle) {
+        return { ...base, kind: ext === ".psv" ? null : "ps2", format: "psu", reason: ext === ".psv" ? "A PS1 .psv, which the PS1 importer doesn't read yet" : "Not a .psu this reads" };
+      }
+      const icon = bundle.files.find((f) => f.name.toLowerCase() === "icon.sys");
+      const title = icon ? iconSysTitle(icon.data) : "";
       return {
         ...base,
         kind: "ps2",
         format: "psu",
-        saves: [{ name, title: prettyTitle(name), blocks: files.length }],
-        supported: false,
-        reason: "PS2 saves are read but not yet written into a card",
+        saves: [{ name: bundle.name, title: title || prettyTitle(bundle.name), blocks: bundle.files.length }],
+        supported: true,
       };
     }
 

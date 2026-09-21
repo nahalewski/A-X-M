@@ -11,6 +11,13 @@ import { scanMedia, MediaEntry, MediaKind } from "./mediaScanner";
 import { resolveArt, isGameArtConfigured } from "./gameArt";
 import { browseMusic, MusicListing } from "./musicLibrary";
 import { scanSaves, SaveEntry } from "./saveScanner";
+import * as memcard from "./memoryCard";
+import * as memcardSync from "./memoryCardSync";
+import * as memcardImport from "./memoryCardImport";
+import * as apolloDb from "./apollo/database";
+import * as apollo from "./apollo/service";
+import * as companionSaves from "./apollo/companionSaves";
+import * as ps2cardModule from "./ps2card";
 import { browseMedia, BrowseKind, BrowseListing, listMediaDrives, createMediaFolder, MediaDrive } from "./mediaBrowser";
 import { getSteamLibrary, installSteamGame, SteamLibrary } from "./steamLibrary";
 import { listGridChoices, resolveIcon, cacheImage, ArtChoice } from "./gameArt";
@@ -116,6 +123,21 @@ const companion = new CompanionServer(
     onMusicPlay: (key) => {
       const file = musicKeys.get(key);
       if (file) mainWindow?.webContents.send("axm:companionInput", { kind: "musicPlay", filePath: file });
+    },
+    // Memory card saves on the phone: listed, copied, put back, and Apollo at its request.
+    onSavesList: async () => companionSaves.listing(loadSettings().memcardSyncToPhone ?? true),
+    onSavesRequest: async (cardId, save) => companionSaves.copyOf(cardId, save),
+    onSavesPush: async (cardId, save, base64) => companionSaves.pushBack(cardId, save, base64),
+    onSavesCheats: async (cardId, save) => companionSaves.cheats(cardId, save),
+    onSavesApply: async (cardId, save, selections, preview) => {
+      const r = companionSaves.applyFromPhone(cardId, save, selections, preview);
+      if (!preview) mainWindow?.webContents.send("axm:memcardsChanged", { cardId, save });
+      return r;
+    },
+    onSavesRestore: async (cardId, save) => {
+      const r = companionSaves.restoreLast(cardId, save);
+      mainWindow?.webContents.send("axm:memcardsChanged", { cardId, save });
+      return r;
     },
     onToyScan: (scan, device) => {
       nfcHub.scan({
@@ -278,6 +300,7 @@ app.whenReady().then(() => {
   overlayHotkey.start(loadSettings().overlayHotkey);
   // Toy readers and the companion endpoint come up with the menu.
   setTimeout(() => nfcHub.start(loadSettings().toybox?.companion ?? true), 4000);
+  setTimeout(() => void apolloDb.autoUpdate().then(() => mainWindow?.webContents.send("axm:apolloProgress", { note: "" })), 8000);
   // Listening from the start: the phone should find A-X-M without anything being
   // switched on first. It costs one idle UDP socket until something connects.
   companion.start();
@@ -902,6 +925,79 @@ ipcMain.handle("axm:tvItems", (_e, kind: xtream.XtreamKind, categoryId?: string,
 ipcMain.handle("axm:tvEpg", (_e, streamId: string) => xtream.shortEpg(streamId));
 ipcMain.handle("axm:tvStreamUrl", (_e, item: xtream.XtreamItem) => xtream.streamUrl(item));
 ipcMain.handle("axm:tvEpisodes", (_e, seriesId: string) => xtream.episodes(seriesId));
+// ---- Memory Card Utility: virtual PS1 / PS2 cards, the emulators' folders, Apollo ----
+ipcMain.handle("axm:memcardOverview", () => memcardSync.overview());
+ipcMain.handle("axm:memcardCreate", (_e, kind: memcard.CardKind, name: string) => memcard.createCard(kind, name));
+ipcMain.handle("axm:memcardRename", (_e, id: string, name: string) => memcard.renameCard(id, name));
+ipcMain.handle("axm:memcardSlot", (_e, id: string, slot: 1 | 2) => memcard.setCardSlot(id, slot));
+ipcMain.handle("axm:memcardDelete", (_e, id: string) => memcard.deleteCard(id));
+ipcMain.handle("axm:memcardSaves", (_e, id: string) => ({ saves: memcard.readSaves(id), usage: memcard.cardUsage(id) }));
+ipcMain.handle("axm:memcardPublish", (_e, id: string, emulator: memcardSync.EmulatorId) => {
+  const card = memcard.listCards().find((c) => c.id === id);
+  return card ? memcardSync.publishToEmulator(card, emulator) : { ok: false, message: "no such card" };
+});
+ipcMain.handle("axm:memcardAdopt", (_e, emulator: memcardSync.EmulatorId, file: string, name: string) => memcardSync.adoptFromEmulator(emulator, file, name));
+ipcMain.handle("axm:memcardExport", (_e, id: string, save: string | null, folder: string) => {
+  const card = memcard.listCards().find((c) => c.id === id);
+  if (!card) return { ok: false, message: "no such card" };
+  if (!save) return memcardSync.exportCard(card, folder);
+  if (card.kind === "ps1") return memcardSync.exportSave(card.filePath, save, folder);
+  // PS2: the save as a .psu, which every PS2 save tool and uLaunchELF read.
+  try {
+    const b = apollo.exportSaveBundle({ cardId: id, save });
+    const file = path.join(folder, b.name);
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(file, b.data);
+    return { ok: true, message: `${b.name} written`, file };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+});
+ipcMain.handle("axm:memcardInspect", (_e, file: string) => memcardImport.inspect(file));
+ipcMain.handle("axm:memcardScanDrive", (_e, root: string) => memcardImport.scanDrive(root));
+ipcMain.handle("axm:memcardImportPs1", (_e, id: string, source: string, only?: string[]) => {
+  const card = memcard.listCards().find((c) => c.id === id);
+  return card ? memcardImport.importPs1(card.filePath, source, only) : { ok: false, message: "no such card" };
+});
+ipcMain.handle("axm:memcardImportPs2", (_e, id: string, source: string) => {
+  const card = memcard.listCards().find((c) => c.id === id);
+  if (!card || card.kind !== "ps2") return { ok: false, message: "pick a PS2 card" };
+  try {
+    const buf = fs.readFileSync(source);
+    const { readPsu, readPsvPs2, Ps2Card } = ps2cardModule;
+    const bundle = readPsvPs2(buf) ?? readPsu(buf);
+    if (!bundle) return { ok: false, message: "not a .psu or PS2 .psv save" };
+    const ps2 = Ps2Card.open(card.filePath);
+    if (ps2.listSaves().some((s) => s.name === bundle.name)) return { ok: false, message: `${bundle.name} is already on the card` };
+    ps2.addSave(bundle.name, bundle.files, bundle.attr);
+    ps2.save(card.filePath);
+    return { ok: true, message: `${bundle.name} added` };
+  } catch (err) {
+    return { ok: false, message: (err as Error).message };
+  }
+});
+ipcMain.handle("axm:apolloStatus", () => apolloDb.apolloStatus());
+ipcMain.handle("axm:apolloUpdatePatches", () => apolloDb.updatePatches((note) => mainWindow?.webContents.send("axm:apolloProgress", { note })));
+ipcMain.handle("axm:apolloUpdateSaves", () => apolloDb.updateSaves((note) => mainWindow?.webContents.send("axm:apolloProgress", { note })));
+ipcMain.handle("axm:apolloClearCache", () => apolloDb.clearCache());
+ipcMain.handle("axm:apolloSetLocation", (_e, location: string) => apolloDb.setLocation(location));
+ipcMain.handle("axm:apolloFind", (_e, ref: apollo.SaveRef) => {
+  try {
+    return apollo.findPatches(ref);
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+});
+ipcMain.handle("axm:apolloPreview", (_e, ref: apollo.SaveRef, selections: apollo.Selection[]) => apollo.preview(ref, selections));
+ipcMain.handle("axm:apolloApply", (_e, ref: apollo.SaveRef, selections: apollo.Selection[], note?: string) => apollo.apply(ref, selections, note));
+ipcMain.handle("axm:apolloBackups", (_e, ref: apollo.SaveRef) => apollo.listBackups(ref));
+ipcMain.handle("axm:apolloRestore", (_e, ref: apollo.SaveRef, backupId?: string) => apollo.restoreBackup(ref, backupId));
+ipcMain.handle("axm:apolloCommunity", (_e, ref: apollo.SaveRef | { platform: apolloDb.ApolloPlatform; titleId: string }) => apollo.communitySavesFor(ref));
+ipcMain.handle("axm:apolloImportCommunity", (_e, cardId: string, platform: apolloDb.ApolloPlatform, titleId: string, zip: string) => apollo.importCommunitySave(cardId, platform, titleId, zip));
+ipcMain.handle("axm:apolloExportBundle", (_e, ref: apollo.SaveRef) => {
+  const b = apollo.exportSaveBundle(ref);
+  return { name: b.name, kind: b.kind, base64: b.data.toString("base64") };
+});
 ipcMain.handle("axm:findSubtitles", (_e, q: SubtitleQuery) => (loadSettings().subtitles?.enabled ? findSubtitles(q) : Promise.resolve(null)));
 ipcMain.handle("axm:findLyrics", (_e, artist: string, title: string, album: string, duration: number) =>
   loadSettings().lyricsEnabled ? findLyrics(artist ?? "", title ?? "", album ?? "", duration ?? 0) : Promise.resolve(null)
@@ -932,6 +1028,12 @@ ipcMain.handle("axm:companionForget", (_e, deviceId: string) => companionRegistr
 // What is playing, for the phone's media screen. The renderer is the authority.
 let lastMediaState: { playing: boolean; title?: string; kind?: string; artworkUrl?: string } | null = null;
 ipcMain.on("axm:companionSettings", (_e, items: CompanionSetting[]) => companion.setSettingsState(items));
+// A copy of a save to every phone (Send to phone), and the fresh list after the menu changed a card.
+ipcMain.handle("axm:companionSendSave", (_e, cardId: string, save: string) => {
+  const f = companionSaves.copyOf(cardId, save);
+  if (f && companion.isRunning()) companion.broadcast("saves.file", f);
+});
+ipcMain.on("axm:memcardsChanged", () => void companion.publishSaves());
 ipcMain.on("axm:companionKeyboard", (_e, prompt: { title: string; label: string; value: string; secret: boolean } | null) => {
   companion.setKeyboardPrompt(prompt);
 });

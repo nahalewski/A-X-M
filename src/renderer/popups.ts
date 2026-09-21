@@ -30,6 +30,8 @@ export interface PopupOption {
   /** Marked as the current value. */
   selected?: boolean;
   run?: () => void | Promise<void>;
+  /** Run without closing: a toggle that flips `selected` and stays in the list. */
+  stay?: boolean;
 }
 
 export class OptionsPopup {
@@ -87,6 +89,10 @@ export class OptionsPopup {
       if (chosen?.children?.length) {
         this.stack.push({ options: chosen.children, index: Math.max(0, chosen.children.findIndex((o) => o.selected)), title: chosen.label });
         this.level().options[this.level().index]?.preview?.();
+      } else if (chosen?.stay) {
+        void chosen.run?.();
+        this.render();
+        return true;
       } else {
         this.close(false);
         if (chosen?.run) void chosen.run();

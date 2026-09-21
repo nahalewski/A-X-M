@@ -18,6 +18,10 @@ import {
   parseFrame,
   CompanionSetting,
   MusicListingMessage,
+  SaveListing,
+  SavesFileMessage,
+  SavesResultMessage,
+  SavesPatchesMessage,
 } from "./protocol";
 
 /**
@@ -64,6 +68,13 @@ export interface CompanionHandlers {
   /** The phone wants a folder of the music library; the answer goes back to it. */
   onMusicBrowse?(key: string | undefined, device: TrustedDevice): Promise<MusicListingMessage["payload"] | null>;
   onMusicPlay?(key: string, device: TrustedDevice): void;
+  /** Memory card saves: the phone asks for the list, a copy, a push back, the cheats, an apply or a restore. */
+  onSavesList?(device: TrustedDevice): Promise<SaveListing | null>;
+  onSavesRequest?(cardId: string, save: string, device: TrustedDevice): Promise<SavesFileMessage["payload"] | null>;
+  onSavesPush?(cardId: string, save: string, base64: string, device: TrustedDevice): Promise<SavesResultMessage["payload"]>;
+  onSavesCheats?(cardId: string, save: string, device: TrustedDevice): Promise<SavesPatchesMessage["payload"]>;
+  onSavesApply?(cardId: string, save: string, selections: { key: string; options: Record<string, string> }[], preview: boolean, device: TrustedDevice): Promise<SavesResultMessage["payload"]>;
+  onSavesRestore?(cardId: string, save: string, device: TrustedDevice): Promise<SavesResultMessage["payload"]>;
   /** Connected, disconnected, or paired - for the menu's device list and notices. */
   onSessionsChanged?(sessions: CompanionSessionInfo[]): void;
   /** A code the user must be shown on the A-X-M screen. Null clears it. */
@@ -243,10 +254,21 @@ export class CompanionServer {
     else this.broadcast("keyboard.hide", { at: Date.now() });
   }
 
-  /** What a phone needs as soon as it is trusted: the settings list and any open prompt. */
+  /** What a phone needs as soon as it is trusted: the settings list, any open prompt, the saves. */
   private sendState(session: Session): void {
-    this.sendState(session);
+    if (this.settingsItems.length) this.send(session, "settings.state", { items: this.settingsItems });
     if (this.keyboardPrompt) this.send(session, "keyboard.show", this.keyboardPrompt);
+    void this.sendSavesList(session);
+  }
+
+  private async sendSavesList(session: Session): Promise<void> {
+    const list = await this.handlers.onSavesList?.(session.trusted!).catch(() => null);
+    if (list) this.send(session, "saves.list", list);
+  }
+
+  /** The cards changed on the host (an edit, an import): every phone gets the new list. */
+  async publishSaves(): Promise<void> {
+    for (const session of this.sessions) if (session.trusted) await this.sendSavesList(session);
   }
 
   /** The menu settings phones may change; sent now and to every phone that connects later. */
@@ -355,6 +377,37 @@ export class CompanionServer {
           this.handlers.onMusicPlay?.(message.payload.key, session.trusted!);
         }
         return;
+      case "saves.request": {
+        const p = message.payload;
+        if (typeof p.cardId !== "string" || typeof p.save !== "string") return;
+        void this.handlers.onSavesRequest?.(p.cardId, p.save, session.trusted!).then((f) => f && this.send(session, "saves.file", f));
+        return;
+      }
+      case "saves.push": {
+        const p = message.payload;
+        if (typeof p.cardId !== "string" || typeof p.save !== "string" || typeof p.base64 !== "string" || p.base64.length > 12_000_000) return;
+        void this.handlers.onSavesPush?.(p.cardId, p.save, p.base64, session.trusted!).then((r) => { this.send(session, "saves.result", r); void this.sendSavesList(session); });
+        return;
+      }
+      case "saves.cheats": {
+        const p = message.payload;
+        if (typeof p.cardId !== "string" || typeof p.save !== "string") return;
+        void this.handlers.onSavesCheats?.(p.cardId, p.save, session.trusted!).then((r) => this.send(session, "saves.patches", r));
+        return;
+      }
+      case "saves.apply": {
+        const p = message.payload;
+        if (typeof p.cardId !== "string" || typeof p.save !== "string" || !Array.isArray(p.selections)) return;
+        const sel = p.selections.filter((s) => s && typeof s.key === "string").map((s) => ({ key: s.key, options: typeof s.options === "object" && s.options ? s.options : {} }));
+        void this.handlers.onSavesApply?.(p.cardId, p.save, sel, !!p.preview, session.trusted!).then((r) => { this.send(session, "saves.result", r); if (!p.preview) void this.sendSavesList(session); });
+        return;
+      }
+      case "saves.restore": {
+        const p = message.payload;
+        if (typeof p.cardId !== "string" || typeof p.save !== "string") return;
+        void this.handlers.onSavesRestore?.(p.cardId, p.save, session.trusted!).then((r) => { this.send(session, "saves.result", r); void this.sendSavesList(session); });
+        return;
+      }
       default:
         // Unknown but well-formed: ignored, so a newer phone talking about a
         // feature this build lacks degrades instead of being disconnected.
@@ -441,7 +494,7 @@ export class CompanionServer {
     session.pairCode = null;
 
     this.send(session, "pair.result", { ok: true, token });
-    if (this.settingsItems.length) this.send(session, "settings.state", { items: this.settingsItems });
+    this.sendState(session);
     this.handlers.onPairingCode?.(null, session.device.name);
     this.handlers.onStatus?.(`${session.device.name} paired`);
     this.publishSessions();

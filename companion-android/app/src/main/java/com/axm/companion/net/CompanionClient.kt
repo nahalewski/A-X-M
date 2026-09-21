@@ -3,6 +3,12 @@ package com.axm.companion.net
 import com.axm.companion.protocol.Capabilities
 import com.axm.companion.protocol.CompanionMode
 import com.axm.companion.protocol.CompanionSetting
+import com.axm.companion.protocol.SaveListing
+import com.axm.companion.protocol.SaveFile
+import com.axm.companion.protocol.SavePatches
+import com.axm.companion.protocol.SaveResult
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import com.axm.companion.protocol.DiscoveredHost
 import com.axm.companion.protocol.KeyboardPrompt
 import com.axm.companion.protocol.MusicListing
@@ -98,6 +104,16 @@ class CompanionClient(
     /** A text prompt open on the A-X-M screen, or null. */
     private val _keyboard = MutableStateFlow<KeyboardPrompt?>(null)
     val keyboard: StateFlow<KeyboardPrompt?> = _keyboard.asStateFlow()
+
+    /** The memory card saves the host manages, and the traffic about them. */
+    private val _saves = MutableStateFlow<SaveListing?>(null)
+    val saves: StateFlow<SaveListing?> = _saves.asStateFlow()
+    private val _saveFiles = MutableSharedFlow<SaveFile>(extraBufferCapacity = 16)
+    val saveFiles: SharedFlow<SaveFile> = _saveFiles
+    private val _savePatches = MutableStateFlow<SavePatches?>(null)
+    val savePatches: StateFlow<SavePatches?> = _savePatches.asStateFlow()
+    private val _saveResult = MutableStateFlow<SaveResult?>(null)
+    val saveResult: StateFlow<SaveResult?> = _saveResult.asStateFlow()
 
     /** The last music folder the host listed for us. */
     private val _musicListing = MutableStateFlow<MusicListing?>(null)
@@ -218,6 +234,10 @@ class CompanionClient(
             Protocol.KEYBOARD_SHOW -> _keyboard.value = KeyboardPrompt.from(p)
             Protocol.KEYBOARD_HIDE -> _keyboard.value = null
             Protocol.MUSIC_LISTING -> _musicListing.value = MusicListing.from(p)
+            Protocol.SAVES_LIST -> _saves.value = SaveListing.from(p)
+            Protocol.SAVES_FILE -> _saveFiles.tryEmit(SaveFile.from(p))
+            Protocol.SAVES_PATCHES -> _savePatches.value = SavePatches.from(p)
+            Protocol.SAVES_RESULT -> _saveResult.value = SaveResult.from(p)
             else -> Unit   // A newer host naming a feature we lack is ignorable.
         }
     }
@@ -270,6 +290,22 @@ class CompanionClient(
     }
 
     fun playMusic(key: String) = send(Protocol.MUSIC_PLAY, JSONObject().put("key", key))
+
+    fun requestSave(cardId: String, save: String) = send(Protocol.SAVES_REQUEST, JSONObject().put("cardId", cardId).put("save", save))
+    fun pushSave(cardId: String, save: String, base64: String) = send(Protocol.SAVES_PUSH, JSONObject().put("cardId", cardId).put("save", save).put("base64", base64))
+    fun requestCheats(cardId: String, save: String) { _savePatches.value = null; send(Protocol.SAVES_CHEATS, JSONObject().put("cardId", cardId).put("save", save)) }
+    fun applyCheats(cardId: String, save: String, selections: List<Pair<String, Map<String, String>>>, preview: Boolean) {
+        val arr = org.json.JSONArray()
+        for ((key, opts) in selections) {
+            val o = JSONObject().put("key", key)
+            val m = JSONObject(); for ((k, v) in opts) m.put(k, v)
+            arr.put(o.put("options", m))
+        }
+        _saveResult.value = null
+        send(Protocol.SAVES_APPLY, JSONObject().put("cardId", cardId).put("save", save).put("selections", arr).put("preview", preview))
+    }
+    fun restoreSave(cardId: String, save: String) { _saveResult.value = null; send(Protocol.SAVES_RESTORE, JSONObject().put("cardId", cardId).put("save", save)) }
+    fun clearSaveResult() { _saveResult.value = null }
 
     fun requestMode(mode: CompanionMode) =
         send(Protocol.COMPANION_MODE, JSONObject().put("mode", mode.wire))

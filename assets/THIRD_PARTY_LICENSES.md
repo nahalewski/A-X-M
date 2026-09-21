@@ -76,6 +76,28 @@ SOFTWARE.
   2015 Borewit. Reads a track's tags and embedded cover for the Song Information card.
   Full text: `node_modules/music-metadata/LICENSE.txt`.
 
+## Apollo Save Tool (GPL-3.0)
+
+Damian "bucanero" Parrino's Apollo Save Tool is the source of the Memory Card
+Utility's cheats and community saves:
+
+- [apollo-lib](https://github.com/bucanero/apollo-lib) - the `.savepatch` format and the
+  patch engine. `src/main/apollo/savepatch.ts` and `src/main/apollo/engine.ts` are a
+  TypeScript port of its loader and `patches.c` (Save Wizard / Game Genie codes and BSD
+  scripts), following the same rules line for line where they are ported and refusing,
+  by name, what isn't (Python codes, the game-specific checksums and ciphers, zlib blocks).
+- [apollo-patches](https://github.com/bucanero/apollo-patches) - the save-edit / cheat
+  database. Downloaded on demand into the user's data folder (`apollo/patches`), never
+  bundled; every patch keeps its author line, shown under "About these patches".
+- [apollo-saves](https://github.com/bucanero/apollo-saves) - the community save files.
+  Listed from the repository tree; a save comes down only when asked for.
+
+All three are GNU General Public License v3.0. The Apollo-derived parts of A-X-M
+(`src/main/apollo/`) carry the same licence; see
+<https://www.gnu.org/licenses/gpl-3.0.html>. Bruteforce Save Data (aldostools) and the
+Save Wizard code format are the lineage of the codes themselves. Ross Ridge's ps2mc /
+mymc notes describe the PS2 card filesystem `src/main/ps2card.ts` reads and writes.
+
 ## Online services
 
 - [MusicBrainz](https://musicbrainz.org) and the [Cover Art Archive](https://coverartarchive.org)

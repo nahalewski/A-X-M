@@ -813,6 +813,7 @@ body {
 }
 
 #grid-picker.hidden,
+#choice-screen.hidden,
 #text-entry.hidden {
   opacity: 0;
   pointer-events: none;
@@ -1093,6 +1094,7 @@ body.pad-switch .btn-y, body.pad-kishi .btn-y { -webkit-mask-position: 0% 0; mas
 .item-icon.hdd-photo { filter: hue-rotate(80deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 .item-icon.hdd-video { filter: hue-rotate(200deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 .item-icon.hdd-game { filter: hue-rotate(320deg) drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
+.item-icon.memcard { object-fit: contain; padding: 4%; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 .item-icon.cartridge { object-fit: contain; padding: 6%; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5)); }
 /* Sheet order: triangle, circle, cross, square. Xbox A=cross, B=circle, X=square, Y=triangle. */
 body.pad-ps .btn-a { -webkit-mask-position: 66.667% 0; mask-position: 66.667% 0; }
@@ -1678,3 +1680,25 @@ body:has(#options-popup:not(.hidden)) .toybox-card, body:has(#info-card:not(.hid
 .store-tile-cap small { font-size: 1.25vh; color: rgba(255, 255, 255, 0.7); }
 .store-empty { position: absolute; inset: 30% 10% auto; text-align: center; font-size: 2vh; color: rgba(255, 255, 255, 0.7); }
 .store-empty.hidden { display: none; }
+
+/* The PS3-style centred choice screen. */
+#choice-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 22;
+  background: rgba(3, 5, 12, 0.7);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 9vh 6vw 4vh;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+}
+.choice-title { font-size: 22px; font-weight: 300; letter-spacing: 0.4px; }
+.choice-list { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; }
+.choice-row { font-size: 24px; font-weight: 300; color: rgba(255, 255, 255, 0.62); transition: color 0.15s ease, transform 0.15s ease; }
+.choice-row.selected { color: #fff; font-weight: 400; transform: scale(1.04); }
+.choice-note { font-size: 16px; font-weight: 300; color: rgba(255, 255, 255, 0.9); min-height: 22px; margin-bottom: 14px; text-align: center; }
+.choice-hints { display: flex; gap: 60px; font-size: 16px; color: rgba(255, 255, 255, 0.9); }
+.choice-hints b { display: inline-block; width: 20px; height: 20px; border-radius: 50%; font-size: 12px; line-height: 20px; text-align: center; color: #111; margin-right: 6px; font-style: normal; }
