@@ -20,7 +20,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow } from "./types";
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -3843,6 +3843,15 @@ async function main(): Promise<void> {
 
   function toyBoxCategory(): Category {
     const count = (platform: string) => toybox?.stats.byPlatform[platform] ?? 0;
+    // Inside a brand: its sub-folders (figures, power discs, vehicles, cards...).
+    let brand: { id: ToyPlatform; title: string; kinds: ToyKindRow[] } | null = null;
+    const openBrand = async (id: ToyPlatform, title: string) => {
+      const kinds = await window.axm.toyboxKinds(id).catch(() => [] as ToyKindRow[]);
+      brand = { id, title, kinds };
+      xmb.resetSelection("toybox");
+      xmb.refresh();
+    };
+    const brandIcon = (id: string) => (toyBoxIcons.has(id) ? TOY_BOXES[id] : "assets/icons/toybox.webp");
 
     /** One row per ecosystem, hidden when the database has nothing for it. */
     const platformRow = (id: string, title: string): MenuItem[] => {
@@ -3852,9 +3861,37 @@ async function main(): Promise<void> {
         {
           id: `toybox-${id}`,
           title,
-          subtitle: `${n} figure${n === 1 ? "" : "s"}`,
-          iconUrl: toyBoxIcons.has(id) ? TOY_BOXES[id] : "assets/icons/toybox.webp",
-          onConfirm: () => openToyShelf({ view: "all", platform: id as ToyPlatform }, title),
+          subtitle: `${n} item${n === 1 ? "" : "s"} · figures, discs, vehicles and more`,
+          iconUrl: brandIcon(id),
+          onConfirm: () => void openBrand(id as ToyPlatform, title),
+        },
+      ];
+    };
+    const brandItems = (): MenuItem[] => {
+      const b = brand!;
+      const total = b.kinds.reduce((n, k) => n + k.count, 0);
+      const ownedAll = b.kinds.reduce((n, k) => n + k.owned, 0);
+      return [
+        {
+          id: `toybox-${b.id}-all`,
+          title: `All ${b.title}`,
+          subtitle: `${total} items${ownedAll ? ` · ${ownedAll} owned` : ""}`,
+          iconUrl: brandIcon(b.id),
+          onConfirm: () => openToyShelf({ view: "all", platform: b.id }, b.title),
+        },
+        ...b.kinds.map((k) => ({
+          id: `toybox-${b.id}-${k.kind}`,
+          title: k.label,
+          subtitle: `${k.count} item${k.count === 1 ? "" : "s"}${k.owned ? ` · ${k.owned} owned` : ""}`,
+          iconUrl: k.kind === "figures" || k.kind === "characters" ? brandIcon(b.id) : "assets/icons/folder.png",
+          onConfirm: () => openToyShelf({ view: "all", platform: b.id, kind: k.kind }, `${b.title} › ${k.label}`),
+        })),
+        {
+          id: `toybox-${b.id}-owned`,
+          title: "My Shelf",
+          subtitle: ownedAll ? `${ownedAll} owned` : "Nothing marked owned yet - scan a toy or press X on it in the shelf",
+          iconUrl: "assets/icons/toybox.webp",
+          onConfirm: () => openToyShelf({ view: "owned", platform: b.id }, `My ${b.title}`),
         },
       ];
     };
@@ -3863,12 +3900,20 @@ async function main(): Promise<void> {
       id: "toybox",
       label: "Toybox",
       iconUrl: "assets/icons/toybox.webp",
+      onBack: () => {
+        if (!brand) return false;
+        brand = null;
+        xmb.refresh();
+        return true;
+      },
       footerHint: () => {
+        if (brand) return `Toybox › ${brand.title}`;
         const stats = toybox?.stats;
         if (!stats || stats.total === 0) return undefined;
         return `${stats.total} figures · database ${stats.databaseVersion ?? "?"}`;
       },
       getItems: () => {
+        if (brand) return brandItems();
         // No collection database yet: say so plainly rather than showing a shelf
         // with nothing on it and nine rows that all read zero.
         if (!toybox?.hasDatabase) {

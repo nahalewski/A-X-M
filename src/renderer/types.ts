@@ -462,6 +462,15 @@ export interface ToyShelfFilter {
   view: "all" | "owned" | "favorites" | "recent";
   platform?: ToyPlatform | "";
   query?: string;
+  /** A brand's sub-folder: figures, power-discs, vehicles, cards... */
+  kind?: string;
+}
+
+export interface ToyKindRow {
+  kind: string;
+  label: string;
+  count: number;
+  owned: number;
 }
 
 export interface ToyboxSettings {
@@ -646,6 +655,7 @@ export interface AxmApi {
   toyboxByPlatform(platform: ToyPlatform): Promise<ToyFigure[]>;
   toyboxSearch(query: string): Promise<ToyFigure[]>;
   toyboxShelf(filter: ToyShelfFilter): Promise<ToyShelfFigure[]>;
+  toyboxKinds(platform: ToyPlatform): Promise<ToyKindRow[]>;
   toyboxSimulate(figureId: string | null): Promise<ToyboxDetectionEvent | null>;
   toyboxSimulateRemoval(): Promise<void>;
   toyboxNfcStatus(): Promise<ToyboxNfcStatus>;

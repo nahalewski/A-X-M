@@ -35,7 +35,7 @@ import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevice
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
-import { toybox } from "./toybox/toyboxService";
+import { toybox, kindOf } from "./toybox/toyboxService";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
@@ -704,10 +704,23 @@ export interface ToyShelfFigure extends ToyFigure {
   favorite: boolean;
   wanted: boolean;
 }
-ipcMain.handle("axm:toyboxShelf", (_e, filter: { view: "all" | "owned" | "favorites" | "recent"; platform?: ToyFigure["platform"] | ""; query?: string }): ToyShelfFigure[] => {
+ipcMain.handle("axm:toyboxKinds", (_e, platform: ToyFigure["platform"]): { kind: string; label: string; count: number; owned: number }[] => {
+  const out = new Map<string, { kind: string; label: string; count: number; owned: number }>();
+  for (const f of toybox.getFiguresByPlatform(platform)) {
+    const k = kindOf(f);
+    const row = out.get(k.kind) ?? { ...k, count: 0, owned: 0 };
+    row.count++;
+    if (toybox.getEntry(f.id)?.owned) row.owned++;
+    out.set(k.kind, row);
+  }
+  const order = ["figures", "characters", "cards", "yarn", "bands", "legendaries", "minis", "vehicles", "traps-items", "expansions", "power-discs", "power-discs-hex", "play-sets", "trophies", "debug"];
+  return [...out.values()].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+});
+ipcMain.handle("axm:toyboxShelf", (_e, filter: { view: "all" | "owned" | "favorites" | "recent"; platform?: ToyFigure["platform"] | ""; query?: string; kind?: string }): ToyShelfFigure[] => {
   let list: ToyFigure[] =
     filter.view === "recent" ? toybox.getRecentlyScanned() : filter.view === "owned" ? toybox.getCollection("owned") : filter.view === "favorites" ? toybox.getCollection("favorites") : toybox.getCollection("all");
   if (filter.platform) list = list.filter((f) => f.platform === filter.platform);
+  if (filter.kind) list = list.filter((f) => kindOf(f).kind === filter.kind);
   if (filter.query?.trim()) {
     const hits = new Set(toybox.searchFigures(filter.query, 5000).map((f) => f.id));
     list = list.filter((f) => hits.has(f.id));

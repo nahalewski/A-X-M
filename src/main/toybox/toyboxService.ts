@@ -357,4 +357,47 @@ export class ToyboxService {
   }
 }
 
+/**
+ * The sub-folder a record files under within its brand: figures, power discs,
+ * play sets, traps, vehicles, cards... Derived from what each importer kept, so
+ * the shelf can show "Disney Infinity > Power Discs" without a second schema.
+ */
+export interface ToyKind {
+  kind: string;
+  label: string;
+}
+
+export function kindOf(f: ToyFigure): ToyKind {
+  const a = f.attributes ?? {};
+  switch (f.platform) {
+    case "amiibo": {
+      const t = (a.type ?? f.variant ?? "").toLowerCase();
+      if (t.includes("card")) return { kind: "cards", label: "Cards" };
+      if (t.includes("yarn")) return { kind: "yarn", label: "Yarn" };
+      if (t.includes("band")) return { kind: "bands", label: "Power-Up Bands" };
+      return { kind: "figures", label: "Figures" };
+    }
+    case "disney-infinity": {
+      if (a.category === "disc") return /hexagonal/i.test(f.variant ?? "") ? { kind: "power-discs-hex", label: "Hexagonal Power Discs" } : { kind: "power-discs", label: "Round Power Discs" };
+      if (a.category === "playset") return { kind: "play-sets", label: "Play Sets & Toy Box Games" };
+      return { kind: "figures", label: "Figures" };
+    }
+    case "lego-dimensions":
+      return a.kind === "vehicle" ? { kind: "vehicles", label: "Vehicles & Gadgets" } : { kind: "characters", label: "Characters" };
+    case "skylanders": {
+      const s = (f.series ?? "").toLowerCase();
+      if (/debug|test/.test(s)) return { kind: "debug", label: "Debug & Test" };
+      if (/trophies/.test(s)) return { kind: "trophies", label: "Trophies" };
+      if (/items\/traps/.test(s)) return { kind: "traps-items", label: "Traps & Magic Items" };
+      if (/vehicles/.test(s)) return { kind: "vehicles", label: "Vehicles" };
+      if (/expansions|battle pieces/.test(s)) return { kind: "expansions", label: "Expansions & Battle Pieces" };
+      if (/minis|sidekicks/.test(s)) return { kind: "minis", label: "Minis & Sidekicks" };
+      if (/legendaries/.test(s)) return { kind: "legendaries", label: "Legendaries" };
+      return { kind: "figures", label: "Figures" };
+    }
+    default:
+      return { kind: "figures", label: "Figures" };
+  }
+}
+
 export const toybox = new ToyboxService();

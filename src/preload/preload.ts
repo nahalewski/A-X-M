@@ -20,6 +20,7 @@ const api = {
   toyboxByPlatform: (platform: string) => ipcRenderer.invoke("axm:toyboxByPlatform", platform),
   toyboxSearch: (query: string) => ipcRenderer.invoke("axm:toyboxSearch", query),
   toyboxShelf: (filter: unknown) => ipcRenderer.invoke("axm:toyboxShelf", filter),
+  toyboxKinds: (platform: string) => ipcRenderer.invoke("axm:toyboxKinds", platform),
   toyboxSimulate: (figureId: string | null) => ipcRenderer.invoke("axm:toyboxSimulate", figureId),
   toyboxSimulateRemoval: () => ipcRenderer.invoke("axm:toyboxSimulateRemoval"),
   toyboxNfcStatus: () => ipcRenderer.invoke("axm:toyboxNfcStatus"),

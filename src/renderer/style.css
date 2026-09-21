@@ -1586,9 +1586,9 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
 .toybox-stage { display: flex; align-items: flex-end; justify-content: center; min-height: 0; padding: 2vh 0; }
 .toybox-shelf { position: relative; height: 100%; max-height: 74vh; max-width: 70vw; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)); transition: aspect-ratio 0.3s ease; }
 .toybox-shelf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
-.toybox-cell { position: absolute; display: flex; align-items: flex-end; justify-content: center; padding: 4% 6% 0; box-sizing: border-box; border-radius: 4px; transition: box-shadow 0.2s ease, background 0.2s ease; }
+.toybox-cell { position: absolute; display: flex; align-items: flex-end; justify-content: center; padding: 2% 1.2% 0; /* percentages of the shelf width: the cubbies are absolutely placed */ box-sizing: border-box; border-radius: 4px; transition: box-shadow 0.2s ease, background 0.2s ease; }
 .toybox-cell.selected { background: radial-gradient(ellipse at 50% 90%, rgba(180, 220, 255, 0.35), rgba(120, 180, 255, 0) 70%); box-shadow: inset 0 0 0 2px rgba(150, 210, 255, 0.85), 0 0 28px rgba(120, 190, 255, 0.55); }
-.toybox-figure { max-width: 100%; max-height: 100%; object-fit: contain; object-position: bottom; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); transition: transform 0.2s ease; transform-origin: 50% 100%; }
+.toybox-figure { height: 100%; width: auto; max-width: 100%; max-height: 100%; object-fit: contain; object-position: bottom; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); transition: transform 0.2s ease; transform-origin: 50% 100%; }
 .toybox-cell.selected .toybox-figure { transform: scale(1.12) translateY(-2%); animation: toybox-bob 1.8s ease-in-out infinite; }
 @keyframes toybox-bob { 0%, 100% { transform: scale(1.12) translateY(-2%); } 50% { transform: scale(1.12) translateY(-6%); } }
 .toybox-cell:not(.owned) .toybox-figure { opacity: 0.55; filter: grayscale(0.6) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); }
