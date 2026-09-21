@@ -1,4 +1,8 @@
 import * as fs from "node:fs";
+import { rootDrive } from "../rootDrive";
+
+/** One backslash, built rather than typed so editing tools cannot mangle it. */
+const BACKSLASH = String.fromCharCode(92);
 import * as path from "node:path";
 import { GameEntry, RetroPlatform } from "../types";
 import { isWindows } from "../platform";
@@ -25,15 +29,45 @@ export const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5"
 /** The folder name each platform uses under a library root (G:\GAMES\<x>, N:\GAME\ROMS\<x>). */
 export const RETRO_FOLDER_NAMES: Record<RetroPlatform, string> = { ps5: "PS5", ps4: "PS4", ps3: "PS3", ps2: "PS2", ps1: "PS1", psp: "PSP", switch: "Switch" };
 
-export const RETRO_DEFAULT_FOLDERS: Record<RetroPlatform, string[]> = {
-  ps5: ["G:\\GAMES\\PS5"],
-  ps4: ["G:\\GAMES\\PS4"],
-  ps3: ["G:\\GAMES\\PS3"],
-  ps2: ["G:\\GAMES\\PS2"],
-  ps1: ["G:\\GAMES\\PS1"],
-  psp: ["G:\\GAMES\\PSP"],
-  switch: ["K:\\Switch Games", "G:\\GAMES\\SWITCH"],
-};
+/**
+ * Where each platform's games live when nothing has been configured.
+ *
+ * ROOT is the answer whenever one is set: its GAME folder is laid out with a
+ * folder per console, which is the arrangement the menu creates and expects.
+ * The older G: paths stay as a fallback for a machine with no ROOT drive, so an
+ * existing library is not suddenly invisible.
+ *
+ * This is a function rather than a constant because ROOT can be changed in
+ * settings while the menu is running, and a constant would have captured
+ * whatever it was at import time.
+ */
+export function retroDefaultFolders(): Record<RetroPlatform, string[]> {
+  const root = rootDrive();
+  const G = "G:" + BACKSLASH + "GAMES" + BACKSLASH;
+
+  // With a ROOT drive set it is the only place retro games are read from, so a
+  // stray copy on another disk cannot show up twice or shadow the real library.
+  if (root) {
+    const on = (name: string): string[] => [`${root}${BACKSLASH}GAME${BACKSLASH}${name}`];
+    return { ps5: on("PS5"), ps4: on("PS4"), ps3: on("PS3"), ps2: on("PS2"), ps1: on("PS1"), psp: on("PSP"), switch: on("SWITCH") };
+  }
+
+  // No ROOT: fall back to the older fixed paths so an existing library still reads.
+  return {
+    ps5: [G + "PS5"],
+    ps4: [G + "PS4"],
+    ps3: [G + "PS3"],
+    ps2: [G + "PS2"],
+    ps1: [G + "PS1"],
+    psp: [G + "PSP"],
+    switch: ["K:" + BACKSLASH + "Switch Games", G + "SWITCH"],
+  };
+}
+
+/** Kept for callers that want the plain object; resolves ROOT at call time. */
+export const RETRO_DEFAULT_FOLDERS: Record<RetroPlatform, string[]> = new Proxy({} as Record<RetroPlatform, string[]>, {
+  get: (_t, key: string) => retroDefaultFolders()[key as RetroPlatform],
+});
 
 export interface EmulatorInfo {
   platform: RetroPlatform;
