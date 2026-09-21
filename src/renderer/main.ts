@@ -18,6 +18,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
+import { ToyboxSummary } from "./types";
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -3570,24 +3571,104 @@ async function main(): Promise<void> {
 
   // Matches the real XMB running order: Users, Settings, Photo, Music, Video, Game, Network.
   /**
-   * Toy Box: the column for the menu's own little extras - things you look at or
-   * play with rather than files you manage. It has no contents of its own yet, so
-   * it shows the same kind of empty state every other column does instead of
-   * pretending to hold something.
+   * Toybox: the toys-to-life collection. The column is the quick-access layer only -
+   * a few thousand figures never go in the XMB itself, so this holds counts and
+   * shortcuts, and the shelf lives in the full-screen app.
+   *
+   * Everything here comes from the Toybox service in the main process; the renderer
+   * never reads the database files, so a scan, Ghost and this column all agree.
    */
+  let toybox: ToyboxSummary | null = null;
+  const refreshToybox = async () => {
+    toybox = await window.axm.toyboxSummary().catch(() => null);
+    xmb.refresh();
+  };
+
   function toyBoxCategory(): Category {
-    return {
-      id: "toybox",
-      label: "Toy Box",
-      iconUrl: "assets/icons/toybox.webp",
-      getItems: () => [
+    const count = (platform: string) => toybox?.stats.byPlatform[platform] ?? 0;
+
+    /** One row per ecosystem, hidden when the database has nothing for it. */
+    const platformRow = (id: string, title: string): MenuItem[] => {
+      const n = count(id);
+      if (n === 0) return [];
+      return [
         {
-          id: "toybox-empty",
-          title: "Nothing in the Toy Box yet",
-          subtitle: "This is where the menu's extras will live",
+          id: `toybox-${id}`,
+          title,
+          subtitle: `${n} figure${n === 1 ? "" : "s"}`,
           iconUrl: "assets/icons/toybox.webp",
         },
-      ],
+      ];
+    };
+
+    return {
+      id: "toybox",
+      label: "Toybox",
+      iconUrl: "assets/icons/toybox.webp",
+      footerHint: () => {
+        const stats = toybox?.stats;
+        if (!stats || stats.total === 0) return undefined;
+        return `${stats.total} figures · database ${stats.databaseVersion ?? "?"}`;
+      },
+      getItems: () => {
+        // No collection database yet: say so plainly rather than showing a shelf
+        // with nothing on it and nine rows that all read zero.
+        if (!toybox?.hasDatabase) {
+          return [
+            {
+              id: "toybox-no-db",
+              title: "Collection database not installed",
+              subtitle: "Toybox needs its figure database before it can identify anything",
+              iconUrl: "assets/icons/toybox.webp",
+            },
+            {
+              id: "toybox-about",
+              title: "About Toybox",
+              subtitle: "Credits, data sources and licences",
+              iconUrl: "assets/icons/about.webp",
+            },
+          ];
+        }
+
+        const recent = toybox.recent.length;
+        const favorites = toybox.favorites.length;
+        return [
+          {
+            id: "toybox-open",
+            title: "Open Toybox",
+            subtitle: "The collection shelf",
+            iconUrl: "assets/icons/toybox.webp",
+          },
+          {
+            id: "toybox-recent",
+            title: "Recently Scanned",
+            subtitle: recent === 0 ? "Nothing scanned yet" : `${recent} figure${recent === 1 ? "" : "s"}`,
+            iconUrl: "assets/icons/toybox.webp",
+          },
+          {
+            id: "toybox-favorites",
+            title: "Favorites",
+            subtitle: favorites === 0 ? "None yet" : `${favorites} figure${favorites === 1 ? "" : "s"}`,
+            iconUrl: "assets/icons/toybox.webp",
+          },
+          ...platformRow("amiibo", "Amiibo"),
+          ...platformRow("skylanders", "Skylanders"),
+          ...platformRow("disney-infinity", "Disney Infinity"),
+          ...platformRow("lego-dimensions", "LEGO Dimensions"),
+          {
+            id: "toybox-backups",
+            title: "Backups",
+            subtitle: "Your own tag backups, kept on this machine",
+            iconUrl: "assets/icons/folder.png",
+          },
+          {
+            id: "toybox-about",
+            title: "About Toybox",
+            subtitle: "Credits, data sources and licences",
+            iconUrl: "assets/icons/about.webp",
+          },
+        ];
+      },
     };
   }
 
@@ -3920,6 +4001,9 @@ async function main(): Promise<void> {
       window.axm.getSteamLibrary(),
       window.axm.getMediaDrives(),
     ]);
+    // The Toybox summary is cheap and local, but it has no business holding up the
+    // first paint - it lands with the rest of the background scans.
+    void refreshToybox();
     games = scannedGames;
     mediaDrives = drives;
     videoListing = videos;

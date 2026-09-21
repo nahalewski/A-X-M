@@ -280,6 +280,9 @@ export interface RunningGame { id: string; name: string; pids: number[] }
 export interface ConnectionStatus { adapter: string; connected: boolean; ssid: string | null; signal: number | null; ip: string | null; gateway: string | null; dns: string[]; mac: string | null; wifiEnabled: boolean }
 export interface ConnectionTest { adapter: string; ip: string | null; gateway: "ok" | "failed" | "none"; internet: "ok" | "failed"; dns: "ok" | "failed"; mbps: number | null }
 
+export interface AssistantStatus { modelReady: boolean; modelUrl: string | null; modelName: string; listening: boolean }
+export interface UpdateInfo { current: string; latest: string | null; newer: boolean; notes: string; url: string | null; assetUrl: string | null; assetName: string | null; checkedAt: string; error: string | null }
+
 export interface PowerPlan { guid: string; name: string; active: boolean }
 export interface PowerSettings { plans: PowerPlan[]; screenOffBattery: number; screenOffPlugged: number; sleepBattery: number; sleepPlugged: number }
 export interface ClockInfo { now: string; timeZone: string; timeZoneOffsetMin: number; autoTime: boolean | null }
@@ -391,9 +394,14 @@ export interface Settings {
   raUsername: string;
   raApiKey: string;
   /** Audio CD import format. */
-  importFormat: "mp3" | "aac" | "opus";
+  importFormat: "mp3" | "aac" | "opus" | "flac";
+  discTarget: string;
+  makemkvKey: string;
+  toolsSetupDone: boolean;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
+  /** Ghost, the voice assistant. */
+  assistant: { enabled: boolean; wakeWord: boolean; voiceReplies: boolean; bubbleSize: "small" | "medium" | "large" };
   playlist: MusicEntry[];
   wallpaper: { url: string; filePath: string; mode: "single" | "shuffle"; folder: string } | null;
   knownDrives: { drive: string; photo: boolean; video: boolean; game: boolean; music: boolean }[];
@@ -414,6 +422,47 @@ export interface ArtUpdate {
   gameId: string;
   iconPath?: string;
   heroPath?: string;
+}
+
+/** Mirrors src/main/toybox/types.ts - the normalized shape every ecosystem becomes. */
+export type ToyPlatform = "amiibo" | "skylanders" | "disney-infinity" | "lego-dimensions" | "generic";
+
+export interface ToyFigure {
+  schemaVersion: number;
+  id: string;
+  platform: ToyPlatform;
+  name: string;
+  franchise?: string;
+  series?: string;
+  manufacturer?: string;
+  variant?: string;
+  attributes?: Record<string, string>;
+  media?: {
+    thumbnail?: string;
+    png?: string;
+    hero?: string;
+    model3d?: string;
+    remoteArtwork?: string;
+    copyrightOwner?: string;
+    redistributable?: boolean;
+  };
+  compatibleGames?: string[];
+}
+
+export interface ToyboxStats {
+  byPlatform: Record<string, number>;
+  total: number;
+  withArtwork: number;
+  missingArtwork: number;
+  databaseVersion: number | null;
+  updatedAt: string | null;
+}
+
+export interface ToyboxSummary {
+  hasDatabase: boolean;
+  stats: ToyboxStats;
+  recent: ToyFigure[];
+  favorites: ToyFigure[];
 }
 
 export interface AxmApi {
@@ -469,8 +518,10 @@ export interface AxmApi {
   hostName(): Promise<string>;
   listDiscs(): Promise<Disc[]>;
   discTools(): Promise<DiscTools>;
-  importAudioCd(disc: Disc, target: string, format: "mp3" | "aac" | "opus"): Promise<string>;
-  backupDisc(disc: Disc, target: string): Promise<string>;
+  importAudioCd(disc: Disc, target: string, format: "mp3" | "aac" | "opus" | "flac"): Promise<string>;
+  backupDisc(disc: Disc, target: string, title?: string): Promise<string>;
+  findDiscBackup(disc: Disc, target: string, title?: string): Promise<string | null>;
+  guessDiscTitle(label: string): Promise<string>;
   remotePlayStatus(): Promise<RemotePlayStatus>;
   installRemotePlay(): Promise<RemotePlayStatus>;
   launchRemotePlay(): Promise<boolean>;
@@ -486,6 +537,24 @@ export interface AxmApi {
   setWifiEnabled(enabled: boolean): Promise<{ ok: boolean; message: string }>;
   connectionTest(): Promise<ConnectionTest>;
   manualUrl(): Promise<string>;
+  assistantStatus(): Promise<AssistantStatus>;
+  ttsStatus(): Promise<TtsStatus>;
+  installTts(): Promise<TtsStatus>;
+  removeTts(): Promise<void>;
+  startTts(): Promise<boolean>;
+  speak(text: string): Promise<string | null>;
+  pickVoiceClip(): Promise<string | null>;
+  resetVoiceClip(): Promise<void>;
+  toolsState(): Promise<ToolState[]>;
+  installTools(): Promise<ToolState[]>;
+  startVoice(micId: string): Promise<boolean>;
+  stopVoice(): Promise<void>;
+  onVoice(callback: (message: { event: string; payload: unknown }) => void): void;
+  checkForUpdate(): Promise<UpdateInfo>;
+  downloadUpdate(assetUrl: string, assetName: string): Promise<string>;
+  openUpdate(file: string): Promise<void>;
+  installAssistantModel(): Promise<AssistantStatus>;
+  removeAssistantModel(): Promise<void>;
   createMediaFolder(parentDir: string, name: string): Promise<string>;
   getSongInfo(filePath: string): Promise<SongInfo | null>;
   getScreenInfo(title: string, year: string, kind: "movie" | "tv" | "auto", tmdbId?: string): Promise<ScreenInfo | null>;
@@ -514,6 +583,10 @@ export interface AxmApi {
   pickMusicFolder(): Promise<Settings>;
   pickBackgroundImage(): Promise<Settings>;
   openBrowser(url: string): Promise<void>;
+  toyboxSummary(): Promise<ToyboxSummary>;
+  toyboxByPlatform(platform: ToyPlatform): Promise<ToyFigure[]>;
+  toyboxSearch(query: string): Promise<ToyFigure[]>;
+  toyboxSetState(figureId: string, patch: Record<string, unknown>): Promise<unknown>;
   onArtUpdated(callback: (update: ArtUpdate) => void): void;
   quit(): Promise<void>;
 }
@@ -522,4 +595,21 @@ declare global {
   interface Window {
     axm: AxmApi;
   }
+}
+
+export interface TtsStatus {
+  python: string | null;
+  engineReady: boolean;
+  engineRunning: boolean;
+  device: string | null;
+  voiceClip: string;
+  installing: boolean;
+  cacheCount: number;
+}
+
+export interface ToolState {
+  id: "ffmpeg" | "handbrake" | "makemkv" | "python" | "voice";
+  name: string;
+  installed: boolean;
+  detail: string;
 }

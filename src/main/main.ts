@@ -17,11 +17,15 @@ import { mediaRoot } from "./mediaBrowser";
 import * as jellyfin from "./jellyfin";
 import { readAnkerStatus, AnkerStatus } from "./ankerMonitor";
 import { OverlayHotkey } from "./overlayHotkey";
-import { listDiscs, findDiscTools, importAudioCd, backupDisc, Disc, ImportFormat } from "./discs";
+import { listDiscs, findDiscTools, importAudioCd, backupDisc, findDiscBackup, guessDiscTitle, Disc, ImportFormat } from "./discs";
 import { remotePlayStatus, installRemotePlay, launchRemotePlay } from "./remotePlay";
 import { steamTrophyGames, steamAchievements, raTrophyGames, raAchievements, raVerify } from "./trophies";
 import { noteLaunched, runningGame, quitRunningGame } from "./runningGame";
 import { connectionStatus, setWifiEnabled, connectionTest } from "./network";
+import { assistantStatus, installAssistantModel, removeAssistantModel, startVoice, stopVoice } from "./assistant";
+import { ttsStatus, installTts, removeTts, startTts, stopTts, speak, setVoiceClip, resetVoiceClip } from "./tts";
+import { toolsState, installTools, applyMakemkvKey } from "./tools";
+import { checkForUpdate, downloadUpdate, openUpdate } from "./updates";
 import { getPowerSettings, setPowerPlan, setPowerTimeout, powerAction, getClock, syncClock, listTimeZones, setTimeZone, fileInfo, hostName } from "./system";
 import { listWifi, connectWifi, disconnectWifi, forgetWifi, listBluetooth, pairBluetooth, unpairBluetooth, WifiNetwork, BluetoothDevice } from "./network";
 import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
@@ -31,6 +35,8 @@ import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevice
 import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
+import { toybox } from "./toybox/toyboxService";
+import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
 // requestAnimationFrame already follows the display's native refresh rate, 120Hz on
 // the Ally included. An earlier build added --disable-frame-rate-limit believing it
@@ -38,6 +44,10 @@ import { spawn } from "node:child_process";
 // had the ribbon redrawing ~4000 times a second and starving everything else. Don't.
 app.commandLine.appendSwitch("enable-gpu-rasterization");
 app.commandLine.appendSwitch("high-dpi-support", "1");
+
+// Let Chromium use the OS's HEVC / H.265 decoder (Windows' HEVC Video Extensions,
+// the Deck's ffmpeg), so 10-bit MKV backups play in the menu.
+app.commandLine.appendSwitch("enable-features", "PlatformHEVCDecoderSupport,PlatformHEVCEncoderSupport");
 
 let mainWindow: BrowserWindow | null = null;
 let cachedGames: GameEntry[] = [];
@@ -86,6 +96,9 @@ function createWindow(): void {
   mainWindow.on("closed", () => {
     console.log("[A-X-M] main window closed");
     mainWindow = null;
+    // The hidden voice window must not keep the app alive once the menu is gone.
+    stopVoice();
+    app.quit();
   });
 }
 
@@ -179,6 +192,8 @@ app.whenReady().then(() => {
   createWindow();
   overlayHotkey = new OverlayHotkey(toggleOverlay);
   overlayHotkey.start(loadSettings().overlayHotkey);
+  // MakeMKV reads its key from its own settings file; keep it in step with ours.
+  if (loadSettings().makemkvKey) applyMakemkvKey(loadSettings().makemkvKey);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -188,6 +203,7 @@ app.whenReady().then(() => {
 app.on("will-quit", () => overlayHotkey?.stop());
 app.on("before-quit", () => console.log("[A-X-M] quitting"));
 
+app.on("before-quit", () => stopTts());
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
@@ -201,6 +217,7 @@ ipcMain.handle("axm:setSettings", (_e, partial: Partial<Settings>): Settings => 
   if (partial.windowed !== undefined) applyWindowMode(partial.windowed);
   if (partial.renderResolution !== undefined) applyResolution();
   if (partial.overlayHotkey !== undefined) overlayHotkey?.setShortcut(partial.overlayHotkey);
+  if (partial.makemkvKey !== undefined) applyMakemkvKey(partial.makemkvKey);
   return updated;
 });
 
@@ -501,7 +518,9 @@ ipcMain.handle("axm:hostName", () => hostName());
 ipcMain.handle("axm:listDiscs", () => listDiscs());
 ipcMain.handle("axm:discTools", () => findDiscTools());
 ipcMain.handle("axm:importAudioCd", (_e, disc: Disc, target: string, format: ImportFormat) => importAudioCd(disc, target, format));
-ipcMain.handle("axm:backupDisc", (_e, disc: Disc, target: string) => backupDisc(disc, target));
+ipcMain.handle("axm:backupDisc", (_e, disc: Disc, target: string, title?: string) => backupDisc(disc, target, title));
+ipcMain.handle("axm:findDiscBackup", (_e, disc: Disc, target: string, title?: string) => findDiscBackup(disc, target, title));
+ipcMain.handle("axm:guessDiscTitle", (_e, label: string) => guessDiscTitle(label));
 ipcMain.handle("axm:remotePlayStatus", () => remotePlayStatus());
 ipcMain.handle("axm:installRemotePlay", () =>
   installRemotePlay((done, total, note) => {
@@ -525,6 +544,50 @@ ipcMain.handle("axm:quitRunningGame", () => quitRunningGame());
 ipcMain.handle("axm:connectionStatus", () => connectionStatus());
 ipcMain.handle("axm:setWifiEnabled", (_e, enabled: boolean) => setWifiEnabled(enabled));
 ipcMain.handle("axm:connectionTest", () => connectionTest());
+ipcMain.handle("axm:assistantStatus", () => assistantStatus());
+ipcMain.handle("axm:installAssistantModel", () =>
+  installAssistantModel((done, total, note) => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:transfer", { id: "ghost-model", name: `Ghost · ${note}`, destination: "A-X-M models", done, total, finished: false });
+  }).then((st) => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:transfer", { id: "ghost-model", name: "Ghost · voice model", destination: "A-X-M models", done: 1, total: 1, finished: true });
+    return st;
+  })
+);
+ipcMain.handle("axm:removeAssistantModel", () => removeAssistantModel());
+// Ghost's cloned voice (Chatterbox in a local Python venv) and the tool installer.
+const toolToast = (id: string, name: string, done: number, total: number, finished = false) => {
+  if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:transfer", { id, name, destination: "this PC", done, total, finished });
+};
+ipcMain.handle("axm:ttsStatus", () => ttsStatus());
+ipcMain.handle("axm:installTts", () =>
+  installTts((note, step, steps) => toolToast("ghost-voice", `Ghost's voice · ${note}`, step, steps)).finally(() => toolToast("ghost-voice", "Ghost's voice", 1, 1, true))
+);
+ipcMain.handle("axm:removeTts", () => removeTts());
+ipcMain.handle("axm:startTts", () => startTts());
+ipcMain.handle("axm:speak", (_e, text: string) => speak(text));
+ipcMain.handle("axm:pickVoiceClip", async () => {
+  const r = await dialog.showOpenDialog({ title: "Ghost's voice clip", properties: ["openFile"], filters: [{ name: "Audio", extensions: ["wav", "mp3", "m4a", "flac", "ogg", "opus"] }] });
+  if (r.canceled || !r.filePaths[0]) return null;
+  return setVoiceClip(r.filePaths[0], (await findDiscTools()).ffmpeg);
+});
+ipcMain.handle("axm:resetVoiceClip", () => resetVoiceClip());
+ipcMain.handle("axm:toolsState", () => toolsState());
+ipcMain.handle("axm:installTools", () =>
+  installTools((p) => toolToast("tools", `Tools · ${p.note}`, p.step, p.steps)).finally(() => toolToast("tools", "Tools", 1, 1, true))
+);
+ipcMain.handle("axm:startVoice", (_e, micId: string) => startVoice(micId));
+ipcMain.handle("axm:stopVoice", () => stopVoice());
+// Transcripts from the hidden voice window, relayed to the menu.
+ipcMain.on("axm:voice", (_e, message: { event: string; payload: unknown }) => {
+  if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:voiceText", message);
+});
+ipcMain.handle("axm:checkForUpdate", () => checkForUpdate());
+ipcMain.handle("axm:downloadUpdate", (_e, assetUrl: string, assetName: string) =>
+  downloadUpdate(assetUrl, assetName, (done, total) => {
+    if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send("axm:transfer", { id: "update", name: `Update ${assetName}`, destination: "Downloads", done, total, finished: done >= total });
+  })
+);
+ipcMain.handle("axm:openUpdate", (_e, file: string) => openUpdate(file));
 ipcMain.handle("axm:manualUrl", () => pathToFileURL(path.join(__dirname, "..", "renderer", "assets", "manual.html")).href);
 
 ipcMain.handle("axm:getSteamLibrary", (): SteamLibrary => getSteamLibrary());
@@ -589,6 +652,35 @@ ipcMain.handle("axm:openLauncher", (_e, id: string): void => {
     spawn(launcher.exe, [], { cwd: path.dirname(launcher.exe), detached: true, stdio: "ignore" }).unref();
   }
 });
+
+/**
+ * Toybox. The renderer never reads the database files itself - everything goes
+ * through the service, so the menu, Ghost and the reader layer all see one
+ * consistent view and lookups stay in-memory.
+ */
+export interface ToyboxSummary {
+  hasDatabase: boolean;
+  stats: ToyboxStats;
+  recent: ToyFigure[];
+  favorites: ToyFigure[];
+}
+
+ipcMain.handle("axm:toyboxSummary", (): ToyboxSummary => ({
+  hasDatabase: toybox.hasDatabase(),
+  stats: toybox.getStats(),
+  recent: toybox.getRecentlyScanned().slice(0, 20),
+  favorites: toybox.getFavorites().slice(0, 40),
+}));
+
+ipcMain.handle("axm:toyboxByPlatform", (_e, platform: ToyFigure["platform"]): ToyFigure[] =>
+  toybox.getFiguresByPlatform(platform)
+);
+
+ipcMain.handle("axm:toyboxSearch", (_e, query: string): ToyFigure[] => toybox.searchFigures(query));
+
+ipcMain.handle("axm:toyboxSetState", (_e, figureId: string, patch: Partial<ToyCollectionEntry>): ToyCollectionEntry =>
+  toybox.setCollectionState(figureId, patch)
+);
 
 ipcMain.handle("axm:openBrowser", (_e, url: string): void => {
   // Only ever hand http(s) to the shell - never a local path or other protocol.
