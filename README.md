@@ -85,8 +85,20 @@ changing a game's artwork.
   libraries with posters and backdrops, plays in the menu (direct play when the browser can,
   HLS transcode when it can't), and **downloads** films and episodes to any drive.
 - **Information** (Y) on a film or show from TMDB (your own API key).
-- A **DVD or Blu-ray** in a drive shows as a row: Backup to MP4 (HandBrakeCLI; MakeMKV for
-  Blu-ray). PS1 / PS2 discs show in Game with their own icons.
+- A **DVD or Blu-ray** in a drive shows as a row with its disc icon, looked up on TMDB so
+  `MARVEL_STUDIOS_DOCTOR_STRANGE` reads *Doctor Strange · 2016* with a poster in Information.
+  **Rip** makes an MKV (H.265 10-bit, RF 18 / 19, slow preset, original TrueHD / DTS-HD / AC3
+  passed through, every subtitle track kept; DVDs get decomb and auto-anamorphic) with MakeMKV
+  and HandBrakeCLI, in the background with a progress bar and notifications at start, half way
+  and done. **Play** plays the ripped copy - commercial discs are encrypted, so a disc that
+  hasn't been ripped is ripped first and starts when it's done. An **audio CD** imports to MP3 /
+  AAC / Opus / FLAC. Where it all goes is *Settings › System › Disc Backup Location*.
+  PS1 / PS2 discs show in Game with their own icons.
+- **Toybox**: a toys-to-life collection (Amiibo, Skylanders, LEGO Dimensions) on a bookshelf
+  drawn from a sprite sheet - the shelf grows with the collection, from a three-cubby unit to
+  4x4 units you page through. Mark figures owned / favourite / wanted, filter by platform,
+  search, or ask Ghost to "open my shelf". The figure database and artwork are pulled locally
+  and never committed (they belong to their publishers).
 - **Copy** songs, pictures and videos to any drive's `MUSIC` / `PHOTO` / `VIDEO` folder and
   back to this PC; make folders inside them from the menu. A drive with those folders gets
   its own row, and keeps a greyed row when it's unplugged.
@@ -110,6 +122,20 @@ Grouped like a console's:
 - **System** - System Information (device, CPU, RAM, GPU, every drive's used / free space),
   Controller (players 1–4, wired / wireless, battery, A/B profile, dead zone, vibration), Steam
   hands-off install, Steam install drive, in-game menu button, game folders, rescan.
+- **Assistant** - **Ghost**, the voice assistant. Say "hey ghost" then *launch Batman*, *play
+  playlist chill*, *go to network settings*, *copy the Blu-ray to storage*, *rip the DVD*,
+  *import the CD*, *open my shelf*, *next track*, *quit game*, *turn off*. Recognition is Vosk,
+  offline; Ghost only appears while awake, with a resizable chat bubble showing what it heard
+  and what it answered. Its **voice is cloned** from one short clip (the one that ships, or
+  yours) by Chatterbox (Resemble AI, MIT) running in a local Python environment - no cloud, no
+  fallback voice: without the engine Ghost answers in text. Menu music ducks while Ghost
+  listens or talks.
+- **System › Install Tools** fetches everything the rippers and Ghost need on Windows through
+  winget - ffmpeg (full build, libcdio), HandBrakeCLI, MakeMKV, Python 3.11 - and then the
+  voice engine (a few GB, once, with the CUDA build of torch on NVIDIA machines). It runs by
+  itself on the first launch and can be re-run from Settings. MakeMKV's Blu-ray reading needs
+  its key (the current beta key is posted on makemkv.com's forum): *Settings › System › MakeMKV
+  Key* writes it to MakeMKV's own settings file.
 - **About**, Exit.
 
 ## Screenshots

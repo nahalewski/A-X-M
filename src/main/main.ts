@@ -36,6 +36,7 @@ import { UserProfile, JellyfinLogin } from "./settingsStore";
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 import { toybox } from "./toybox/toyboxService";
+import { artUrl as toyArtUrl } from "./toybox/artwork";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
 // requestAnimationFrame already follows the display's native refresh rate, 120Hz on
@@ -677,6 +678,30 @@ ipcMain.handle("axm:toyboxByPlatform", (_e, platform: ToyFigure["platform"]): To
 );
 
 ipcMain.handle("axm:toyboxSearch", (_e, query: string): ToyFigure[] => toybox.searchFigures(query));
+
+/**
+ * The shelf's view of the collection: figures with their picture resolved and the
+ * user's own state folded in, filtered the way the shelf tabs ask for.
+ */
+export interface ToyShelfFigure extends ToyFigure {
+  artUrl: string | null;
+  owned: boolean;
+  favorite: boolean;
+  wanted: boolean;
+}
+ipcMain.handle("axm:toyboxShelf", (_e, filter: { view: "all" | "owned" | "favorites" | "recent"; platform?: ToyFigure["platform"] | ""; query?: string }): ToyShelfFigure[] => {
+  let list: ToyFigure[] =
+    filter.view === "recent" ? toybox.getRecentlyScanned() : filter.view === "owned" ? toybox.getCollection("owned") : filter.view === "favorites" ? toybox.getCollection("favorites") : toybox.getCollection("all");
+  if (filter.platform) list = list.filter((f) => f.platform === filter.platform);
+  if (filter.query?.trim()) {
+    const hits = new Set(toybox.searchFigures(filter.query, 5000).map((f) => f.id));
+    list = list.filter((f) => hits.has(f.id));
+  }
+  return list.map((f) => {
+    const e = toybox.getEntry(f.id);
+    return { ...f, artUrl: toyArtUrl(f), owned: !!e?.owned, favorite: !!e?.favorite, wanted: !!e?.wanted };
+  });
+});
 
 ipcMain.handle("axm:toyboxSetState", (_e, figureId: string, patch: Partial<ToyCollectionEntry>): ToyCollectionEntry =>
   toybox.setCollectionState(figureId, patch)

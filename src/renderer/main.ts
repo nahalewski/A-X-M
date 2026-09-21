@@ -12,13 +12,14 @@ import { Notifier } from "./notify";
 import { Assistant, Command } from "./assistant";
 import { setDictionary } from "./textEntry";
 import { MediaViewer } from "./mediaViewer";
+import { ToyShelf, TOY_PLATFORM_NAMES } from "./toybox";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
 import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary } from "./types";
+import { ToyboxSummary, ToyPlatform } from "./types";
 import {
   ThemeManager,
   RIBBON_SPEED_PRESETS,
@@ -405,6 +406,47 @@ async function main(): Promise<void> {
     settings = await window.axm.setSettings({ visualizerStyle: next });
   };
   const mediaViewer = new MediaViewer(document.getElementById("media-viewer")!);
+  const toyShelf = new ToyShelf(document.body, {
+    onClose: () => {
+      popOverlay();
+      void refreshToybox();
+    },
+    onFigure: (f, shelf) => {
+      showOptions(f.name, [
+        { label: f.owned ? "Remove from Owned" : "Mark as Owned", hint: f.owned ? "" : "it goes on your shelf in colour", run: async () => { await window.axm.toyboxSetState(f.id, { owned: !f.owned }); await shelf.refresh(); } },
+        { label: f.favorite ? "Remove Favourite" : "Add to Favourites", run: async () => { await window.axm.toyboxSetState(f.id, { favorite: !f.favorite }); await shelf.refresh(); } },
+        { label: f.wanted ? "Not Wanted" : "Add to Wanted", run: async () => { await window.axm.toyboxSetState(f.id, { wanted: !f.wanted }); await shelf.refresh(); } },
+        {
+          label: "Information",
+          run: () =>
+            showInfo(f.name, f.artUrl ?? "assets/icons/toybox.webp", null, [
+              { label: "Sub-Title", value: `${TOY_PLATFORM_NAMES[f.platform] ?? f.platform}${f.series ? ` · ${f.series}` : ""}` },
+              { label: "Franchise", value: f.franchise ?? "" },
+              { label: "Variant", value: f.variant ?? "" },
+              { label: "Manufacturer", value: f.manufacturer ?? "" },
+              ...Object.entries(f.attributes ?? {}).filter(([k]) => !["character", "type", "amiiboSeries"].includes(k)).map(([k, v]) => ({ label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), value: v })),
+              { label: "Tag", value: f.nfc ? [f.nfc.technology, f.nfc.head && f.nfc.tail ? `${f.nfc.head}-${f.nfc.tail}` : f.nfc.characterId ? `character ${f.nfc.characterId}${f.nfc.variantId ? ` variant ${f.nfc.variantId}` : ""}` : ""].filter(Boolean).join(" · ") : "" },
+              { label: "Artwork", value: f.media?.copyrightOwner ? `© ${f.media.copyrightOwner}` : "" },
+            ]),
+        },
+      ]);
+    },
+    onFilters: (shelf) => {
+      const cur = shelf.currentFilter();
+      const views = [["all", "Whole collection"], ["owned", "Owned"], ["favorites", "Favourites"], ["recent", "Recently scanned"]] as const;
+      const platforms = (["", "amiibo", "skylanders", "disney-infinity", "lego-dimensions"] as const).filter((p) => !p || (toybox?.stats.byPlatform[p] ?? 0) > 0);
+      showOptions("Toybox", [
+        { label: "Show", hint: views.find(([v]) => v === cur.view)?.[1], children: views.map(([v, label]) => ({ label, selected: cur.view === v, run: () => void shelf.setFilter({ ...cur, view: v }) })) },
+        { label: "Platform", hint: cur.platform ? TOY_PLATFORM_NAMES[cur.platform] : "All", children: platforms.map((p) => ({ label: p ? TOY_PLATFORM_NAMES[p] : "All platforms", selected: (cur.platform ?? "") === p, run: () => void shelf.setFilter({ ...cur, platform: p }) })) },
+        { label: "Search", hint: cur.query || "by name or series", run: async () => { const a = await askText("Search Toybox", [{ label: "Name", value: cur.query ?? "" }]); if (a) void shelf.setFilter({ ...cur, query: a[0].trim() }); } },
+        ...(cur.query ? [{ label: "Clear search", run: () => void shelf.setFilter({ ...cur, query: "" }) }] : []),
+      ]);
+    },
+  });
+  const openToyShelf = (filter: Parameters<ToyShelf["open"]>[0], title: string) => {
+    void toyShelf.open(filter, title);
+    pushOverlay((action) => toyShelf.handle(action as Parameters<ToyShelf["handle"]>[0]));
+  };
   const gridPicker = new GridPicker(document.getElementById("grid-picker")!);
   const textEntry = new TextEntry(document.getElementById("text-entry")!);
   const optionsPopup = new OptionsPopup(document.getElementById("options-popup")!);
@@ -426,6 +468,8 @@ async function main(): Promise<void> {
     assistant.setPrefs({ ...settings.assistant, micId: settings.audioInputId });
     if (settings.assistant.enabled && assistantStatus.modelReady && !assistantStatus.listening) await window.axm.startVoice(settings.audioInputId);
     else if (!settings.assistant.enabled && assistantStatus.listening) await window.axm.stopVoice();
+    // A voice window that was already up (the menu page reloaded) sent its "ready" long ago.
+    else if (settings.assistant.enabled && assistantStatus.listening && !assistant.isListening()) assistant.onVoice("ready", null);
     void refreshTts();
   };
   assistant.setOnStatus((text) => notifier.push(text, "general"));
@@ -3597,6 +3641,7 @@ async function main(): Promise<void> {
           title,
           subtitle: `${n} figure${n === 1 ? "" : "s"}`,
           iconUrl: "assets/icons/toybox.webp",
+          onConfirm: () => openToyShelf({ view: "all", platform: id as ToyPlatform }, title),
         },
       ];
     };
@@ -3638,18 +3683,21 @@ async function main(): Promise<void> {
             title: "Open Toybox",
             subtitle: "The collection shelf",
             iconUrl: "assets/icons/toybox.webp",
+            onConfirm: () => openToyShelf({ view: "owned", platform: "" }, "My Shelf"),
           },
           {
             id: "toybox-recent",
             title: "Recently Scanned",
             subtitle: recent === 0 ? "Nothing scanned yet" : `${recent} figure${recent === 1 ? "" : "s"}`,
             iconUrl: "assets/icons/toybox.webp",
+            onConfirm: () => openToyShelf({ view: "recent", platform: "" }, "Recently Scanned"),
           },
           {
             id: "toybox-favorites",
             title: "Favorites",
             subtitle: favorites === 0 ? "None yet" : `${favorites} figure${favorites === 1 ? "" : "s"}`,
             iconUrl: "assets/icons/toybox.webp",
+            onConfirm: () => openToyShelf({ view: "favorites", platform: "" }, "Favourites"),
           },
           ...platformRow("amiibo", "Amiibo"),
           ...platformRow("skylanders", "Skylanders"),
@@ -3927,6 +3975,13 @@ async function main(): Promise<void> {
       cmds.push({ verbs: ["go to", "open", "show", "navigate to", "navigate"], name, reply: `Opening ${name}`, run: () => goCategory(id) });
     }
     for (const sl of settingLabels) cmds.push({ verbs: ["go to", "open", "show", "navigate to", "change", "set"], name: sl.name, reply: `Opening ${sl.name}`, run: sl.go });
+    // The Toybox shelf: "open my shelf", "show my amiibo", "open toybox favourites".
+    if (toybox?.hasDatabase) {
+      cmds.push({ verbs: ["open", "show", "go to"], name: "my shelf", reply: "Opening your shelf", weight: 0.2, run: () => openToyShelf({ view: "owned", platform: "" }, "My Shelf") });
+      cmds.push({ verbs: ["open", "show", "go to"], name: "toybox shelf", reply: "Opening the Toybox shelf", run: () => openToyShelf({ view: "owned", platform: "" }, "My Shelf") });
+      cmds.push({ verbs: ["open", "show", "go to"], name: "toybox favourites", reply: "Opening your favourites", run: () => openToyShelf({ view: "favorites", platform: "" }, "Favourites") });
+      for (const [id, label] of Object.entries(TOY_PLATFORM_NAMES)) if ((toybox.stats.byPlatform[id] ?? 0) > 0) cmds.push({ verbs: ["open", "show", "go to"], name: `my ${label}`, reply: `Opening your ${label}`, run: () => openToyShelf({ view: "all", platform: id as ToyPlatform }, label) });
+    }
     // Discs in the drive: "copy the blu-ray to storage", "rip the dvd", "import the cd", "play the disc".
     for (const d of discs) {
       const where = targetLabel(settings.discTarget);

@@ -60,8 +60,18 @@ export class MusicPlayer {
     return Math.min(1, Math.max(0, this.el.currentTime / this.el.duration));
   }
 
+  private baseVolume = 1;
+  private duckFactor = 1;
+
   setVolume(volume: number): void {
-    this.el.volume = Math.min(1, Math.max(0, volume));
+    this.baseVolume = Math.min(1, Math.max(0, volume));
+    this.el.volume = this.baseVolume * this.duckFactor;
+  }
+
+  /** Music drops to a fifth while Ghost is awake or talking. */
+  duck(on: boolean): void {
+    this.duckFactor = on ? 0.2 : 1;
+    this.el.volume = this.baseVolume * this.duckFactor;
   }
 
   /** Plays `track`, queueing the other tracks in the same folder so it can advance. */

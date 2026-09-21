@@ -135,9 +135,17 @@ export interface Settings {
   raUsername: string;
   raApiKey: string;
   /** Audio CD import format. */
-  importFormat: "mp3" | "aac" | "opus";
+  importFormat: "mp3" | "aac" | "opus" | "flac";
+  /** Where disc backups and CD imports go: "home" (this PC) or a drive letter / mount. */
+  discTarget: string;
+  /** MakeMKV beta key (posted on makemkv.com's forum) - written to MakeMKV's own settings. */
+  makemkvKey: string;
+  /** The first-run tool setup has been offered / run. */
+  toolsSetupDone: boolean;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
+  /** Ghost, the voice assistant. */
+  assistant: { enabled: boolean; wakeWord: boolean; voiceReplies: boolean; bubbleSize: "small" | "medium" | "large" };
   /** The user's playlist: tracks in play order. */
   playlist: { name: string; filePath: string; url: string }[];
   /** Menu wallpaper: one picture, or a folder shuffled every few minutes. */
@@ -207,7 +215,11 @@ const DEFAULTS: Settings = {
   raUsername: "",
   raApiKey: "",
   importFormat: "mp3",
+  discTarget: "home",
+  makemkvKey: "",
+  toolsSetupDone: false,
   mediaServerEnabled: true,
+  assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },
   playlist: [],
   wallpaper: null,
   knownDrives: [],

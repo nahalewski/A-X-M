@@ -19,7 +19,8 @@ const SHOW_MS = 4200;
 export class Notifier {
   private root: HTMLElement;
   private textEl: HTMLElement;
-  private queue: { text: string; kind: NotifyKind }[] = [];
+  private queue: { text: string; kind: NotifyKind; iconUrl?: string }[] = [];
+  private imgEl: HTMLImageElement;
   private showing = false;
   private prefs: NotifySettings = { enabled: true, kinds: { general: true, transfer: true, controller: true, battery: true, install: true } };
   /** Everything shown this session, newest first, for the Notifications view. */
@@ -34,7 +35,10 @@ export class Notifier {
     badge.innerHTML = "<i>△</i><i>○</i><i>✕</i><i>□</i>";
     this.textEl = document.createElement("span");
     this.textEl.className = "notify-text";
-    this.root.append(badge, this.textEl);
+    this.imgEl = document.createElement("img");
+    this.imgEl.className = "notify-img";
+    this.imgEl.addEventListener("error", () => this.imgEl.classList.add("broken"));
+    this.root.append(badge, this.imgEl, this.textEl);
     parent.appendChild(this.root);
   }
 
@@ -42,11 +46,15 @@ export class Notifier {
     this.prefs = prefs;
   }
 
-  push(text: string, kind: NotifyKind = "general"): void {
+  /**
+   * `iconUrl` turns the pill into the media style - the framed rectangle with the
+   * game's, film's or trophy's picture in it; without one it's the system pill.
+   */
+  push(text: string, kind: NotifyKind = "general", iconUrl?: string): void {
     this.history.unshift({ at: Date.now(), text, kind });
     if (this.history.length > 50) this.history.length = 50;
     if (!this.prefs.enabled || !this.prefs.kinds[kind]) return;
-    this.queue.push({ text, kind });
+    this.queue.push({ text, kind, iconUrl });
     if (!this.showing) this.next();
   }
 
@@ -59,6 +67,10 @@ export class Notifier {
     this.showing = true;
     this.textEl.textContent = item.text;
     this.textEl.classList.remove("ticker");
+    this.root.classList.toggle("media", !!item.iconUrl);
+    this.imgEl.classList.remove("broken");
+    if (item.iconUrl) this.imgEl.src = item.iconUrl;
+    else this.imgEl.removeAttribute("src");
     this.root.classList.remove("hidden");
     // Long lines scroll like the PS3's ticker rather than being cut.
     requestAnimationFrame(() => {

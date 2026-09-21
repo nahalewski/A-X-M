@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
  * Folder-at-a-time browsing for the Photo and Video columns, rooted at the user's
  * own Pictures and Videos directories so the menu mirrors how Windows already
  * organises them (Screenshots, Camera Roll, and so on). Video is deliberately
- * limited to MP4 - it's the one container the in-app player is guaranteed to
+ * MP4, MKV, WebM and MOV - what Chromium's player opens (HEVC in MKV needs the
  * decode, so nothing listed can turn out to be unplayable.
  */
 
@@ -16,7 +16,7 @@ export type BrowseKind = "photo" | "video";
 
 const EXTENSIONS: Record<BrowseKind, string[]> = {
   photo: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"],
-  video: [".mp4"],
+  video: [".mp4", ".m4v", ".mkv", ".webm", ".mov"],
 };
 
 const HOME_FOLDER: Record<BrowseKind, string> = { photo: "Pictures", video: "Videos" };

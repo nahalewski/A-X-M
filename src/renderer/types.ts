@@ -447,6 +447,20 @@ export interface ToyFigure {
     redistributable?: boolean;
   };
   compatibleGames?: string[];
+  nfc?: { technology?: string; identifierType?: string; head?: string; tail?: string; characterId?: string; variantId?: string };
+}
+
+export interface ToyShelfFigure extends ToyFigure {
+  artUrl: string | null;
+  owned: boolean;
+  favorite: boolean;
+  wanted: boolean;
+}
+
+export interface ToyShelfFilter {
+  view: "all" | "owned" | "favorites" | "recent";
+  platform?: ToyPlatform | "";
+  query?: string;
 }
 
 export interface ToyboxStats {
@@ -586,6 +600,7 @@ export interface AxmApi {
   toyboxSummary(): Promise<ToyboxSummary>;
   toyboxByPlatform(platform: ToyPlatform): Promise<ToyFigure[]>;
   toyboxSearch(query: string): Promise<ToyFigure[]>;
+  toyboxShelf(filter: ToyShelfFilter): Promise<ToyShelfFigure[]>;
   toyboxSetState(figureId: string, patch: Record<string, unknown>): Promise<unknown>;
   onArtUpdated(callback: (update: ArtUpdate) => void): void;
   quit(): Promise<void>;

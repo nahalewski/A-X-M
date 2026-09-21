@@ -19,6 +19,7 @@ const api = {
   toyboxSummary: () => ipcRenderer.invoke("axm:toyboxSummary"),
   toyboxByPlatform: (platform: string) => ipcRenderer.invoke("axm:toyboxByPlatform", platform),
   toyboxSearch: (query: string) => ipcRenderer.invoke("axm:toyboxSearch", query),
+  toyboxShelf: (filter: unknown) => ipcRenderer.invoke("axm:toyboxShelf", filter),
   toyboxSetState: (figureId: string, patch: Record<string, unknown>) =>
     ipcRenderer.invoke("axm:toyboxSetState", figureId, patch),
   openMedia: (filePath: string) => ipcRenderer.invoke("axm:openMedia", filePath),

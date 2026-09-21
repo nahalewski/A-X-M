@@ -10,7 +10,7 @@ import { destinationFor, MediaKind } from "./storage";
  * belongs to only while a disc is actually in a drive, and it says what it is.
  *
  * - Audio CD  -> Music, with Import (rip) to MP3 / AAC / Opus via ffmpeg's libcdio
- * - DVD-Video -> Video, with Backup to MP4 via HandBrakeCLI (GPL, handbrake.fr)
+ * - DVD-Video -> Video, with Backup to MKV / H.265 10-bit via HandBrakeCLI (GPL)
  * - Blu-ray   -> Video, with Backup via MakeMKV's makemkvcon (its own licence)
  * - PS1 / PS2 -> Game (recognised from SYSTEM.CNF); shown for emulator use
  * - Data disc -> Video / Photo / Music if it carries the folders, else ignored
@@ -42,7 +42,7 @@ export interface DiscTools {
   makemkv: string | null;
 }
 
-export type ImportFormat = "mp3" | "aac" | "opus";
+export type ImportFormat = "mp3" | "aac" | "opus" | "flac";
 
 function run(cmd: string, args: string[], timeout = 20_000): Promise<{ ok: boolean; out: string }> {
   return new Promise((resolve) => {
@@ -61,6 +61,10 @@ async function onPath(exe: string): Promise<string | null> {
 }
 
 let toolsCache: DiscTools | null = null;
+
+export function resetDiscToolsCache(): void {
+  toolsCache = null;
+}
 
 export async function findDiscTools(): Promise<DiscTools> {
   if (toolsCache) return toolsCache;
@@ -174,7 +178,7 @@ export async function importAudioCd(disc: Disc, target: string, format: ImportFo
   if (!tools.ffmpeg || !tools.ffmpegCdio) throw new Error("Importing a CD needs ffmpeg with libcdio (the 'full' build from gyan.dev, on PATH or in C:\\ffmpeg\\bin)");
   const outDir = path.join(destinationFor("music", target), `${disc.label !== disc.drive ? disc.label : "Audio CD"} ${new Date().toISOString().slice(0, 10)}`);
   fs.mkdirSync(outDir, { recursive: true });
-  const codec = { mp3: ["-c:a", "libmp3lame", "-b:a", "320k"], aac: ["-c:a", "aac", "-b:a", "256k"], opus: ["-c:a", "libopus", "-b:a", "160k"] }[format];
+  const codec = { mp3: ["-c:a", "libmp3lame", "-b:a", "320k"], aac: ["-c:a", "aac", "-b:a", "256k"], opus: ["-c:a", "libopus", "-b:a", "160k"], flac: ["-c:a", "flac", "-compression_level", "8"] }[format];
   const ext = format === "aac" ? "m4a" : format;
   const tracks = disc.tracks ?? 0;
   const id = `cd-${disc.drive}`;
@@ -199,62 +203,142 @@ export async function importAudioCd(disc: Disc, target: string, format: ImportFo
 }
 
 /**
+ * Turns a disc's volume label ("MARVEL_STUDIOS_DOCTOR_STRANGE", "JOHN_WICK_2_BD",
+ * "DISC1") into a searchable movie title: studio prefixes and disc/format tags go,
+ * underscores become spaces, and the rest is title-cased.
+ */
+export function guessDiscTitle(label: string): string {
+  let t = label.replace(/[_.]+/g, " ").replace(/\s+/g, " ").trim();
+  t = t.replace(/^(marvel studios|marvel|disney|pixar|walt disney|warner( bros)?|universal|sony( pictures)?|columbia|paramount|20th century( fox)?|fox|lionsgate|mgm|dreamworks|studiocanal|lucasfilm|a24|criterion)\b\s*/i, "");
+  t = t.replace(/\b(blu ?ray|bluray|bd|dvd|disc ?\d*|d\d|4k|uhd|hdr|ntsc|pal|ws|fs|widescreen|region ?\d|r\d|us|uk|eu|na|special edition|collectors edition|extended|theatrical)\b/gi, " ");
+  t = t.replace(/\s+/g, " ").trim();
+  if (!t) return label;
+  return t.toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
+}
+
+function safeName(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, "").trim() || "Disc";
+}
+
+/** An earlier backup of this disc on `target`, if there is one (MKV, then MakeMKV's folder). */
+export function findDiscBackup(disc: Disc, target: string, name?: string): string | null {
+  const outDir = destinationFor("video", target);
+  const base = safeName(name ?? (disc.label !== disc.drive ? disc.label : disc.kind === "bluray" ? "Blu-ray" : "DVD"));
+  const mkv = path.join(outDir, `${base}.mkv`);
+  if (fs.existsSync(mkv)) return mkv;
+  const mkvDir = path.join(outDir, `${base} (MKV)`);
+  if (fs.existsSync(mkvDir)) {
+    const files = fs.readdirSync(mkvDir).filter((f) => /\.mkv$/i.test(f)).map((f) => path.join(mkvDir, f)).sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+    if (files.length) return files[0];
+  }
+  return null;
+}
+
+/** MakeMKV numbers drives itself; "disc:9999" lists them with their letters. */
+async function makemkvDiscIndex(makemkv: string, drive: string): Promise<string> {
+  const res = await run(makemkv, ["-r", "info", "disc:9999"], 60_000);
+  for (const line of res.out.split(/\r?\n/)) {
+    const m = line.match(/^DRV:(\d+),\d+,\d+,\d+,"[^"]*","[^"]*","([^"]*)"/);
+    if (m && m[2].replace(/[\\/]+$/, "").toUpperCase() === drive.replace(/[\\/]+$/, "").toUpperCase()) return `disc:${m[1]}`;
+  }
+  return isWindows ? "disc:0" : `dev:${drive}`;
+}
+
+/**
  * Backs up a DVD (HandBrakeCLI, main title, H.264 MP4) or a Blu-ray (makemkvcon,
  * then HandBrakeCLI to MP4 when present) into VIDEO on `target`. Encrypted discs
  * need the tools' own decryption support (libdvdcss beside HandBrake; MakeMKV for
  * AACS) - that's their concern and their licence, not the menu's.
  */
-export async function backupDisc(disc: Disc, target: string): Promise<string> {
+export async function backupDisc(disc: Disc, target: string, title?: string): Promise<string> {
   const tools = await findDiscTools();
   const outDir = destinationFor("video", target);
   fs.mkdirSync(outDir, { recursive: true });
   const id = `disc-${disc.drive}`;
-  const name = disc.label !== disc.drive ? disc.label : disc.kind === "bluray" ? "Blu-ray" : "DVD";
+  const name = safeName(title ?? (disc.label !== disc.drive ? disc.label : disc.kind === "bluray" ? "Blu-ray" : "DVD"));
   const progress = (done: number, note = "") => send("axm:transfer", { id, name: `${name}${note ? " · " + note : ""}`, destination: outDir, done, total: 100, finished: false });
 
   if (disc.kind === "dvd") {
     if (!tools.handbrake) throw new Error("Backing up a DVD needs HandBrakeCLI (handbrake.fr/downloads2.php, put HandBrakeCLI.exe in C:\\Program Files\\HandBrake)");
-    const out = path.join(outDir, `${name.replace(/[<>:"/\\|?*]/g, "")}.mp4`);
+    const out = path.join(outDir, `${name.replace(/[<>:"/\\|?*]/g, "")}.mkv`);
     const src = isWindows ? disc.drive + "\\" : disc.drive;
-    return encodeWithHandbrake(tools.handbrake, src, out, id, progress, outDir, name);
+    return encodeWithHandbrake(tools.handbrake, src, out, id, progress, outDir, name, "dvd");
   }
   if (disc.kind === "bluray") {
     if (!tools.makemkv) throw new Error("Backing up a Blu-ray needs MakeMKV (makemkv.com; makemkvcon64.exe in C:\\Program Files (x86)\\MakeMKV)");
-    const mkvDir = path.join(outDir, `${name.replace(/[<>:"/\\|?*]/g, "")} (MKV)`);
+    const mkvDir = path.join(outDir, `${name} (MKV)`);
     fs.mkdirSync(mkvDir, { recursive: true });
     progress(0, "reading with MakeMKV");
-    const discIndex = isWindows ? `disc:0` : `dev:${disc.drive}`;
+    const discIndex = await makemkvDiscIndex(tools.makemkv, disc.drive);
+    let needsLicence = false;
+    // MakeMKV's total bar (PRGV total/max) runs once while it opens and scans the
+    // disc and again while it saves, so the phase decides where it sits in ours:
+    // scanning is the first 5%, saving the next 55%, HandBrake the last 40%.
+    let saving = false;
     const ok = await new Promise<boolean>((resolve) => {
       const p = spawn(tools.makemkv!, ["-r", "--progress=-same", "--minlength=1200", "mkv", discIndex, "all", mkvDir], { windowsHide: true });
       jobs.set(id, p);
       p.stdout?.on("data", (d: Buffer) => {
-        const m = String(d).match(/PRGV:(\d+),(\d+),(\d+)/);
-        if (m) progress(Math.round((Number(m[2]) / Number(m[3])) * 60), "MakeMKV");
+        const text = String(d);
+        if (/PRG[TC]:\d+,\d+,"(Saving|Copying|Analyzing seamless)/.test(text)) saving = true;
+        const m = text.match(/PRGV:(\d+),(\d+),(\d+)/);
+        if (m) {
+          const frac = Number(m[2]) / Math.max(1, Number(m[3]));
+          progress(saving ? 5 + Math.round(frac * 55) : Math.round(frac * 5), saving ? "MakeMKV" : "reading with MakeMKV");
+        }
+        // 5053: "This functionality is shareware ... start evaluation period now?" -
+        // the console tool can't answer that; the MakeMKV window can.
+        if (/^MSG:5053,/m.test(text)) needsLicence = true;
       });
       p.on("close", (code) => resolve(code === 0));
       p.on("error", () => resolve(false));
     });
     jobs.delete(id);
     if (!ok) {
-      send("axm:transfer", { id, name, destination: outDir, done: 0, total: 100, finished: true, error: "MakeMKV couldn't read the disc" });
-      throw new Error("MakeMKV couldn't read the disc");
+      const why = needsLicence ? "MakeMKV needs its evaluation started (or a key entered) in its own window first - opening it" : "MakeMKV couldn't read the disc";
+      if (needsLicence) {
+        const gui = path.join(path.dirname(tools.makemkv), isWindows ? "makemkv.exe" : "makemkv");
+        if (fs.existsSync(gui)) spawn(gui, [], { detached: true, stdio: "ignore" }).unref();
+      }
+      send("axm:transfer", { id, name, destination: outDir, done: 0, total: 100, finished: true, error: why });
+      throw new Error(why);
     }
     const mkvs = fs.readdirSync(mkvDir).filter((f) => /\.mkv$/i.test(f)).map((f) => path.join(mkvDir, f)).sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
     if (!mkvs.length) throw new Error("MakeMKV produced no titles");
     if (!tools.handbrake) {
       send("axm:transfer", { id, name, destination: mkvDir, done: 100, total: 100, finished: true });
-      return mkvDir; // MKV is playable in the menu as it is
+      return mkvDir; // MakeMKV's own MKV (original streams) plays in the menu as it is
     }
-    const out = path.join(outDir, `${name.replace(/[<>:"/\\|?*]/g, "")}.mp4`);
-    const result = await encodeWithHandbrake(tools.handbrake, mkvs[0], out, id, (d, n) => progress(60 + Math.round(d * 0.4), n), outDir, name);
+    const out = path.join(outDir, `${name.replace(/[<>:"/\\|?*]/g, "")}.mkv`);
+    const result = await encodeWithHandbrake(tools.handbrake, mkvs[0], out, id, (d, n) => progress(60 + Math.round(d * 0.4), n), outDir, name, "bluray");
     return result;
   }
   throw new Error("Only DVD and Blu-ray discs can be backed up");
 }
 
-function encodeWithHandbrake(exe: string, src: string, out: string, id: string, progress: (done: number, note?: string) => void, outDir: string, name: string): Promise<string> {
+/**
+ * The library preset: MKV, H.265 10-bit, same resolution and frame rate as the
+ * source, slow preset, original audio passed through (TrueHD / DTS-HD MA / DTS /
+ * AC3, AAC fallback), all subtitle tracks kept (PGS on Blu-ray, VobSub on DVD),
+ * HDR10 metadata carried by x265. DVDs add comb detection with decomb and auto
+ * anamorphic; RF 18 for Blu-ray, 19 for DVD.
+ */
+function handbrakeArgs(src: string, out: string, kind: "dvd" | "bluray"): string[] {
+  const common = [
+    "-i", src, "-o", out, "--main-feature", "--format", "av_mkv",
+    "-e", "x265_10bit", "-q", kind === "dvd" ? "19" : "18", "--encoder-preset", "slow",
+    "--vfr", "--crop-mode", "auto",
+    "--all-audio", "-E", "copy", "--audio-copy-mask", "truehd,dtshd,dts,eac3,ac3,aac,flac", "--audio-fallback", "av_aac", "-B", "256",
+    "--all-subtitles", "--subtitle-burned=none",
+  ];
+  if (kind === "dvd") common.push("--comb-detect", "--decomb", "--auto-anamorphic");
+  else common.push("--no-comb-detect");
+  return common;
+}
+
+function encodeWithHandbrake(exe: string, src: string, out: string, id: string, progress: (done: number, note?: string) => void, outDir: string, name: string, kind: "dvd" | "bluray" = "bluray"): Promise<string> {
   return new Promise((resolve, reject) => {
-    const p = spawn(exe, ["-i", src, "-o", out, "--main-feature", "-e", "x264", "-q", "20", "-E", "av_aac", "-B", "192", "--all-subtitles", "--format", "av_mp4", "--optimize"], { windowsHide: true });
+    const p = spawn(exe, handbrakeArgs(src, out, kind), { windowsHide: true });
     jobs.set(id, p);
     const onData = (d: Buffer) => {
       const m = String(d).match(/Encoding:.*?(\d+(?:\.\d+)?)\s*%/);

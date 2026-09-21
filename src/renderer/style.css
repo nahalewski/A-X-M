@@ -1575,3 +1575,32 @@ body.dimmed #app, body.dimmed #background-layer, body.dimmed #wallpaper, body.di
 .ghost-reply:empty { display: none; }
 
 /* Ghost talking: the eye flickers with the voice, the shell breathes faster. */
+
+/* ---- Toybox shelf --------------------------------------------------------------- */
+#toybox-app { position: fixed; inset: 0; z-index: 20; display: grid; grid-template-rows: auto 1fr auto; padding: 4vh 6vw 3vh; background: radial-gradient(ellipse at 50% 30%, rgba(60, 20, 90, 0.55), rgba(10, 4, 20, 0.92)); backdrop-filter: blur(6px); animation: toybox-in 0.35s ease-out; }
+#toybox-app.hidden { display: none; }
+@keyframes toybox-in { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: none; } }
+.toybox-head { display: flex; align-items: baseline; gap: 18px; }
+.toybox-title { font-size: 2.2vh; letter-spacing: 0.18em; text-transform: uppercase; color: #fff; text-shadow: 0 0 12px rgba(255, 255, 255, 0.5); }
+.toybox-count { font-size: 1.7vh; color: rgba(255, 255, 255, 0.7); }
+.toybox-stage { display: flex; align-items: flex-end; justify-content: center; min-height: 0; padding: 2vh 0; }
+.toybox-shelf { position: relative; height: 100%; max-height: 74vh; max-width: 70vw; filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)); transition: aspect-ratio 0.3s ease; }
+.toybox-shelf-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.toybox-cell { position: absolute; display: flex; align-items: flex-end; justify-content: center; padding: 4% 6% 0; box-sizing: border-box; border-radius: 4px; transition: box-shadow 0.2s ease, background 0.2s ease; }
+.toybox-cell.selected { background: radial-gradient(ellipse at 50% 90%, rgba(180, 220, 255, 0.35), rgba(120, 180, 255, 0) 70%); box-shadow: inset 0 0 0 2px rgba(150, 210, 255, 0.85), 0 0 28px rgba(120, 190, 255, 0.55); }
+.toybox-figure { max-width: 100%; max-height: 100%; object-fit: contain; object-position: bottom; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); transition: transform 0.2s ease; transform-origin: 50% 100%; }
+.toybox-cell.selected .toybox-figure { transform: scale(1.12) translateY(-2%); animation: toybox-bob 1.8s ease-in-out infinite; }
+@keyframes toybox-bob { 0%, 100% { transform: scale(1.12) translateY(-2%); } 50% { transform: scale(1.12) translateY(-6%); } }
+.toybox-cell:not(.owned) .toybox-figure { opacity: 0.55; filter: grayscale(0.6) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.55)); }
+.toybox-cell.selected:not(.owned) .toybox-figure { opacity: 0.85; }
+.toybox-placeholder { width: 70%; height: 70%; border-radius: 12%; background: rgba(255, 255, 255, 0.12); display: flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.7); font-size: 2.4vh; font-weight: 600; margin-bottom: 6%; }
+.toybox-star { position: absolute; top: 4%; right: 6%; color: #ffd54a; font-size: 1.8vh; text-shadow: 0 0 6px rgba(255, 213, 74, 0.8); }
+.toybox-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 10%; color: rgba(255, 255, 255, 0.75); font-size: 1.9vh; }
+.toybox-card { position: absolute; right: 6vw; top: 50%; transform: translateY(-50%); width: 22vw; padding: 2.2vh 2vw; border-radius: 14px; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.18); backdrop-filter: blur(8px); color: #fff; }
+.toybox-card.hidden { display: none; }
+.toybox-card-name { font-size: 2.6vh; font-weight: 600; margin-bottom: 0.6vh; }
+.toybox-card-platform { font-size: 1.6vh; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255, 255, 255, 0.65); margin-bottom: 1.2vh; }
+.toybox-card-facts { font-size: 1.7vh; color: rgba(255, 255, 255, 0.85); line-height: 1.5; }
+.toybox-card-state { margin-top: 1.4vh; font-size: 1.6vh; color: #9ad8ff; }
+.toybox-page { text-align: center; font-size: 1.6vh; color: rgba(255, 255, 255, 0.6); letter-spacing: 0.1em; }
+body:has(#options-popup:not(.hidden)) .toybox-card, body:has(#info-card:not(.hidden)) .toybox-card { opacity: 0; transition: opacity 0.2s ease; }

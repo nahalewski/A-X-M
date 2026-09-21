@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>A-X-M voice</title>
+<!-- An isolated page for Vosk only: no user content ever loads here, so the
+     emscripten worker's eval is acceptable. Served from 127.0.0.1 by the app. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; worker-src 'self' blob:; connect-src 'self' http://127.0.0.1:* blob: data:" />
+</head>
+<body><script src="voice.js"></script></body>
+</html>
