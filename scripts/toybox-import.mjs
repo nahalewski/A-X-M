@@ -30,6 +30,13 @@ const PROVENANCE = {
     license: "MIT",
     note: "Archived upstream. The MIT licence covers the compiled dataset, not Nintendo's artwork.",
   },
+  "skylanders-images": {
+    type: "artwork",
+    project: "Skylanders-Image-Generator (skylandersNFC)",
+    url: "https://github.com/skylandersNFC/Skylanders-Image-Generator",
+    license: "unlicensed",
+    note: "Collector-card images referenced by URL and cached locally; Activision owns the characters. Never committed or shipped.",
+  },
   skylanders: {
     type: "metadata",
     project: "Skylander-IDs",
@@ -145,7 +152,47 @@ function importAmiibo() {
  * `Name | CharacterID | VariantID`. A character and variant pair is what a portal
  * reports, so that pair is the identifier here.
  */
+/**
+ * Skylanders pictures: the community's Skylanders-Image-Generator carries one
+ * collector card per figure ("Mr Shadow's <Name>.jpg") for every game. A figure is
+ * matched by the name upstream lists it under, then by its base name, with the
+ * card from its own game preferred. Referenced, not copied.
+ */
+function skylandersCardIndex() {
+  const file = path.join(SOURCES, "skylanders-images-tree.json");
+  if (!fs.existsSync(file)) return null;
+  const paths = JSON.parse(fs.readFileSync(file, "utf-8")).tree.map((t) => t.path).filter((x) => /cards\/Mr_Shadow(_Crystals)?\//.test(x) && /\.(png|jpg)$/i.test(x));
+  const norm = (t) => t.toLowerCase().replace(/[’']/g, "").replace(/\(.*?\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
+  const cards = paths.map((x) => {
+    const base = path.basename(x).replace(/\.(png|jpg)$/i, "").replace(/^Mr Shadows? /i, "").replace(/^Mr Shadow's /i, "");
+    return { path: x, name: norm(base), game: (x.match(/^assets\/(\d\d)_/) ?? [])[1] ?? "" };
+  });
+  const gameOf = (series) => {
+    const t = (series ?? "").toLowerCase();
+    if (/spyro|ssa/.test(t)) return "01";
+    if (/giants|toys for bob/.test(t)) return "02";
+    if (/swap|vicarious/.test(t)) return "03";
+    if (/trap/.test(t)) return "04";
+    if (/supercharger|villain/.test(t)) return "05";
+    if (/imaginator/.test(t)) return "06";
+    return "";
+  };
+  return {
+    find(listedAs, baseName, series) {
+      const game = gameOf(series);
+      const wants = [norm(listedAs), norm(baseName), norm(baseName.replace(/^(legendary|dark|polar|eon s elite|elite|lightcore|series \d|nitro|jade|molten|scarlet|granite|royal|gnarly|flocked|frosted|blue|red|green|purple|pink|crystal|glow in the dark|metallic|bronze|silver|gold|winterfest|halloween|easter|kaos|hot|golden|steel|chrome|sparkle|clear|steampunk|snow|rocky|power blue|torch|volcanic|hard boiled|sundae|fizzy|surfer|instant|birthday) /i, ""))];
+      for (const w of wants) {
+        if (!w) continue;
+        const hits = cards.filter((c) => c.name === w);
+        if (hits.length) return hits.find((c) => c.game === game) ?? hits[0];
+      }
+      return null;
+    },
+  };
+}
+
 function importSkylanders() {
+  const cardIndex = skylandersCardIndex();
   const file = path.join(SOURCES, "skylander-ids.md");
   if (!fs.existsSync(file)) return { figures: [], skipped: ["skylander-ids.md missing"] };
 
@@ -206,13 +253,15 @@ function importSkylanders() {
       attributes: { characterId, variantId, listedAs: name },
       nfc: { technology: "mifare-classic-1k", identifierType: "character-variant", characterId, variantId },
       media: {
-        // No artwork source with clear permission has been identified, so nothing is
-        // referenced rather than guessed at.
         copyrightOwner: "Activision",
         redistributable: false,
+        ...(() => {
+          const card = cardIndex?.find(name, baseName, series);
+          return card ? { remoteArtwork: `https://raw.githubusercontent.com/skylandersNFC/Skylanders-Image-Generator/main/${card.path.split("/").map(encodeURIComponent).join("/")}` } : {};
+        })(),
       },
       compatibleGames: [],
-      sources: [{ ...PROVENANCE.skylanders, retrieved: new Date().toISOString().slice(0, 10) }],
+      sources: [{ ...PROVENANCE.skylanders, retrieved: new Date().toISOString().slice(0, 10) }, ...(cardIndex?.find(name, baseName, series) ? [{ ...PROVENANCE["skylanders-images"], retrieved: new Date().toISOString().slice(0, 10) }] : [])],
     });
   }
 

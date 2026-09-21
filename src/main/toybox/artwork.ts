@@ -23,11 +23,8 @@ function devArtworkDir(): string {
 const inFlight = new Set<string>();
 
 function localFile(figure: ToyFigure): string | null {
-  const candidates = [
-    path.join(cacheDir(), `${figure.id}.png`),
-    path.join(devArtworkDir(), figure.platform, `${figure.id}.png`),
-    path.join(devArtworkDir(), `${figure.id}.png`),
-  ];
+  const candidates: string[] = [];
+  for (const ext of [".png", ".jpg", ".webp"]) candidates.push(path.join(cacheDir(), `${figure.id}${ext}`), path.join(devArtworkDir(), figure.platform, `${figure.id}${ext}`), path.join(devArtworkDir(), `${figure.id}${ext}`));
   if (figure.media?.png) candidates.push(path.join(app.getPath("userData"), "toybox", figure.media.png));
   if (figure.media?.thumbnail) candidates.push(path.join(app.getPath("userData"), "toybox", figure.media.thumbnail));
   return candidates.find((c) => fs.existsSync(c)) ?? null;
@@ -46,7 +43,8 @@ export function artUrl(figure: ToyFigure): string | null {
 }
 
 async function cacheRemote(figure: ToyFigure, url: string): Promise<void> {
-  const dst = path.join(cacheDir(), `${figure.id}.png`);
+  const ext = path.extname(new URL(url).pathname).toLowerCase() || ".png";
+  const dst = path.join(cacheDir(), `${figure.id}${ext}`);
   if (fs.existsSync(dst) || inFlight.has(figure.id)) return;
   inFlight.add(figure.id);
   try {
