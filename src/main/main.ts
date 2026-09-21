@@ -43,6 +43,7 @@ import { getSongInfo, getScreenInfo, SongInfo, ScreenInfo } from "./metadata";
 import { getGameInfo, updateDatabase, databaseStatus, clearCache as clearGameDbCache, cacheLocation, GameInfo, DbPlatform } from "./gameDb";
 import { listPackages, installPackage, mountImage, dismountImage, packagesFolder, installFolder, PcPackage } from "./pcIso";
 import { cartridgeArtwork, clearCartridgeArtwork, CartridgeGame } from "./cartridgeArtwork";
+import { planTransfer, transferGame, uninstallGame, detectLauncher, LAUNCHER_NAMES, TransferPlan } from "./gameTransfer";
 import { listVolumes, copyMedia, downloadJellyfin, VolumeInfo, MediaKind as TransferKind } from "./storage";
 import { InMenuBrowser } from "./browserView";
 import { getWifiStatus, getBluetoothStatus, getHardwareInfo, getControllerDevices, WifiStatus, BluetoothStatus, HardwareInfo, ControllerDevice } from "./systemStatus";
@@ -708,6 +709,19 @@ ipcMain.handle("axm:gameDbLocation", () => cacheLocation());
  * whose art has not resolved keeps artUrl null and the menu shows a plain disc
  * for it, which is the intended look until the real artwork turns up.
  */
+// ---- Moving PC games between this PC and the cartridge --------------------
+ipcMain.handle("axm:planGameTransfer", (_e, game: GameEntry, targetDrive: string): Promise<TransferPlan> =>
+  planTransfer(game, targetDrive)
+);
+ipcMain.handle("axm:transferGame", (_e, game: GameEntry, targetDrive: string, mode: "move" | "copy") =>
+  transferGame(game, targetDrive, mode)
+);
+ipcMain.handle("axm:uninstallGame", (_e, game: GameEntry) => uninstallGame(game));
+ipcMain.handle("axm:gameLauncher", (_e, game: GameEntry) => {
+  const id = detectLauncher(game);
+  return { id, name: LAUNCHER_NAMES[id] };
+});
+
 ipcMain.handle("axm:cartridgeArtwork", (_e, drive: string, games: CartridgeGame[]): Promise<string[]> =>
   cartridgeArtwork(drive, games)
 );

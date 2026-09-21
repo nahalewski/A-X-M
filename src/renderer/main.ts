@@ -21,7 +21,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform, PcPackage} from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession, DbPlatform, PcPackage, GameTransferPlan} from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -1062,6 +1062,127 @@ async function main(): Promise<void> {
       }, CARTRIDGE_ROTATE_MS);
     }
     xmb.refresh();
+  };
+
+  /**
+   * The Y sidebar for a PC game: where it can go, and how to get rid of it.
+   *
+   * What is offered depends on which side of the cartridge the game is on. A
+   * game on this PC can go to the cartridge; a game on the cartridge can come
+   * back to any fixed drive. Only the destinations that make sense are listed,
+   * and each is checked for space before it is offered, so a transfer that
+   * cannot work is never presented as a choice.
+   *
+   * Retro games are not included: they are ROMs that the retro column already
+   * moves, and they have no launcher to tell.
+   */
+  const gameTransferOptions = async (game: GameEntry): Promise<PopupOption[]> => {
+    if (game.source === "retro") return [];
+
+    const cart = volumes.find((v) => v.cartridge);
+    const onCartridge = !!cart && (game.drive || "").slice(0, 2).toUpperCase() === cart.drive.slice(0, 2).toUpperCase();
+    const launcher = await window.axm.gameLauncher(game).catch(() => ({ id: "other", name: "this PC" }));
+
+    // Where this game could go. From the PC it is the cartridge and nowhere
+    // else; from the cartridge it is any fixed drive that is not the cartridge.
+    const destinations = onCartridge
+      ? volumes.filter((v) => !v.cartridge && v.kind === "fixed")
+      : cart
+        ? [cart]
+        : [];
+
+    const options: PopupOption[] = [];
+
+    for (const dest of destinations) {
+      const plan = await window.axm.planGameTransfer(game, dest.drive).catch(() => null);
+      const where = dest.cartridge ? "cartridge" : `${dest.drive} drive`;
+
+      if (!plan || !plan.ok) {
+        // Shown, but disabled with the reason: silently omitting it just looks
+        // like the menu is broken when the option is expected to be there.
+        options.push({
+          label: `Move to ${where}`,
+          hint: plan?.reason ?? "Not possible",
+          run: () => notifier.push(plan?.reason ?? "That move is not possible"),
+        });
+        continue;
+      }
+
+      const size = fmtBytes(plan.sizeBytes);
+      const free = plan.freeBytes === null ? "" : ` · ${fmtBytes(plan.freeBytes)} free`;
+      options.push({
+        label: `Move to ${where}`,
+        hint: `${size}${free}${plan.registers ? ` · updates ${launcher.name}` : ""}`,
+        run: () => void runTransfer(game, dest.drive, "move", plan),
+      });
+      options.push({
+        label: `Copy to ${where}`,
+        hint: `${size}${free} · leaves the original`,
+        run: () => void runTransfer(game, dest.drive, "copy", plan),
+      });
+    }
+
+    if (destinations.length === 0) {
+      options.push({
+        label: onCartridge ? "Move to this PC" : "Move to cartridge",
+        hint: onCartridge ? "No fixed drive found" : "No cartridge is plugged in",
+        run: () => notifier.push(onCartridge ? "No fixed drive to move it to" : "Plug the cartridge in first"),
+      });
+    }
+
+    options.push({
+      label: "Uninstall",
+      hint: `Hands it to ${launcher.name}`,
+      run: () => {
+        showOptions(`Uninstall ${game.name}?`, [
+          {
+            label: "Uninstall",
+            hint: `${launcher.name} will ask you to confirm`,
+            run: () => {
+              void (async () => {
+                const out = await window.axm.uninstallGame(game);
+                notifier.push(out.message);
+                if (out.ok) {
+                  // The launcher does the work in its own time; rescan shortly.
+                  window.setTimeout(async () => {
+                    games = await window.axm.scanGames();
+                    xmb.refresh();
+                  }, 8000);
+                }
+              })();
+            },
+          },
+          { label: "Keep it", run: () => undefined },
+        ]);
+      },
+    });
+
+    return options;
+  };
+
+  /** Runs a move or copy, confirming first when the launcher cannot be told. */
+  const runTransfer = async (game: GameEntry, drive: string, mode: "move" | "copy", plan: GameTransferPlan) => {
+    const go = () => {
+      void (async () => {
+        notifier.push(`${mode === "move" ? "Moving" : "Copying"} ${game.name} · ${fmtBytes(plan.sizeBytes)}`);
+        const out = await window.axm.transferGame(game, drive, mode);
+        notifier.push(out.message, out.ok ? "install" : undefined);
+        games = await window.axm.scanGames();
+        xmb.refresh();
+      })();
+    };
+
+    // A move the launcher will not hear about can leave the game looking broken
+    // in its library, so that is said plainly before anything is written.
+    if (mode === "move" && plan.note) {
+      showOptions(`Move ${game.name}?`, [
+        { label: "Move anyway", hint: plan.note, run: go },
+        { label: "Copy instead", hint: "Leaves the working original in place", run: () => void runTransfer(game, drive, "copy", plan) },
+        { label: "Cancel", run: () => undefined },
+      ]);
+      return;
+    }
+    go();
   };
 
   const isCartridge = (drive: string) => volumes.some((v) => v.cartridge && v.drive.toUpperCase() === drive.slice(0, 2).toUpperCase());
@@ -2162,7 +2283,7 @@ async function main(): Promise<void> {
       {
         id: "install-package-files",
         title: "Install Package Files",
-        subtitle: "PC disc images in GAME\PCISO · mount and install",
+        subtitle: "PC disc images in GAME\\PCISO · mount and install",
         iconUrl: "assets/icons/folder.png",
         onConfirm: () => void openPcPackages(),
       },
@@ -2273,7 +2394,7 @@ async function main(): Promise<void> {
         return [{
           id: "pcpackages-empty",
           title: "No disc images found",
-          subtitle: "Put .iso files in GAME\PCISO on the ROOT drive",
+          subtitle: "Put .iso files in GAME\\PCISO on the ROOT drive",
           iconUrl: "assets/icons/disc-pc.webp",
         }];
       }
@@ -5376,7 +5497,11 @@ async function main(): Promise<void> {
   };
 
   xmb.setOnGameContext((game) => {
+    void (async () => {
     const profiles: (1 | 2 | 3 | null)[] = [null, 1, 2, 3];
+    // Move / copy / uninstall, worked out for this game before the menu opens so
+    // each destination can be shown with its size and free space.
+    const transfer = await gameTransferOptions(game);
     showOptions(game.name, [
       { label: "Play", run: () => void window.axm.launchGame(game.id) },
       {
@@ -5395,6 +5520,7 @@ async function main(): Promise<void> {
       { label: "Change Artwork…", hint: "SteamGridDB", run: () => changeArtwork(game) },
       ...(game.source === "retro" && (game.platform === "ps1" || game.platform === "ps2") ? [{ label: "HD Texture Packs", hint: game.platform === "ps1" ? "DuckStation" : "PCSX2", run: () => hdTexturePacks(game) }] : []),
       ...(game.installDir && game.source !== "xbox" ? [{ label: "Open Folder", run: () => void window.axm.openFolder(game.installDir) }] : []),
+      ...transfer,
       {
         label: "Information",
         run: () =>
@@ -5409,6 +5535,7 @@ async function main(): Promise<void> {
           ]),
       },
     ]);
+    })();
   });
   // Start on Game - it's a game hub first, whatever the XMB running order is.
   xmb.setActiveCategory("games");

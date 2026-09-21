@@ -269,6 +269,18 @@ export interface GameInfo {
   matchedBy: "serial" | "release name" | "title" | "none";
 }
 
+export interface GameTransferPlan {
+  ok: boolean;
+  reason?: string;
+  sizeBytes: number;
+  files: number;
+  freeBytes: number | null;
+  launcher: string;
+  registers: boolean;
+  note?: string;
+  targetDir: string;
+}
+
 export interface PcPackage {
   id: string;
   name: string;
@@ -828,6 +840,10 @@ export interface AxmApi {
   gameDbStatus(): Promise<GameDbStatus[]>;
   clearGameDbCache(): Promise<{ ok: boolean; message: string }>;
   gameDbLocation(): Promise<string>;
+  planGameTransfer(game: GameEntry, targetDrive: string): Promise<GameTransferPlan>;
+  transferGame(game: GameEntry, targetDrive: string, mode: "move" | "copy"): Promise<{ ok: boolean; message: string; newPath?: string }>;
+  uninstallGame(game: GameEntry): Promise<{ ok: boolean; message: string }>;
+  gameLauncher(game: GameEntry): Promise<{ id: string; name: string }>;
   cartridgeArtwork(drive: string, games: { name: string; filePath: string }[]): Promise<string[]>;
   clearCartridgeArtwork(drive: string): Promise<number>;
   listPcPackages(): Promise<PcPackage[]>;
