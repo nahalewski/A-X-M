@@ -224,8 +224,12 @@ def identify(conn, atr):
     out = {"uid": hexs(uid)}
     atr_hex = hexs(atr)
     # PC/SC part 3 ATRs name the card family after "A0 00 00 03 06 03": 00 01 = MIFARE 1K, 00 03 = Ultralight/NTAG.
-    ultralight = "a000000306030003" in atr_hex or len(uid) == 7
+    # PC/SC card names: 0001 MIFARE 1K (Skylanders), 0026 MIFARE Mini (Disney Infinity), 0003 Ultralight / NTAG.
+    ultralight = "a000000306030003" in atr_hex
+    mini = "a000000306030026" in atr_hex
     mifare = "a000000306030001" in atr_hex or "a000000306030002" in atr_hex
+    if not ultralight and not mifare and not mini:
+        ultralight = len(uid) == 7
 
     if ultralight and not mifare:
         cc = read_pages(conn, 3, 4) or b""
@@ -258,7 +262,31 @@ def identify(conn, atr):
         out["tech"] = "ntag"
         return out
 
-    # MIFARE Classic: Skylanders first (fixed key), then Infinity (derived key).
+    # MIFARE Classic. A failed authentication halts the tag, so the order matters and
+    # the connection is re-made before a second try: Mini tags are Infinity, 1K are
+    # Skylanders, and each other key is only tried after a fresh select.
+    def reselect():
+        try:
+            conn.disconnect()
+            conn.connect()
+        except Exception:  # noqa: BLE001
+            pass
+
+    if mini or (len(uid) >= 7 and not mifare):
+        if mifare_auth(conn, 1, infinity_key_a(uid[:7])):
+            b1 = mifare_read(conn, 1)
+            if b1 and len(b1) >= 16:
+                number = infinity_model_number(uid[:7], b1)
+                out.update({"tech": "mifare-mini", "ecosystem": "disney-infinity"})
+                if number:
+                    out["characterId"] = str(number)
+                    out["variantId"] = "0"
+                dump = dump_infinity(conn, infinity_key_a(uid[:7]))
+                if dump:
+                    out["dump"] = base64.b64encode(dump).decode()
+                    out["dumpExt"] = "bin"
+                return out
+        reselect()
     if mifare_auth(conn, 1, SKYLANDER_KEY_A):
         b1 = mifare_read(conn, 1)
         if b1 and len(b1) >= 16:
@@ -270,6 +298,7 @@ def identify(conn, atr):
                 out["dump"] = base64.b64encode(dump).decode()
                 out["dumpExt"] = "sky"
             return out
+    reselect()
     if len(uid) >= 7 and mifare_auth(conn, 1, infinity_key_a(uid[:7])):
         b1 = mifare_read(conn, 1)
         if b1 and len(b1) >= 16:
