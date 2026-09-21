@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as http from "node:http";
+import * as crypto from "node:crypto";
 import { spawn, ChildProcess } from "node:child_process";
 import { app, BrowserWindow } from "electron";
 import { isWindows } from "../platform";
@@ -48,6 +49,22 @@ export function dumpsDir(): string {
 }
 
 const RESCAN_AFTER_MS = 30_000;
+
+/** Stream URLs the menu asked to relay, by a short key (the URL holds the account). */
+const relayTargets = new Map<string, string>();
+/** Local media files the menu offered to phones (the current track), by key. */
+const mediaFiles = new Map<string, string>();
+export function mediaKeyFor(file: string): string {
+  const key = crypto.createHash("sha1").update(file).digest("hex").slice(0, 16);
+  mediaFiles.set(key, file);
+  return key;
+}
+
+export function relayUrlFor(target: string): string {
+  const key = crypto.createHash("sha1").update(target).digest("hex").slice(0, 16);
+  relayTargets.set(key, target);
+  return `http://127.0.0.1:${COMPANION_PORT}/relay?k=${key}`;
+}
 const COMPANION_PORT = 47311;
 
 interface ReaderState {
@@ -155,6 +172,87 @@ export class NfcHub {
     this.server = http.createServer((req, res) => {
       const url = (req.url ?? "/").split("?")[0];
       const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" };
+      // Pictures for the companion: covers, posters and art the menu already cached
+      // under its own data folder. Nothing else on the disk is reachable this way.
+      // A TV stream relayed with a player's User-Agent, for panels that refuse a
+      // browser's. Only http(s) URLs the menu registered are relayed.
+      // The track itself, for a phone playing the menu's music through its own
+      // speaker, headphones or Bluetooth. Only files the menu registered.
+      if (req.method === "GET" && url === "/media") {
+        const key = new URL(req.url ?? "/", "http://x").searchParams.get("k") ?? "";
+        const file = mediaFiles.get(key);
+        if (!file || !fs.existsSync(file)) {
+          res.writeHead(404, headers);
+          res.end("{}");
+          return;
+        }
+        const size = fs.statSync(file).size;
+        const ext = path.extname(file).toLowerCase();
+        const type = { ".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg", ".opus": "audio/ogg", ".wav": "audio/wav", ".mp4": "video/mp4", ".mkv": "video/x-matroska" }[ext] ?? "application/octet-stream";
+        const range = (req.headers.range ?? "").match(/bytes=(\d*)-(\d*)/);
+        let start = 0;
+        let end = size - 1;
+        if (range) {
+          if (range[1]) start = Number(range[1]);
+          if (range[2]) end = Number(range[2]);
+          if (!range[1] && range[2]) {
+            start = Math.max(0, size - Number(range[2]));
+            end = size - 1;
+          }
+        }
+        res.writeHead(range ? 206 : 200, { "Content-Type": type, "Accept-Ranges": "bytes", "Content-Length": end - start + 1, ...(range ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}), "Access-Control-Allow-Origin": "*" });
+        fs.createReadStream(file, { start, end }).pipe(res);
+        return;
+      }
+      if (req.method === "GET" && url === "/relay") {
+        const key = new URL(req.url ?? "/", "http://x").searchParams.get("k") ?? "";
+        const target = relayTargets.get(key);
+        if (!target) {
+          res.writeHead(404, headers);
+          res.end("{}");
+          return;
+        }
+        const range = req.headers.range;
+        fetch(target, { headers: { "User-Agent": "VLC/3.0.20 LibVLC/3.0.20", ...(range ? { Range: range } : {}) } })
+          .then((up) => {
+            const h: Record<string, string> = { "Access-Control-Allow-Origin": "*" };
+            for (const name of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+              const v = up.headers.get(name);
+              if (v) h[name] = v;
+            }
+            res.writeHead(up.status, h);
+            if (!up.body) return res.end();
+            const reader = up.body.getReader();
+            const pump = (): void => {
+              reader.read().then(({ value, done }) => {
+                if (done) return res.end();
+                if (!res.write(Buffer.from(value))) res.once("drain", pump);
+                else pump();
+              }).catch(() => res.end());
+            };
+            res.on("close", () => reader.cancel().catch(() => {}));
+            pump();
+          })
+          .catch(() => {
+            res.writeHead(502, headers);
+            res.end("{}");
+          });
+        return;
+      }
+      if (req.method === "GET" && url === "/asset") {
+        const q = new URL(req.url ?? "/", "http://x").searchParams.get("f") ?? "";
+        const file = path.resolve(q);
+        const root = path.resolve(app.getPath("userData"));
+        if (!file.toLowerCase().startsWith(root.toLowerCase() + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
+          res.writeHead(404, headers);
+          res.end("{}");
+          return;
+        }
+        const ext = path.extname(file).toLowerCase();
+        res.writeHead(200, { "Content-Type": ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg", "Cache-Control": "max-age=86400", "Access-Control-Allow-Origin": "*" });
+        fs.createReadStream(file).pipe(res);
+        return;
+      }
       if (req.method === "GET" && url === "/toybox/status") {
         res.writeHead(200, headers);
         res.end(JSON.stringify({ ok: true, app: "A-X-M", ...this.status(), present: [...this.readers.entries()].map(([id, s]) => ({ reader: id, figureId: s.figureId })) }));

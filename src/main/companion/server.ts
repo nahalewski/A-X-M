@@ -45,7 +45,7 @@ const MAX_PAIR_ATTEMPTS = 5;
 /** A pairing code is only good for this long. */
 const PAIR_WINDOW_MS = 120_000;
 /** Silence longer than this and the socket is assumed dead. */
-const HEARTBEAT_TIMEOUT_MS = 30_000;
+const HEARTBEAT_TIMEOUT_MS = 45_000;
 /** Ceiling on frames per second from one device, to bound a misbehaving client. */
 const MAX_FRAMES_PER_SECOND = 240;
 
@@ -150,6 +150,9 @@ export class CompanionServer {
       this.sessions.add(session);
 
       socket.on("message", (data) => this.onMessage(session, String(data)));
+      // The phone's own WebSocket pings count as signs of life too.
+      socket.on("ping", () => (session.lastSeen = Date.now()));
+      socket.on("pong", () => (session.lastSeen = Date.now()));
       socket.on("close", () => this.drop(session));
       socket.on("error", () => this.drop(session));
     });

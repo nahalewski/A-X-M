@@ -104,6 +104,40 @@ class CompanionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun xmb(action: XmbAction) = client.sendXmb(action)
     fun media(command: MediaCommand, value: Double? = null) = client.sendMedia(command, value)
+
+    /** The phone's own player, live while the host says the output is the phone. */
+    private val phonePlayer = com.axm.companion.net.PhonePlayer()
+    private var followingOutput = false
+
+    /** Switches the music to this phone (Bluetooth follows the phone), or back to the PC. */
+    fun routeAudio(toPhone: Boolean) {
+        if (!toPhone) {
+            // Hand back from where the phone got to.
+            client.sendMedia(MediaCommand.POSITION, phonePlayer.position())
+            phonePlayer.release()
+        }
+        client.sendMedia(MediaCommand.ROUTE, if (toPhone) 1.0 else 0.0)
+    }
+
+    init {
+        viewModelScope.launch {
+            client.media.collect { m ->
+                val onPhone = m.output == "phone" && m.streamUrl != null
+                if (onPhone) {
+                    followingOutput = true
+                    if (m.playing) phonePlayer.play(m.streamUrl!!, m.positionSeconds) else phonePlayer.pause()
+                } else if (followingOutput) {
+                    followingOutput = false
+                    phonePlayer.release()
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        phonePlayer.release()
+        super.onCleared()
+    }
     fun pointer(kind: String, dx: Float = 0f, dy: Float = 0f, button: String? = null) =
         client.sendPointer(kind, dx, dy, button)
 }

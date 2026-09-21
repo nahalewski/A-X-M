@@ -1,6 +1,15 @@
 package com.axm.companion
 
+import android.content.Context
+import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.view.WindowManager
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.ui.Modifier
+import com.axm.companion.ui.Axm
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -10,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.axm.companion.net.LinkState
 import com.axm.companion.ui.AxmTheme
+import com.axm.companion.ui.ControlsScreen
 import com.axm.companion.ui.HomeScreen
 import com.axm.companion.ui.MediaScreen
 import com.axm.companion.ui.PairingScreen
@@ -27,18 +37,36 @@ import com.axm.companion.ui.TouchpadScreen
 class MainActivity : ComponentActivity() {
 
     private val model: CompanionViewModel by viewModels()
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { AxmTheme { Root(model) } }
+        // A remote that dims and drops its link is no remote: the screen stays on
+        // while the app is in front, and the Wi-Fi radio is held at full power so
+        // the phone's power saving does not cut the socket every few seconds.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setContent {
+            AxmTheme {
+                // Under the status bar and the navigation bar, never behind them.
+                Box(Modifier.fillMaxSize().background(Axm.Background).systemBarsPadding()) { Root(model) }
+            }
+        }
     }
 
     override fun onResume() {
         super.onResume()
+        val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        wifiLock = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "A-X-M Companion").also { it.acquire() }
         // Coming back to the app is the moment to look again: the phone may have
         // changed network, or A-X-M may have started since.
         model.refresh()
+    }
+
+    override fun onPause() {
+        wifiLock?.let { if (it.isHeld) it.release() }
+        wifiLock = null
+        super.onPause()
     }
 }
 
@@ -83,11 +111,18 @@ private fun Root(model: CompanionViewModel) {
 
     when (screen) {
         Screen.HOME -> home()
-        Screen.REMOTE -> RemoteScreen(onAction = model::xmb, onBack = { model.show(Screen.HOME) })
+        Screen.REMOTE -> ControlsScreen(
+            media = media,
+            onAction = model::xmb,
+            onCommand = { command, value -> model.media(command, value) },
+            onBack = { model.show(Screen.HOME) },
+            onRoute = model::routeAudio,
+        )
         Screen.MEDIA -> MediaScreen(
             media = media,
             onCommand = { command, value -> model.media(command, value) },
             onBack = { model.show(Screen.HOME) },
+            onRoute = model::routeAudio,
         )
         Screen.TOUCHPAD -> TouchpadScreen(
             onPointer = { kind, dx, dy, button -> model.pointer(kind, dx, dy, button) },

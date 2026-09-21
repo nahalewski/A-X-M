@@ -40,6 +40,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -180,7 +182,7 @@ fun HomeScreen(
         if (link is LinkState.Connected) {
             Spacer(Modifier.height(4.dp))
             Text("MODES", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
-            ModeRow("Remote", "Navigate the menu") { onOpen(Screen.REMOTE) }
+            ModeRow("Controls", "The menu and games; media controls when something plays") { onOpen(Screen.REMOTE) }
             ModeRow("Media", "What is playing") { onOpen(Screen.MEDIA) }
             ModeRow("Touchpad", "Move the pointer") { onOpen(Screen.TOUCHPAD) }
         }
@@ -298,15 +300,26 @@ fun RemoteScreen(onAction: (XmbAction) -> Unit, onBack: () -> Unit) {
 /* ------------------------------------------------------------------- media -- */
 
 @Composable
-fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, onBack: () -> Unit) {
+fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, onBack: () -> Unit, onRoute: ((Boolean) -> Unit)? = null) {
     Column(
         Modifier.fillMaxSize().background(Axm.Background).padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Header("Media", onBack)
 
+        // The artwork the host sent (a cover, a poster): a modest square, centred.
+        if (media.artworkUrl != null) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                RemoteImage(media.artworkUrl, Modifier.size(150.dp).clip(RoundedCornerShape(14.dp)))
+            }
+        }
+
         Panel(Modifier.fillMaxWidth()) {
             Column {
+                Text(
+                    if (media.playing) "Now playing" else if (media.title != null) "Paused" else "",
+                    color = Axm.Accent, style = MaterialTheme.typography.labelMedium,
+                )
                 Text(
                     media.title ?: "Nothing playing",
                     style = MaterialTheme.typography.titleMedium, color = Axm.Text,
@@ -323,11 +336,20 @@ fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, o
                 Spacer(Modifier.height(14.dp))
                 val progress = if (media.durationSeconds > 0)
                     (media.positionSeconds / media.durationSeconds).toFloat().coerceIn(0f, 1f) else 0f
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                    color = Axm.Accent,
-                    trackColor = Axm.PanelRaised,
+                // Drag to scrub: the bar follows the finger while held, and the new
+                // position goes to the menu once it lets go.
+                var dragging by remember { mutableStateOf<Float?>(null) }
+                Slider(
+                    value = dragging ?: progress,
+                    onValueChange = { dragging = it },
+                    onValueChangeFinished = {
+                        val at = dragging
+                        dragging = null
+                        if (at != null && media.durationSeconds > 0) onCommand(MediaCommand.POSITION, (at * media.durationSeconds))
+                    },
+                    enabled = media.durationSeconds > 0,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(thumbColor = Axm.Accent, activeTrackColor = Axm.Accent, inactiveTrackColor = Axm.PanelRaised),
                 )
                 Spacer(Modifier.height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -352,6 +374,17 @@ fun MediaScreen(media: MediaState, onCommand: (MediaCommand, Double?) -> Unit, o
             ) { onCommand(MediaCommand.TOGGLE, null) }
             PadButton(Icons.Filled.FastForward, "Forward", 60) { onCommand(MediaCommand.SEEK, 15.0) }
             PadButton(Icons.Filled.SkipNext, "Next", 60) { onCommand(MediaCommand.NEXT, null) }
+        }
+
+        // Where the sound comes out. The phone's own routing (headphones, Bluetooth,
+        // a car) applies whenever the phone has it.
+        if (onRoute != null && media.streamUrl != null) {
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(999.dp)).background(Axm.Panel),
+            ) {
+                OutputChoice("This PC", media.output != "phone", Modifier.weight(1f)) { onRoute(false) }
+                OutputChoice("This phone · Bluetooth", media.output == "phone", Modifier.weight(1f)) { onRoute(true) }
+            }
         }
 
         Row(
@@ -418,5 +451,15 @@ fun TouchpadScreen(
                 Text("Right")
             }
         }
+    }
+}
+
+@Composable
+private fun OutputChoice(label: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.clip(RoundedCornerShape(999.dp)).background(if (active) Axm.Accent else Axm.Panel).clickable(onClick = onClick).padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = if (active) Axm.Background else Axm.TextDim, style = MaterialTheme.typography.labelLarge)
     }
 }

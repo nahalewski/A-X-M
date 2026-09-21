@@ -118,11 +118,30 @@ export class MediaViewer {
     this.videoEl.addEventListener("ended", () => this.updateVideoChrome());
     this.videoEl.addEventListener("error", () => {
       this.captionEl.textContent = `Couldn't play ${this.current()?.name ?? "this file"}`;
+      const cur = this.current();
+      if (cur) this.onVideoError?.(cur);
     });
   }
 
   setOnClose(callback: () => void): void {
     this.onClose = callback;
+  }
+
+  private onVideoError: ((entry: BrowseEntry) => void) | null = null;
+
+  /** The video element gave up on this entry (codec, refused stream...). */
+  setOnVideoError(callback: (entry: BrowseEntry) => void): void {
+    this.onVideoError = callback;
+  }
+
+  /** Swaps the playing entry's source in place, e.g. for a relayed copy of the same stream. */
+  replaceSource(url: string): void {
+    const cur = this.current();
+    if (!cur) return;
+    cur.url = url;
+    this.captionEl.textContent = cur.name;
+    this.videoEl.src = url;
+    void this.videoEl.play().catch(() => {});
   }
 
   isOpen(): boolean {

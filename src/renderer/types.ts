@@ -416,6 +416,7 @@ export interface Settings {
   emulators: Partial<Record<RetroPlatform, string>>;
   ps3Trim: Ps3TrimSettings;
   storeRoot: string;
+  tvEnglishOnly: boolean;
   /** Jellyfin discovery on the LAN ("Media Server Connection"). */
   mediaServerEnabled: boolean;
   /** Ghost, the voice assistant. */
@@ -589,6 +590,8 @@ export interface CompanionSession {
 }
 
 export interface CompanionStatus {
+  /** What the menu last told the phones is playing. */
+  media?: { playing: boolean; title?: string; kind?: string } | null;
   running: boolean;
   enabled: boolean;
   addresses: string[];
@@ -617,6 +620,15 @@ export interface TvStatus {
 export interface TvCategory {
   id: string;
   name: string;
+}
+
+export interface TvEpisode {
+  id: string;
+  title: string;
+  season: number;
+  episode: number;
+  extension?: string;
+  duration?: string;
 }
 
 export interface TvItem {
@@ -763,8 +775,13 @@ export interface AxmApi {
   tvItems(kind: TvKind, categoryId?: string): Promise<TvItem[]>;
   tvEpg(streamId: string): Promise<TvProgramme[]>;
   tvStreamUrl(item: TvItem): Promise<string | null>;
+  tvEpisodes(seriesId: string): Promise<TvEpisode[]>;
+  tvEpisodeUrl(ep: TvEpisode): Promise<string | null>;
+  tvRelayUrl(url: string): Promise<string | null>;
+  tvDownload(url: string, name: string, target: string, container: string): Promise<string>;
   companionStatus(): Promise<CompanionStatus>;
   companionForget(deviceId: string): Promise<boolean>;
+  companionMedia(state: { playing: boolean; title?: string; artist?: string; album?: string; artworkUrl?: string; positionSeconds?: number; durationSeconds?: number; kind?: string; filePath?: string; output?: string }): void;
   companionSetEnabled(enabled: boolean): Promise<boolean>;
   companionPermissions(patch: Record<string, boolean>): Promise<Record<string, boolean>>;
   onCompanionInput(callback: (input: CompanionInput) => void): void;

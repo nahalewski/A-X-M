@@ -242,3 +242,62 @@ export async function downloadJellyfin(login: JellyfinLogin, itemId: string, nam
   send({ id, name, destination: destDir, done: total || done, total: total || done, finished: true });
   return out;
 }
+
+/**
+ * Saves a TV Streaming film or episode to VIDEO on `target`, refusing up front when
+ * the drive can't hold it (the provider states the size in Content-Length). Same
+ * toast and progress as a Jellyfin download; the URL carries the account, so it
+ * is built in the main process and never shown.
+ */
+export async function downloadUrl(url: string, name: string, target: string, container: string, id = `dl-${Buffer.from(url).toString("base64url").slice(0, 24)}`): Promise<string> {
+  const destDir = destinationFor("video", target);
+  fs.mkdirSync(destDir, { recursive: true });
+  const safe = name.replace(/[<>:"/\|?*]/g, "").trim() || "video";
+  const out = uniquePath(destDir, `${safe}.${container || "mp4"}`);
+  const res = await fetch(url, { headers: { "User-Agent": STREAM_USER_AGENT } });
+  if (!res.ok || !res.body) {
+    const err = `The service refused the download (${res.status})`;
+    send({ id, name, destination: destDir, done: 0, total: 0, finished: true, error: err });
+    throw new Error(err);
+  }
+  const total = Number(res.headers.get("content-length") ?? 0);
+  const free = await freeBytes(destDir);
+  if (free !== null && total > 0 && free < total + 256 * 1024 * 1024) {
+    const err = `Not enough space on ${target === "home" ? "this PC" : target} (${(total / 1073741824).toFixed(1)} GB needed, ${(free / 1073741824).toFixed(1)} GB free)`;
+    send({ id, name, destination: destDir, done: 0, total, finished: true, error: err });
+    throw new Error(err);
+  }
+  let done = 0;
+  let lastSent = 0;
+  const ws = fs.createWriteStream(out);
+  const reader = res.body.getReader();
+  try {
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      if (value) {
+        done += value.length;
+        if (!ws.write(value)) await new Promise<void>((r) => ws.once("drain", () => r()));
+        if (Date.now() - lastSent > 250) {
+          lastSent = Date.now();
+          send({ id, name, destination: destDir, done, total, finished: false });
+        }
+      }
+    }
+    await new Promise<void>((resolve, reject) => ws.end((err?: Error | null) => (err ? reject(err) : resolve())));
+  } catch (err) {
+    ws.destroy();
+    try {
+      fs.unlinkSync(out);
+    } catch {
+      /* partial file already gone */
+    }
+    send({ id, name, destination: destDir, done, total, finished: true, error: String(err) });
+    throw err;
+  }
+  send({ id, name, destination: destDir, done: total || done, total: total || done, finished: true });
+  return out;
+}
+
+/** What a set-top box says; a few panels refuse a browser's own name. */
+export const STREAM_USER_AGENT = "VLC/3.0.20 LibVLC/3.0.20";

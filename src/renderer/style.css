@@ -648,6 +648,8 @@ body {
   transition: opacity 0.25s ease;
 }
 
+#np-art { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
+#np-art:not([src]) { display: none; }
 #now-playing.hidden {
   opacity: 0;
   pointer-events: none;

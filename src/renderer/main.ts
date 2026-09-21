@@ -21,7 +21,7 @@ import { BatteryIndicators } from "./battery";
 import { StatusIcons } from "./statusIcons";
 import { Hud } from "./hud";
 import { GameBackground } from "./background";
-import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession } from "./types";
+import { ToyboxSummary, ToyPlatform, ToyboxDetectionEvent, ToyboxSettings, ToyKindRow, RetroPlatform, StoreItem, TvEpisode, TvCategory, TvItem, TvKind, TvStatus, CompanionStatus, CompanionSession } from "./types";
 
 const RETRO_NAMES: Record<RetroPlatform, string> = { ps5: "PlayStation 5", ps4: "PlayStation 4", ps3: "PlayStation 3", ps2: "PlayStation 2", ps1: "PlayStation", psp: "PSP", switch: "Nintendo Switch" };
 const RETRO_ORDER: RetroPlatform[] = ["ps5", "ps4", "ps3", "ps2", "ps1", "psp", "switch"];
@@ -676,13 +676,40 @@ async function main(): Promise<void> {
     }
     if (input.kind === "media") {
       switch (input.command) {
-        case "toggle": musicPlayer.togglePause(); break;
-        case "play": if (!musicPlayer.isPlaying()) musicPlayer.togglePause(); break;
-        case "pause": if (musicPlayer.isPlaying()) musicPlayer.togglePause(); break;
+        case "toggle": if (audioOutput === "phone") { phonePlaying = !phonePlaying; publishMedia(true); break; } musicPlayer.togglePause(); break;
+        case "play": if (audioOutput === "phone") { phonePlaying = true; publishMedia(true); break; } if (!musicPlayer.isPlaying()) musicPlayer.togglePause(); break;
+        case "pause": if (audioOutput === "phone") { phonePlaying = false; publishMedia(true); break; } if (musicPlayer.isPlaying()) musicPlayer.togglePause(); break;
         case "next": musicPlayer.next(); break;
         case "previous": musicPlayer.previous(); break;
         case "stop": musicPlayer.stop(); break;
-        default: break;   // volume, seek and the rest come with the media screen
+        case "route": {
+          // 1 = the phone plays from here (the menu goes quiet); 0 = back to the menu,
+          // resuming where the phone got to.
+          const toPhone = Number(input.value ?? 0) === 1;
+          if (toPhone && musicPlayer.current()) {
+            audioOutput = "phone";
+            phonePlaying = true;
+            if (musicPlayer.isPlaying()) musicPlayer.togglePause();
+            notifier.push("Music is playing on the phone", "general");
+          } else if (!toPhone) {
+            audioOutput = "host";
+            phonePlaying = false;
+            if (musicPlayer.current() && !musicPlayer.isPlaying()) musicPlayer.togglePause();
+            notifier.push("Music is back on this PC", "general");
+          }
+          publishMedia(true);
+          break;
+        }
+        case "seek":
+        case "position": {
+          const video = document.querySelector("#media-viewer video") as HTMLVideoElement | null;
+          const value = Number(input.value ?? 0);
+          if (mediaViewer.isOpen() && video) video.currentTime = input.command === "seek" ? Math.max(0, video.currentTime + value) : Math.max(0, value);
+          else if (musicPlayer.current()) musicPlayer.seekTo(input.command === "seek" ? musicPlayer.position() + value : value);
+          publishMedia(true);
+          break;
+        }
+        default: break;   // volume and the rest come with the media screen
       }
       xmb.refresh();
     }
@@ -2185,6 +2212,7 @@ async function main(): Promise<void> {
     if (!item.streamUrl) return;
     musicPlayer.stop();
     audio.fadeOutAmbient(400);
+    videoArt = { title: item.name, art: item.imageUrl ?? item.backdropUrl };
     const entry = { kind: "file" as const, name: item.name, filePath: item.id, url: item.streamUrl, hls: item.hls };
     mediaViewer.open("video", entry, [entry]);
     pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
@@ -2368,13 +2396,15 @@ async function main(): Promise<void> {
    */
   const tv = {
     active: false,
-    view: "root" as "root" | "categories" | "items",
+    view: "root" as "root" | "categories" | "items" | "episodes",
     kind: "live" as TvKind,
     status: null as TvStatus | null,
     categories: [] as TvCategory[],
     items: [] as TvItem[],
     categoryName: "",
     busy: false,
+    show: null as TvItem | null,
+    episodes: [] as TvEpisode[],
   };
 
   const tvRefresh = () => {
@@ -2417,20 +2447,83 @@ async function main(): Promise<void> {
     tvRefresh();
   };
 
+  const tvOpenShow = async (item: TvItem) => {
+    tv.busy = true;
+    tvRefresh();
+    tv.episodes = await window.axm.tvEpisodes(item.id).catch(() => [] as TvEpisode[]);
+    tv.show = item;
+    tv.view = "episodes";
+    tv.busy = false;
+    xmb.resetSelection("video");
+    tvRefresh();
+  };
+  /** Films and episodes play straight from the portal; if the browser can't, the same stream is relayed with a player's User-Agent. */
+  let tvRelayTried = "";
+  const tvPlayUrl = (name: string, url: string, hls: boolean, art?: string) => {
+    musicPlayer.stop();
+    audio.fadeOutAmbient(400);
+    videoArt = { title: name, art };
+    tvRelayTried = "";
+    mediaViewer.open("video", { kind: "file", name, filePath: url, url, hls }, []);
+    pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+  };
+  mediaViewer.setOnVideoError((entry) => {
+    if (!/^https?:\/\//.test(entry.url ?? "") || entry.hls || tvRelayTried === entry.filePath) return;
+    tvRelayTried = entry.filePath;
+    void window.axm.tvRelayUrl(entry.filePath).then((relay) => {
+      if (!relay) return;
+      notifier.push(`Retrying ${entry.name} through the relay`, "general");
+      mediaViewer.replaceSource(relay);
+    });
+  });
   const tvPlay = async (item: TvItem) => {
+    if (item.kind === "series") {
+      await tvOpenShow(item);
+      return;
+    }
     const url = await window.axm.tvStreamUrl(item).catch(() => null);
     if (!url) {
       notifier.push(`${item.name} has no playable stream`, "general");
       return;
     }
-    musicPlayer.stop();
-    audio.fadeOutAmbient(400);
     // Live is a playlist; a film is a plain file the portal serves directly.
-    mediaViewer.open("video", { kind: "file", name: item.name, filePath: url, url, hls: item.kind === "live" }, []);
-    pushOverlay((action) => mediaViewer.handle(action as Parameters<MediaViewer["handle"]>[0]));
+    tvPlayUrl(item.name, url, item.kind === "live", item.icon);
+  };
+  const tvPlayEpisode = async (ep: TvEpisode) => {
+    const url = await window.axm.tvEpisodeUrl(ep).catch(() => null);
+    if (!url) return;
+    tvPlayUrl(`${tv.show?.name ?? ""} · S${ep.season} E${ep.episode} ${ep.title}`.trim(), url, false, tv.show?.icon);
+  };
+  /** Y on a film or episode: save it to a drive's VIDEO folder, space permitting. */
+  const tvDownloadOptions = (name: string, urlOf: () => Promise<string | null>, container: string) => {
+    void refreshVolumes().then(() =>
+      showOptions(name, [
+        {
+          label: "Download",
+          hint: "into VIDEO on a drive; checked for space first",
+          children: discTargets("Download", (target) => {
+            void urlOf().then(async (url) => {
+              if (!url) return notifier.push(`${name} has no stream to save`, "transfer");
+              try {
+                await window.axm.tvDownload(url, name, target, container);
+              } catch (e) {
+                notifier.push(String((e as Error).message ?? e), "transfer");
+              }
+            });
+          }),
+        },
+        { label: "Play", run: () => void urlOf().then((u) => u && tvPlayUrl(name, u, false)) },
+      ])
+    );
   };
 
   const tvBack = (): boolean => {
+    if (tv.view === "episodes") {
+      tv.view = "items";
+      tv.show = null;
+      tvRefresh();
+      return true;
+    }
     if (tv.view === "items") {
       tv.view = "categories";
       tvRefresh();
@@ -2447,6 +2540,7 @@ async function main(): Promise<void> {
   };
 
   const tvHint = (): string => {
+    if (tv.view === "episodes") return `TV Streaming › ${tv.show?.name ?? "Series"}`;
     if (tv.view === "items") return `TV Streaming › ${tv.categoryName}`;
     if (tv.view === "categories") return `TV Streaming › ${tv.kind === "live" ? "Live TV" : tv.kind === "movie" ? "Movies" : "Series"}`;
     return tv.status?.connected ? `TV Streaming · ${tv.status.message}` : "TV Streaming";
@@ -2467,6 +2561,22 @@ async function main(): Promise<void> {
       }));
     }
 
+    if (tv.view === "episodes") {
+      if (tv.episodes.length === 0) return [{ id: "tv-noeps", title: "No episodes listed", subtitle: "The service returned nothing for this show", iconUrl: "assets/icons/tv-series.webp" }];
+      return tv.episodes.map((ep) => ({
+        id: `tv-ep-${ep.id}`,
+        title: `S${ep.season} E${ep.episode} · ${ep.title}`,
+        subtitle: ep.duration ? `${ep.duration}${ep.extension ? " · " + ep.extension : ""}` : ep.extension,
+        iconUrl: tv.show?.icon || "assets/icons/tv-series.webp",
+        iconGlyph: "TV",
+        contextHint: "options",
+        onConfirm: () => void tvPlayEpisode(ep),
+        onContext: () => {
+          tvDownloadOptions(`${tv.show?.name ?? ""} S${ep.season}E${String(ep.episode).padStart(2, "0")} ${ep.title}`.trim(), () => window.axm.tvEpisodeUrl(ep), ep.extension || "mp4");
+          return true;
+        },
+      }));
+    }
     if (tv.view === "items") {
       if (tv.items.length === 0) {
         return [{ id: "tv-empty", title: "Nothing in here", iconUrl: "assets/icons/tv-live.webp" }];
@@ -2475,9 +2585,11 @@ async function main(): Promise<void> {
         id: `tv-item-${item.id}`,
         title: item.name,
         // The provider serves its own channel artwork; nothing is bundled.
-        iconUrl: item.icon || (item.kind === "live" ? "assets/icons/tv-live.webp" : "assets/icons/tv-movies.webp"),
+        iconUrl: item.icon || (item.kind === "live" ? "assets/icons/tv-live.webp" : item.kind === "series" ? "assets/icons/tv-series.webp" : "assets/icons/tv-movies.webp"),
         iconGlyph: "TV",
+        contextHint: item.kind === "movie" ? "options" : undefined,
         onConfirm: () => void tvPlay(item),
+        onContext: item.kind === "movie" ? () => { tvDownloadOptions(item.name, () => window.axm.tvStreamUrl(item), item.extension || "mp4"); return true; } : undefined,
       }));
     }
 
@@ -2495,6 +2607,7 @@ async function main(): Promise<void> {
       { id: "tv-live", title: "Live TV", subtitle: "Channels", iconUrl: "assets/icons/tv-live.webp", onConfirm: () => void tvOpenKind("live") },
       { id: "tv-movies", title: "Movies", iconUrl: "assets/icons/tv-movies.webp", onConfirm: () => void tvOpenKind("movie") },
       { id: "tv-series", title: "Series", iconUrl: "assets/icons/tv-series.webp", onConfirm: () => void tvOpenKind("series") },
+      { id: "tv-language", title: "English Only", subtitle: settings.tvEnglishOnly ? "On · channels, films and shows tagged as another language are hidden" : "Off · everything the service lists", iconUrl: "assets/icons/tv-epg.webp", onConfirm: async () => { settings = await window.axm.setSettings({ tvEnglishOnly: !settings.tvEnglishOnly }); tv.categories = []; tv.items = []; xmb.refresh(); } },
       { id: "tv-account", title: "Account", subtitle: tv.status.message, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => void tvSignIn() },
     ];
   };
@@ -3434,7 +3547,7 @@ async function main(): Promise<void> {
         rows.push({
           id: `pad-${p.index}`,
           title: `Player ${p.index + 1} · ${family}`,
-          subtitle: [p.name, link, battery].filter(Boolean).join(" · "),
+          subtitle: [p.model, p.model !== p.name ? p.name : "", link, battery].filter(Boolean).join(" · "),
           iconUrl: "assets/icons/games.svg",
           badge: `${p.buttons} buttons · ${p.axes} axes${p.vibration ? " · rumble" : ""}`,
           meter: dev?.battery !== null && dev?.battery !== undefined ? dev.battery / 100 : undefined,
@@ -4665,11 +4778,60 @@ async function main(): Promise<void> {
   const npState = document.getElementById("np-state")!;
   const npIcon = spriteEl("player", "play", "np-spr");
   document.getElementById("np-icon")!.appendChild(npIcon);
+  // The cover, when the track has one (embedded, or from the Cover Art Archive).
+  const npArt = document.createElement("img");
+  npArt.id = "np-art";
+  npArt.addEventListener("error", () => npArt.removeAttribute("src"));
+  npEl.insertBefore(npArt, npEl.firstChild);
   const npFill = document.getElementById("np-progress-fill")!;
   let lastTrackPath: string | null = null;
 
-  musicPlayer.setOnChange(() => {
+  // ---- What is playing, for the companion phone ----------------------------------
+  let videoArt: { title: string; art?: string } | null = null;
+  /** Where the music comes out: this PC, or a phone that took it over. */
+  let audioOutput: "host" | "phone" = "host";
+  let phonePlaying = false;
+  let lastMediaSent = "";
+  let lastMediaAt = 0;
+  const publishMedia = (force = false) => {
+    const now = Date.now();
     const track = musicPlayer.current();
+    const video = mediaViewer.isOpen() ? mediaViewer.current() : null;
+    const videoEl = document.querySelector("#media-viewer video") as HTMLVideoElement | null;
+    let state: Parameters<typeof window.axm.companionMedia>[0];
+    if (video && videoEl) {
+      const art = videoArt && videoArt.title === video.name ? videoArt.art : undefined;
+      state = { kind: "video", playing: !videoEl.paused && !videoEl.ended, title: video.name, artist: video.filePath.replace(/[\\/][^\\/]*$/, "").split(/[\\/]/).pop(), artworkUrl: art && /^https?:/.test(art) ? art : undefined, positionSeconds: Math.floor(videoEl.currentTime || 0), durationSeconds: isFinite(videoEl.duration) ? Math.floor(videoEl.duration) : undefined };
+    } else if (track) {
+      state = { kind: "music", output: audioOutput, filePath: track.filePath, playing: audioOutput === "phone" ? phonePlaying : musicPlayer.isPlaying(), title: track.name, artist: track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-1)[0], album: track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-2, -1)[0], artworkUrl: musicArt.get(track.filePath), positionSeconds: Math.floor(musicPlayer.position()), durationSeconds: Math.floor(musicPlayer.duration()) || undefined };
+    } else state = { kind: "none", playing: false };
+    const key = JSON.stringify({ ...state, positionSeconds: undefined });
+    // Position ticks once a second at most; anything else goes out at once.
+    if (!force && key === lastMediaSent && now - lastMediaAt < 1000) return;
+    lastMediaSent = key;
+    lastMediaAt = now;
+    window.axm.companionMedia(state);
+  };
+  /** Cover art the menu already fetched for a track (Song Information / MusicBrainz). */
+  const musicArt = new Map<string, string>();
+  setInterval(() => { if (mediaViewer.isOpen()) publishMedia(); }, 1000);
+  setInterval(() => { if (!mediaViewer.isOpen() && !musicPlayer.current() && lastMediaSent !== JSON.stringify({ kind: "none", playing: false })) publishMedia(true); }, 2000);
+
+  let artLookup = "";
+  musicPlayer.setOnChange(() => {
+    publishMedia();
+    const track = musicPlayer.current();
+    // The cover for the phone's screen: looked up once per track, in the background.
+    if (track && !musicArt.has(track.filePath) && artLookup !== track.filePath) {
+      artLookup = track.filePath;
+      void window.axm.getSongInfo(track.filePath).then((info) => {
+        if (info?.coverUrl) {
+          musicArt.set(track.filePath, info.coverUrl);
+          publishMedia(true);
+          if (musicPlayer.current()?.filePath === track.filePath) npArt.src = info.coverUrl;
+        }
+      }).catch(() => {});
+    }
     if (!track) {
       npEl.classList.add("hidden");
       lastTrackPath = null;
@@ -4681,6 +4843,10 @@ async function main(): Promise<void> {
       return;
     }
     npEl.classList.remove("hidden");
+    const cover = musicArt.get(track.filePath);
+    if (cover) {
+      if (npArt.getAttribute("src") !== cover) npArt.src = cover;
+    } else if (track.filePath !== lastTrackPath) npArt.removeAttribute("src");
     npTitle.textContent = track.name;
     npFolder.textContent = track.filePath.replace(/\\[^\\]*$/, "").split("\\").slice(-2).join(" - ");
     npState.textContent = musicPlayer.isPlaying() ? "PLAYING" : "PAUSED";
@@ -4815,9 +4981,9 @@ async function main(): Promise<void> {
   });
   void applyAssistant();
 
-  gamepad.setOnControllerType((type) => {
+  gamepad.setOnControllerType((type, model) => {
     for (const t of ["ps", "switch", "kishi"]) document.body.classList.toggle(`pad-${t}`, type === t);
-    notifier.push(`${{ ps: "PlayStation", switch: "Nintendo Switch", kishi: "Razer Kishi", xbox: "Xbox" }[type]} controller connected`, "controller");
+    notifier.push(`${model} connected`, "controller");
   });
   const pollGamepad = (now: number) => {
     gamepad.poll(now);

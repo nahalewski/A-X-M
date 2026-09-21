@@ -116,7 +116,11 @@ export type MediaCommand =
   | "shuffle"
   | "repeat"
   | "favorite"
-  | "seek";
+  | "seek"
+  /** Absolute position in seconds - the phone dragging the progress bar. */
+  | "position"
+  /** value 1: the phone plays the audio from here on (the menu pauses); 0: back to the menu. */
+  | "route";
 export type MediaCommandMessage = Frame<"media.command", { command: MediaCommand; value?: number }>;
 
 /** Host is the authority on what is playing; the phone mirrors this. */
@@ -133,6 +137,10 @@ export type MediaStateMessage = Frame<
     durationSeconds?: number;
     volume?: number;
     muted?: boolean;
+    /** The file itself, streamed from the menu, for playing on the phone. */
+    streamUrl?: string;
+    /** "host" or "phone". */
+    output?: string;
   }
 >;
 

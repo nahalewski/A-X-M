@@ -12,6 +12,7 @@ export interface PadSnapshot {
   id: string;
   name: string;
   type: ControllerType;
+  model: string;
   buttons: number;
   axes: number;
   vibration: boolean;
@@ -34,18 +35,50 @@ interface DirState {
   nextRepeat: number;
 }
 
+/** The glyph family: which face-button pictures the footer draws. */
 export type ControllerType = "xbox" | "ps" | "switch" | "kishi";
 
+/** Vendor / product ids Chromium embeds in a pad's id string. */
+function usbIds(id: string): { vendor: string; product: string } {
+  const m = id.match(/vendor:\s*([0-9a-f]{4}).*product:\s*([0-9a-f]{4})/i);
+  return { vendor: (m?.[1] ?? "").toLowerCase(), product: (m?.[2] ?? "").toLowerCase() };
+}
+
 /**
- * Which family a pad belongs to, from its Gamepad id: by name, or by the USB
- * vendor id Chromium embeds (Sony 054c, Nintendo 057e, Razer 1532). Anything else
- * is treated as Xbox-layout, which the Ally's own controls are.
+ * Which family a pad belongs to - by the USB vendor id first (Sony 054c,
+ * Nintendo 057e, Razer 1532), then by name. Everything else is Xbox layout, which
+ * the Ally's own controls, GameSir, 8BitDo and CRKD pads all use. "Wireless
+ * Controller" alone is not Sony: half the market calls itself that.
  */
 export function controllerTypeOf(id: string): ControllerType {
-  if (/dualsense|dualshock|playstation|sony|054c|wireless controller/i.test(id)) return "ps";
-  if (/nintendo|switch|joy-con|057e/i.test(id)) return "switch";
-  if (/kishi|razer|1532/i.test(id)) return "kishi";
+  const { vendor } = usbIds(id);
+  if (vendor === "054c" || /dualsense|dualshock|playstation|\bsony\b/i.test(id)) return "ps";
+  if (vendor === "057e" || /nintendo|switch pro|joy-con|joycon/i.test(id)) return "switch";
+  if (vendor === "1532" || /kishi|razer/i.test(id)) return "kishi";
   return "xbox";
+}
+
+/**
+ * The pad's actual model, for the toast and the Controller settings: "DualSense
+ * Edge", "Xbox Series", "GameSir (Xbox layout)", "CRKD guitar"...
+ */
+export function controllerModelOf(id: string): string {
+  const { vendor, product } = usbIds(id);
+  const name = id.replace(/\s*\(.*$/, "").trim();
+  const sony: Record<string, string> = { "0ce6": "DualSense (PS5)", "0df2": "DualSense Edge (PS5)", "09cc": "DualShock 4 (PS4)", "05c4": "DualShock 4 (PS4)", "0268": "DualShock 3 (PS3)", "0e5f": "PlayStation Access" };
+  const ms: Record<string, string> = { "0b12": "Xbox Series X|S", "0b13": "Xbox Series X|S", "0b20": "Xbox Elite Series 2", "0b22": "Xbox Elite Series 2", "0b00": "Xbox Elite", "02ea": "Xbox One S", "02fd": "Xbox One S", "02e0": "Xbox One S", "02dd": "Xbox One", "02d1": "Xbox One", "028e": "Xbox 360", "0b0a": "Xbox Adaptive", "0b0c": "Xbox Adaptive" };
+  const nin: Record<string, string> = { "2009": "Switch Pro Controller", "2006": "Joy-Con (L)", "2007": "Joy-Con (R)", "200e": "Joy-Con grip", "2017": "Switch NES controller", "2019": "Switch SNES controller" };
+  if (vendor === "054c") return sony[product] ?? (/edge/i.test(name) ? "DualSense Edge (PS5)" : /dualsense/i.test(name) ? "DualSense (PS5)" : "PlayStation controller");
+  if (vendor === "045e") return ms[product] ?? "Xbox controller";
+  if (vendor === "057e") return nin[product] ?? "Nintendo Switch controller";
+  if (vendor === "1532" || /kishi/i.test(name)) return /v2|ultra/i.test(name) ? "Razer Kishi V2" : "Razer Kishi";
+  if (vendor === "0b05" || /rog ally|ally/i.test(name)) return "ROG Ally controls";
+  if (vendor === "3537" || /gamesir/i.test(name)) return `GameSir${name.match(/gamesir[-\s]*([a-z0-9]+)/i)?.[1] ? " " + name.match(/gamesir[-\s]*([a-z0-9]+)/i)![1] : ""} (Xbox layout)`;
+  if (vendor === "2dc8" || /8bitdo/i.test(name)) return "8BitDo (Xbox layout)";
+  if (/crkd/i.test(name)) return /guitar|gibson|les paul/i.test(name) ? "CRKD guitar" : /nitro/i.test(name) ? "CRKD Nitro Deck" : "CRKD (Xbox layout)";
+  if (/guitar/i.test(name)) return "Guitar controller";
+  if (/dualsense|dualshock/i.test(name)) return "PlayStation controller";
+  return name || "Controller";
 }
 
 export class GamepadNav {
@@ -85,6 +118,7 @@ export class GamepadNav {
         id: pad.id,
         name: pad.id.replace(/\s*\(.*$/, "").trim() || pad.id,
         type: controllerTypeOf(pad.id),
+        model: controllerModelOf(pad.id),
         buttons: pad.buttons.length,
         axes: pad.axes.length,
         vibration: !!(pad as Gamepad & { vibrationActuator?: unknown }).vibrationActuator,
@@ -94,10 +128,11 @@ export class GamepadNav {
   }
 
   private lastType: ControllerType | null = null;
-  private onType: ((type: ControllerType) => void) | null = null;
+  private lastModel = "";
+  private onType: ((type: ControllerType, model: string) => void) | null = null;
 
   /** Called whenever the connected controller's family changes (Xbox vs PlayStation). */
-  setOnControllerType(callback: (type: ControllerType) => void): void {
+  setOnControllerType(callback: (type: ControllerType, model: string) => void): void {
     this.onType = callback;
   }
   private prevButtons = new Map<number, boolean[]>();
@@ -125,9 +160,11 @@ export class GamepadNav {
       if (!typed) {
         typed = true;
         const type = controllerTypeOf(pad.id);
-        if (type !== this.lastType) {
+        const model = controllerModelOf(pad.id);
+        if (type !== this.lastType || model !== this.lastModel) {
           this.lastType = type;
-          this.onType?.(type);
+          this.lastModel = model;
+          this.onType?.(type, model);
         }
       }
       const prev = this.prevButtons.get(pad.index) ?? [];

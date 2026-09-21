@@ -121,7 +121,7 @@ enum class XmbAction(val wire: String) {
 enum class MediaCommand(val wire: String) {
     PLAY("play"), PAUSE("pause"), TOGGLE("toggle"), NEXT("next"), PREVIOUS("previous"),
     STOP("stop"), VOLUME("volume"), MUTE("mute"), SHUFFLE("shuffle"),
-    REPEAT("repeat"), FAVORITE("favorite"), SEEK("seek")
+    REPEAT("repeat"), FAVORITE("favorite"), SEEK("seek"), POSITION("position"), ROUTE("route")
 }
 
 /** What A-X-M says is playing. The host is the authority; this only mirrors it. */
@@ -135,6 +135,8 @@ data class MediaState(
     val durationSeconds: Double = 0.0,
     val volume: Double = 1.0,
     val muted: Boolean = false,
+    val streamUrl: String? = null,
+    val output: String = "host",
 ) {
     companion object {
         fun from(p: JSONObject) = MediaState(
@@ -147,6 +149,8 @@ data class MediaState(
             durationSeconds = p.optDouble("durationSeconds", 0.0),
             volume = p.optDouble("volume", 1.0),
             muted = p.optBoolean("muted", false),
+            streamUrl = p.optString("streamUrl").ifEmpty { null },
+            output = p.optString("output").ifEmpty { "host" },
         )
     }
 }

@@ -147,6 +147,8 @@ export interface Settings {
   emulators: Partial<Record<"ps5" | "ps4" | "ps3" | "ps2" | "ps1" | "psp" | "switch", string>>;
   /** The Store's shelf: N:\GAME\ROMS by default, one folder per platform. */
   storeRoot: string;
+  /** TV Streaming: hide channels, films and shows tagged as another language. */
+  tvEnglishOnly: boolean;
   /** What to empty out of an extracted PS3 game: the firmware update, dummy / pad files, other languages. */
   ps3Trim: { update: boolean; dummy: boolean; languages: boolean };
   /** Toybox: what Ghost does when a toy is scanned. */
@@ -241,6 +243,7 @@ const DEFAULTS: Settings = {
   emulators: {},
   ps3Trim: { update: true, dummy: true, languages: false },
   storeRoot: "N:\\GAME\\ROMS",
+  tvEnglishOnly: true,
   toybox: { onSelect: "launch", suggestLast: true, speak: true, showCards: true, artwork: true, autoFocus: true, suggestGames: true, inGame: "small", companion: true },
   mediaServerEnabled: true,
   assistant: { enabled: false, wakeWord: true, voiceReplies: true, bubbleSize: "medium" },
@@ -265,11 +268,27 @@ function filePath(): string {
   return path.join(app.getPath("userData"), "axm-settings.json");
 }
 
+/** The last good copy: a torn or half-written file must never cost the profile. */
+function backupPath(): string {
+  return filePath() + ".bak";
+}
+
+function readSettingsFile(): Partial<Settings> {
+  for (const p of [filePath(), backupPath()]) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(p, "utf-8")) as Partial<Settings>;
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      /* try the backup */
+    }
+  }
+  return {};
+}
+
 export function loadSettings(): Settings {
   if (cache) return cache;
   try {
-    const raw = fs.readFileSync(filePath(), "utf-8");
-    const merged: Settings = { ...DEFAULTS, ...JSON.parse(raw) };
+    const merged: Settings = { ...DEFAULTS, ...readSettingsFile() };
     // A file from an older build can be missing these or hold a short array; the
     // shallow spread above wouldn't fix either, and the renderer indexes by month.
     if (!Array.isArray(merged.monthlyThemes) || merged.monthlyThemes.length !== 12) {
@@ -287,7 +306,16 @@ export function saveSettings(partial: Partial<Settings>): Settings {
   const current = loadSettings();
   cache = { ...current, ...partial };
   fs.mkdirSync(path.dirname(filePath()), { recursive: true });
-  fs.writeFileSync(filePath(), JSON.stringify(cache, null, 2), "utf-8");
+  // Written whole-then-renamed, so another instance reading mid-write sees the old
+  // file rather than half of the new one; the previous file becomes the backup.
+  const tmp = filePath() + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(cache, null, 2), "utf-8");
+  try {
+    if (fs.existsSync(filePath())) fs.copyFileSync(filePath(), backupPath());
+  } catch {
+    /* no backup this time */
+  }
+  fs.renameSync(tmp, filePath());
   return cache;
 }
 

@@ -24,9 +24,14 @@ const api = {
   tvItems: (kind: string, categoryId?: string) => ipcRenderer.invoke("axm:tvItems", kind, categoryId),
   tvEpg: (streamId: string) => ipcRenderer.invoke("axm:tvEpg", streamId),
   tvStreamUrl: (item: unknown) => ipcRenderer.invoke("axm:tvStreamUrl", item),
+  tvEpisodes: (seriesId: string) => ipcRenderer.invoke("axm:tvEpisodes", seriesId),
+  tvEpisodeUrl: (ep: unknown) => ipcRenderer.invoke("axm:tvEpisodeUrl", ep),
+  tvRelayUrl: (url: string) => ipcRenderer.invoke("axm:tvRelayUrl", url),
+  tvDownload: (url: string, name: string, target: string, container: string) => ipcRenderer.invoke("axm:tvDownload", url, name, target, container),
   companionStatus: () => ipcRenderer.invoke("axm:companionStatus"),
   companionForget: (deviceId: string) => ipcRenderer.invoke("axm:companionForget", deviceId),
   companionSetEnabled: (enabled: boolean) => ipcRenderer.invoke("axm:companionSetEnabled", enabled),
+  companionMedia: (state: unknown) => ipcRenderer.send("axm:companionMedia", state),
   companionPermissions: (patch: Record<string, boolean>) => ipcRenderer.invoke("axm:companionPermissions", patch),
   onCompanionInput: (callback: (input: unknown) => void) => {
     ipcRenderer.on("axm:companionInput", (_e, input) => callback(input));

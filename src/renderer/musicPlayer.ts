@@ -54,6 +54,20 @@ export class MusicPlayer {
     return !this.el.paused && !this.el.ended && this.index >= 0;
   }
 
+  position(): number {
+    return this.el.currentTime || 0;
+  }
+
+  seekTo(seconds: number): void {
+    if (!isFinite(seconds)) return;
+    this.el.currentTime = Math.max(0, Math.min(this.duration() || seconds, seconds));
+    this.onChange();
+  }
+
+  duration(): number {
+    return isFinite(this.el.duration) ? this.el.duration : 0;
+  }
+
   /** 0..1 through the current track, or 0 if its duration isn't known yet. */
   progress(): number {
     if (!isFinite(this.el.duration) || this.el.duration <= 0) return 0;

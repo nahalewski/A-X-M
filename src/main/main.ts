@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
 import { pathToFileURL } from "node:url";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadSettings, saveSettings, setGameOverride, Settings } from "./settingsStore";
 import { scanAllGames } from "./gameScanner";
 import { launchGame } from "./gameLauncher";
@@ -42,7 +43,8 @@ import { storeCatalogue, storeInstall, StoreItem } from "./store";
 import { execFile } from "node:child_process";
 import type { RetroPlatform } from "./types";
 import { artUrl as toyArtUrl } from "./toybox/artwork";
-import { nfcHub, dumpsDir as toyboxDumpsDir } from "./toybox/nfc";
+import { nfcHub, dumpsDir as toyboxDumpsDir, relayUrlFor, mediaKeyFor } from "./toybox/nfc";
+import { downloadUrl } from "./storage";
 import { CompanionServer } from "./companion/server";
 import * as xtream from "./xtream";
 import { apiConfigSource, apiFolder, ensureApiExample } from "./apiKeys";
@@ -858,14 +860,20 @@ ipcMain.handle("axm:tvLogin", async (_e, account: xtream.XtreamAccount | null) =
   return xtream.status();
 });
 
-ipcMain.handle("axm:tvCategories", (_e, kind: xtream.XtreamKind) => xtream.categories(kind));
+ipcMain.handle("axm:tvCategories", (_e, kind: xtream.XtreamKind) => xtream.categories(kind, loadSettings().tvEnglishOnly));
 ipcMain.handle("axm:tvItems", (_e, kind: xtream.XtreamKind, categoryId?: string) =>
-  xtream.items(kind, categoryId)
+  xtream.items(kind, categoryId, loadSettings().tvEnglishOnly)
 );
 ipcMain.handle("axm:tvEpg", (_e, streamId: string) => xtream.shortEpg(streamId));
 ipcMain.handle("axm:tvStreamUrl", (_e, item: xtream.XtreamItem) => xtream.streamUrl(item));
+ipcMain.handle("axm:tvEpisodes", (_e, seriesId: string) => xtream.episodes(seriesId));
+ipcMain.handle("axm:tvEpisodeUrl", (_e, ep: xtream.XtreamEpisode) => xtream.episodeUrl(ep));
+// The same stream through the local relay - a player's User-Agent, ranges passed on.
+ipcMain.handle("axm:tvRelayUrl", (_e, url: string) => (/^https?:\/\//i.test(url) ? relayUrlFor(url) : null));
+ipcMain.handle("axm:tvDownload", (_e, url: string, name: string, target: string, container: string) => downloadUrl(url, name, target, container));
 
 ipcMain.handle("axm:companionStatus", () => ({
+  media: lastMediaState,
   running: companion.isRunning(),
   enabled: companionRegistry.isEnabled(),
   addresses: companion.addresses(),
@@ -882,6 +890,37 @@ ipcMain.handle("axm:companionStatus", () => ({
 
 ipcMain.handle("axm:companionForget", (_e, deviceId: string) => companionRegistry.revoke(deviceId));
 
+// What is playing, for the phone's media screen. The renderer is the authority.
+let lastMediaState: { playing: boolean; title?: string; kind?: string; artworkUrl?: string } | null = null;
+ipcMain.on("axm:companionMedia", (_e, state: { playing: boolean; title?: string; artist?: string; album?: string; artworkUrl?: string; positionSeconds?: number; durationSeconds?: number; kind?: string }) => {
+  // A cover the menu holds as a local file is handed to the phone through the
+  // asset route on the companion HTTP port, on this machine's LAN address.
+  if (state.artworkUrl?.startsWith("file:")) {
+    // The address the phone can actually reach: the one on its own subnet, else a
+    // home-network one, before any VPN or virtual adapter.
+    const phones = companion.sessionList().map((s) => s.address.replace(/^::ffff:/, ""));
+    const all = companion.addresses().filter((a) => !a.startsWith("127."));
+    const sameNet = all.find((a) => phones.some((p) => p.split(".").slice(0, 3).join(".") === a.split(".").slice(0, 3).join(".")));
+    const lan = sameNet ?? all.find((a) => a.startsWith("192.168.")) ?? all.find((a) => a.startsWith("10.")) ?? all[0];
+    try {
+      const file = fileURLToPath(state.artworkUrl);
+      state = { ...state, artworkUrl: lan ? `http://${lan}:47311/asset?f=${encodeURIComponent(file)}` : undefined };
+    } catch {
+      state = { ...state, artworkUrl: undefined };
+    }
+  }
+  // The file itself, so a phone can take the audio over (Bluetooth follows the phone).
+  const st = state as typeof state & { filePath?: string; streamUrl?: string; output?: string };
+  if (st.filePath && /^[A-Za-z]:\\/.test(st.filePath)) {
+    const phones = companion.sessionList().map((s) => s.address.replace(/^::ffff:/, ""));
+    const all = companion.addresses().filter((a) => !a.startsWith("127."));
+    const lan = all.find((a) => phones.some((p) => p.split(".").slice(0, 3).join(".") === a.split(".").slice(0, 3).join("."))) ?? all.find((a) => a.startsWith("192.168.")) ?? all[0];
+    if (lan) st.streamUrl = `http://${lan}:47311/media?k=${mediaKeyFor(st.filePath)}`;
+    delete st.filePath;
+  }
+  lastMediaState = st;
+  if (companion.isRunning()) companion.broadcast("media.state", st);
+});
 ipcMain.handle("axm:companionSetEnabled", (_e, enabled: boolean) => {
   companionRegistry.setEnabled(enabled);
   if (enabled) companion.start();
