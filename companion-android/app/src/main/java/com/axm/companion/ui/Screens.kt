@@ -37,6 +37,14 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.SdCard
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -46,11 +54,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,6 +72,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import com.axm.companion.Screen
 import com.axm.companion.protocol.CompanionSetting
 import com.axm.companion.net.LinkState
@@ -128,83 +146,273 @@ fun HomeScreen(
     onDisconnect: () -> Unit,
     onOpen: (Screen) -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxSize().background(Axm.Background).padding(22.dp).verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text("A-X-M", style = MaterialTheme.typography.titleLarge, color = Axm.Text)
-        Text("COMPANION", style = MaterialTheme.typography.labelLarge, color = Axm.Accent)
+    val connected = link is LinkState.Connected
 
-        Panel(Modifier.fillMaxWidth()) {
+    // Set when a dimmed tile is tapped, and cleared again a moment later so the
+    // hint behaves like a toast without pulling in a Scaffold and a snackbar
+    // host just for one line of text.
+    var blockedHint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(blockedHint) {
+        if (blockedHint != null) {
+            delay(2600)
+            blockedHint = null
+        }
+    }
+    // Connecting makes the hint stale, so it goes as soon as the link comes up.
+    LaunchedEffect(connected) {
+        if (connected) blockedHint = null
+    }
+
+    Column(Modifier.fillMaxSize().background(Axm.Background)) {
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Spacer(Modifier.height(8.dp))
+
+            // ---- A-X-M COMPANION header ----
             Column {
-                Text("CONNECTED TO", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
-                Spacer(Modifier.height(8.dp))
+                Text(
+                    "A - X - M",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
+                    ),
+                    color = Axm.GlowBlue,
+                )
+                Text(
+                    "COMPANION",
+                    style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 6.sp),
+                    color = Axm.Accent,
+                )
+            }
+
+            // ---- Connection bar ----
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, Axm.GlowBlue.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .background(Axm.CardPanelBg)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
                 when (link) {
                     is LinkState.Connected -> {
-                        Text(link.hostName, style = MaterialTheme.typography.titleMedium, color = Axm.Text)
-                        Text("Connected", color = Axm.Good, style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(10.dp))
-                        TextButton(onClick = onDisconnect) { Text("Disconnect", color = Axm.TextDim) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Connected to:", color = Axm.TextDim, style = MaterialTheme.typography.bodySmall)
+                                Text(link.hostName, color = Axm.Text, style = MaterialTheme.typography.titleMedium)
+                            }
+                            TextButton(onClick = onDisconnect) {
+                                Text("Disconnect", color = Axm.TextDim, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
-                    is LinkState.Connecting -> Text("Connecting…", color = Axm.TextDim)
-                    is LinkState.Failed -> Text(link.reason, color = Axm.Danger)
-                    else -> Text("Not connected", color = Axm.TextDim)
+                    is LinkState.Connecting -> Text("Connecting…", color = Axm.Accent, style = MaterialTheme.typography.bodyMedium)
+                    is LinkState.Failed -> Text(link.reason, color = Axm.Danger, style = MaterialTheme.typography.bodyMedium)
+                    else -> Text("Not connected", color = Axm.TextDim, style = MaterialTheme.typography.bodyMedium)
                 }
             }
-        }
 
-        // Only worth showing while there is nothing to control.
-        if (link !is LinkState.Connected) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Found on this network", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
-                Spacer(Modifier.width(10.dp))
-                Icon(
-                    Icons.Filled.Refresh, "Search again", tint = if (scanning) Axm.AccentDim else Axm.Accent,
-                    modifier = Modifier.size(20.dp).clickable(enabled = !scanning, onClick = onRefresh)
-                )
-            }
-            if (hosts.isEmpty()) {
-                Text(
-                    if (scanning) "Searching…" else "Nothing found. Make sure A-X-M is running on the same Wi-Fi.",
-                    color = Axm.TextDim, style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            hosts.forEach { host ->
-                Panel(Modifier.fillMaxWidth().clickable { onConnect(host) }) {
-                    Column {
-                        Text(host.hostName, style = MaterialTheme.typography.titleMedium, color = Axm.Text)
-                        Text("${host.address}  ·  ${host.hostVersion}", color = Axm.TextDim,
-                            style = MaterialTheme.typography.bodyMedium)
+            // ---- Host discovery (only when disconnected) ----
+            if (link !is LinkState.Connected) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Found on this network", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
+                    Spacer(Modifier.width(10.dp))
+                    Icon(
+                        Icons.Filled.Refresh, "Search again",
+                        tint = if (scanning) Axm.AccentDim else Axm.Accent,
+                        modifier = Modifier.size(20.dp).clickable(enabled = !scanning, onClick = onRefresh),
+                    )
+                }
+                if (hosts.isEmpty()) {
+                    Text(
+                        if (scanning) "Searching…"
+                        else "Nothing found. Make sure A-X-M is running on the same Wi-Fi.",
+                        color = Axm.TextDim, style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                hosts.forEach { host ->
+                    Box(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, Axm.SlotBorder, RoundedCornerShape(12.dp))
+                            .background(Axm.SlotBackground)
+                            .clickable { onConnect(host) }.padding(16.dp),
+                    ) {
+                        Column {
+                            Text(host.hostName, style = MaterialTheme.typography.titleMedium, color = Axm.Text)
+                            Text(
+                                "${host.address}  ·  ${host.hostVersion}",
+                                color = Axm.TextDim, style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
             }
+
+            Spacer(Modifier.height(4.dp))
+
+            // ---- Mode icon grid ----
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val columns = if (maxWidth > 600.dp) 5 else 3
+                val items = listOf(
+                    Triple(Icons.Filled.SportsEsports, "Controls", Screen.REMOTE),
+                    Triple(Icons.Filled.VideoLibrary, "Media", Screen.MEDIA),
+                    Triple(Icons.Filled.MusicNote, "Music\nLibrary", Screen.LIBRARY),
+                    Triple(Icons.Filled.SdCard, "Memory Card\nSaves", Screen.SAVES),
+                    Triple(Icons.Filled.Settings, "A-X-M\nSettings", Screen.SETTINGS),
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items.chunked(columns).forEach { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            row.forEach { (icon, label, screen) ->
+                                val enabled = connected || screen == Screen.SAVES
+                                ModeIconTile(
+                                    icon = icon, label = label, enabled = enabled,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { onOpen(screen) },
+                                    onBlocked = { blockedHint = "Connect to A-X-M first" },
+                                )
+                            }
+                            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+            }
+
+            // Why a dimmed tile did nothing. Saves works offline because the
+            // phone keeps its own copies; everything else needs the host.
+            AnimatedVisibility(
+                visible = blockedHint != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, Axm.Accent.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                        .background(Axm.PanelRaised)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Filled.Info, null, tint = Axm.Accent, modifier = Modifier.size(18.dp))
+                    Text(
+                        blockedHint ?: "",
+                        color = Axm.Text,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ---- Connection indicator ----
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                    .background(Axm.Panel).padding(horizontal = 16.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Info, "Info", tint = Axm.TextDim, modifier = Modifier.size(20.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        if (connected) Icons.Filled.Wifi else Icons.Filled.WifiOff,
+                        "Connection",
+                        tint = if (connected) Axm.Good else Axm.TextDim,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        if (connected) "Connected" else "Disconnected",
+                        color = if (connected) Axm.Good else Axm.TextDim,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (connected) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(Axm.Good))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
         }
 
-        if (link !is LinkState.Connected) {
-            Spacer(Modifier.height(4.dp))
-            Text("OFFLINE", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
-            ModeRow("Memory Card Saves", "The copies kept on this phone") { onOpen(Screen.SAVES) }
-        }
-        if (link is LinkState.Connected) {
-            Spacer(Modifier.height(4.dp))
-            Text("MODES", style = MaterialTheme.typography.labelLarge, color = Axm.TextDim)
-            ModeRow("Controls", "The menu and games; media controls when something plays") { onOpen(Screen.REMOTE) }
-            ModeRow("Media", "What is playing") { onOpen(Screen.MEDIA) }
-            ModeRow("Music Library", "Pick a song from the PC's music from here") { onOpen(Screen.LIBRARY) }
-            ModeRow("Touchpad", "Move the pointer") { onOpen(Screen.TOUCHPAD) }
-            ModeRow("Memory Card Saves", "Copies of the PS / PS2 saves, Apollo cheats, undo") { onOpen(Screen.SAVES) }
-            ModeRow("A-X-M Settings", "The menu's settings, changed from the phone") { onOpen(Screen.SETTINGS) }
+        // ---- Fixed bottom: PS button hints ----
+        //
+        // Just the four hints, spread across the bar. The wordmark that used to
+        // sit on the right is gone: the header already says A-X-M COMPANION, and
+        // at phone width it collided with the Menu hint rather than wrapping.
+        Row(
+            Modifier.fillMaxWidth().background(Axm.Panel)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HomePsHint("\u2715", Color(0xFF5B8EF0), "Select")
+            HomePsHint("\u25CB", Color(0xFFEF5350), "Back")
+            HomePsHint("\u25B3", Color(0xFF66BB6A), "Options")
+            HomePsHint("\u25A1", Color(0xFFEC407A), "Menu")
         }
     }
 }
 
 @Composable
-private fun ModeRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Panel(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = Axm.Text)
-            Text(subtitle, color = Axm.TextDim, style = MaterialTheme.typography.bodyMedium)
+private fun ModeIconTile(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onBlocked: () -> Unit = {},
+) {
+    val borderColor = if (enabled) Axm.IconTileGlow else Axm.SlotBorder.copy(alpha = 0.4f)
+    val bgColor = if (enabled) Axm.SlotBackground else Axm.DisabledTile
+    Box(
+        modifier.aspectRatio(1f).clip(RoundedCornerShape(14.dp))
+            .border(if (enabled) 1.5.dp else 0.75.dp, borderColor, RoundedCornerShape(14.dp))
+            .background(bgColor)
+            // A dimmed tile still takes the tap, so it can say why it is dimmed.
+            // Making it unclickable instead leaves the screen looking broken:
+            // you press it, nothing happens, and nothing tells you what to do.
+            .clickable { if (enabled) onClick() else onBlocked() }
+            .padding(8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                icon, label,
+                tint = if (enabled) Axm.IconTileGlow else Axm.TextDim.copy(alpha = 0.3f),
+                modifier = Modifier.size(36.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                label,
+                color = if (enabled) Axm.Text else Axm.TextDim.copy(alpha = 0.3f),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center, maxLines = 2,
+            )
         }
+    }
+}
+
+@Composable
+private fun HomePsHint(symbol: String, color: Color, label: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Box(
+            Modifier.size(18.dp).border(1.5.dp, color, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(symbol, color = color, fontSize = 9.sp, textAlign = TextAlign.Center)
+        }
+        Text(label, color = Axm.TextDim, style = MaterialTheme.typography.bodySmall)
     }
 }
 

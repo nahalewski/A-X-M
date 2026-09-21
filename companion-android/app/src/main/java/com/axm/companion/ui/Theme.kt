@@ -27,6 +27,20 @@ object Axm {
     val TextDim = Color(0xFF8A97AC)
     val Danger = Color(0xFFFF5A5A)
     val Good = Color(0xFF48D19A)
+    val GlowBlue = Color(0xFF00A8FF)
+    val SlotBackground = Color(0xFF0A1628)
+    val SlotBorder = Color(0xFF1A4A7A)
+    val SlotSelected = Color(0xFF00B4FF)
+    val HeaderGlow = Color(0xFF0078D4)
+    val CardPanelBg = Color(0xFF0D1B2A)
+
+    /**
+     * The main menu's icon tiles glow a touch brighter than the rest of the
+     * chrome, so the five things you can actually go to read as the live part
+     * of the screen rather than sitting at the same weight as the panels.
+     */
+    val IconTileGlow = Color(0xFF00BFFF)
+    val DisabledTile = Color(0xFF2A3040)
 }
 
 private val scheme = darkColorScheme(
