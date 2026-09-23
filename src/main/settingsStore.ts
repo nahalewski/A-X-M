@@ -230,6 +230,19 @@ export interface Settings {
   fpsCounterEnabled: boolean;
   /** CPU / RAM / GPU / device summary, bottom-left. */
   hardwareInfoEnabled: boolean;
+  /**
+   * Settings › Experimental. The master switch shows the Device column (between
+   * Users and Settings); each app in it - the paired phone's Phone, Messages and
+   * Contacts - can be turned off on its own.
+   */
+  experimental: ExperimentalSettings;
+}
+
+export interface ExperimentalSettings {
+  enabled: boolean;
+  phone: boolean;
+  messages: boolean;
+  contacts: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -311,6 +324,7 @@ const DEFAULTS: Settings = {
   overlayHotkey: "Alt+Home",
   fpsCounterEnabled: false,
   hardwareInfoEnabled: false,
+  experimental: { enabled: false, phone: true, messages: true, contacts: true },
 };
 
 let cache: Settings | null = null;
@@ -346,6 +360,7 @@ export function loadSettings(): Settings {
       merged.monthlyThemes = DEFAULT_MONTH_THEMES.map((t) => ({ ...t }));
     }
     if (!merged.fixedTheme) merged.fixedTheme = { ...DEFAULT_MONTH_THEMES[11] };
+    merged.experimental = { ...DEFAULTS.experimental, ...(merged.experimental ?? {}) };
     cache = merged;
   } catch {
     cache = { ...DEFAULTS };

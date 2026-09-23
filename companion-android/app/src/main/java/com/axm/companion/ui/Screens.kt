@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.SdCard
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Wifi
@@ -258,6 +259,7 @@ fun HomeScreen(
                     Triple(Icons.Filled.MusicNote, "Music\nLibrary", Screen.LIBRARY),
                     Triple(Icons.Filled.SdCard, "Memory Card\nSaves", Screen.SAVES),
                     Triple(Icons.Filled.Settings, "A-X-M\nSettings", Screen.SETTINGS),
+                    Triple(Icons.Filled.PhoneAndroid, "Device\nSharing", Screen.DEVICE),
                 )
 
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -267,7 +269,8 @@ fun HomeScreen(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             row.forEach { (icon, label, screen) ->
-                                val enabled = connected || screen == Screen.SAVES
+                                // Saves and Device Sharing work offline: copies and switches live on the phone.
+                                val enabled = connected || screen == Screen.SAVES || screen == Screen.DEVICE
                                 ModeIconTile(
                                     icon = icon, label = label, enabled = enabled,
                                     modifier = Modifier.weight(1f),

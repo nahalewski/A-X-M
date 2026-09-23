@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /** Which screen the user is on. The host can also drive this, later. */
-enum class Screen { HOME, REMOTE, MEDIA, TOUCHPAD, TOYBOX, GHOST, SETTINGS, LIBRARY, SAVES, CHEATS }
+enum class Screen { HOME, REMOTE, MEDIA, TOUCHPAD, TOYBOX, GHOST, SETTINGS, LIBRARY, SAVES, CHEATS, DEVICE }
 
 /**
  * Holds the link and everything the screens read.
@@ -136,6 +136,7 @@ class CompanionViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         phonePlayer.destroy()
+        phone.destroy()
         super.onCleared()
     }
     fun pointer(kind: String, dx: Float = 0f, dy: Float = 0f, button: String? = null) =
@@ -186,4 +187,26 @@ class CompanionViewModel(app: Application) : AndroidViewModel(app) {
 
     fun browse(key: String?) = client.browseMusic(key)
     fun playTrack(key: String) = client.playMusic(key)
+
+    // ---- Device Sharing (experimental): this phone's calls, texts and contacts for A-X-M ----
+
+    val phone = com.axm.companion.device.PhoneBridge(app) { type, payload -> client.sendPhone(type, payload) }
+
+    init {
+        client.phoneListener = { type, payload -> phone.onHostFrame(type, payload) }
+        viewModelScope.launch {
+            // Told on every (re)connection what is shared; a dropped link stops the pushes.
+            var wasConnected = false
+            client.state.collect { s ->
+                val now = s is LinkState.Connected
+                if (now && !wasConnected) phone.onConnected() else if (!now && wasConnected) phone.onDisconnected()
+                wasConnected = now
+            }
+        }
+    }
+
+    fun setSharing(feature: com.axm.companion.device.PhoneBridge.Feature, on: Boolean) = phone.setWanted(feature, on)
+
+    /** Permissions can change in Android's settings while the app is away. */
+    fun recheckSharing() = phone.refresh()
 }

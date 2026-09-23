@@ -119,7 +119,11 @@ class CompanionClient(
     private val _musicListing = MutableStateFlow<MusicListing?>(null)
     val musicListing: StateFlow<MusicListing?> = _musicListing.asStateFlow()
 
-    private fun hostKey(h: DiscoveredHost) = "${h.address}:${h.controlPort}"
+    /** Experimental Device sharing: every phone.* frame from the host goes here. */
+    @Volatile
+    var phoneListener: ((type: String, payload: JSONObject) -> Unit)? = null
+
+        private fun hostKey(h: DiscoveredHost) = "${h.address}:${h.controlPort}"
 
     fun connect(target: DiscoveredHost) {
         host = target
@@ -238,7 +242,8 @@ class CompanionClient(
             Protocol.SAVES_FILE -> _saveFiles.tryEmit(SaveFile.from(p))
             Protocol.SAVES_PATCHES -> _savePatches.value = SavePatches.from(p)
             Protocol.SAVES_RESULT -> _saveResult.value = SaveResult.from(p)
-            else -> Unit   // A newer host naming a feature we lack is ignorable.
+            else -> if (frame.type.startsWith("phone.")) phoneListener?.invoke(frame.type, p)
+            // Anything else: a newer host naming a feature we lack is ignorable.
         }
     }
 
@@ -307,6 +312,9 @@ class CompanionClient(
     fun restoreSave(cardId: String, save: String) { _saveResult.value = null; send(Protocol.SAVES_RESTORE, JSONObject().put("cardId", cardId).put("save", save)) }
     fun clearSaveResult() { _saveResult.value = null }
 
-    fun requestMode(mode: CompanionMode) =
+    /** Device sharing's answers and events (phone.state, phone.contacts, …). */
+    fun sendPhone(type: String, payload: JSONObject) = send(type, payload)
+
+        fun requestMode(mode: CompanionMode) =
         send(Protocol.COMPANION_MODE, JSONObject().put("mode", mode.wire))
 }

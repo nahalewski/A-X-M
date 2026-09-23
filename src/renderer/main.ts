@@ -15,6 +15,7 @@ import { MediaViewer } from "./mediaViewer";
 import { ToyShelf, TOY_PLATFORM_NAMES } from "./toybox";
 import { ToyboxDetections, resolveInstalledGames, TOY_BOXES } from "./toyboxDetect";
 import { StoreApp } from "./store";
+import { DEVICE_APP_ICONS, DeviceApp, DeviceAppId, DeviceData } from "./deviceApps";
 import { GridPicker, GridChoice } from "./gridPicker";
 import { TextEntry } from "./textEntry";
 import { BatteryIndicators } from "./battery";
@@ -733,6 +734,10 @@ async function main(): Promise<void> {
     { id: "assistantVoice", title: "Ghost Speaks", group: "Assistant", kind: "toggle" as const, value: onOff(settings.assistant.voiceReplies) },
     { id: "toyboxSpeak", title: "Toybox · Ghost Announces Toys", group: "Toybox", kind: "toggle" as const, value: onOff(settings.toybox.speak) },
     { id: "toyboxCards", title: "Toybox · Cards", group: "Toybox", kind: "toggle" as const, value: onOff(settings.toybox.showCards) },
+    { id: "experimental", title: "Experimental Features", group: "Experimental", kind: "toggle" as const, value: onOff(settings.experimental.enabled), detail: "The Device column: this phone's calls, texts and contacts in the menu" },
+    { id: "experimentalPhone", title: "Device · Phone", group: "Experimental", kind: "toggle" as const, value: onOff(settings.experimental.phone) },
+    { id: "experimentalMessages", title: "Device · Messages", group: "Experimental", kind: "toggle" as const, value: onOff(settings.experimental.messages) },
+    { id: "experimentalContacts", title: "Device · Contacts", group: "Experimental", kind: "toggle" as const, value: onOff(settings.experimental.contacts) },
   ];
   let lastCompanionSettings = "";
   const publishCompanionSettings = () => {
@@ -779,6 +784,10 @@ async function main(): Promise<void> {
       case "assistantVoice": settings = await window.axm.setSettings({ assistant: { ...settings.assistant, voiceReplies: on } }); break;
       case "toyboxSpeak": settings = await window.axm.setSettings({ toybox: { ...settings.toybox, speak: on } }); break;
       case "toyboxCards": settings = await window.axm.setSettings({ toybox: { ...settings.toybox, showCards: on } }); break;
+      case "experimental": settings = await window.axm.setSettings({ experimental: { ...settings.experimental, enabled: on } }); await applyExperimental(); break;
+      case "experimentalPhone": settings = await window.axm.setSettings({ experimental: { ...settings.experimental, phone: on } }); await applyExperimental(); break;
+      case "experimentalMessages": settings = await window.axm.setSettings({ experimental: { ...settings.experimental, messages: on } }); await applyExperimental(); break;
+      case "experimentalContacts": settings = await window.axm.setSettings({ experimental: { ...settings.experimental, contacts: on } }); await applyExperimental(); break;
       default: return;
     }
     xmb.refresh();
@@ -1403,6 +1412,80 @@ async function main(): Promise<void> {
       pushOverlay((a) => textEntry.handle(a as Parameters<TextEntry["handle"]>[0]));
     });
 
+  // ---- Device (Settings › Experimental) ------------------------------------------
+  //
+  // The paired phone's Phone, Messages and Contacts, as apps inside the menu. The
+  // column sits between Users and Settings and only exists while Experimental is
+  // on and at least one of its apps is.
+  const deviceAppsOn = (): Record<DeviceAppId, boolean> => {
+    const x = settings.experimental;
+    return { phone: !!x?.enabled && x.phone, messages: !!x?.enabled && x.messages, contacts: !!x?.enabled && x.contacts };
+  };
+  const deviceData = new DeviceData(deviceAppsOn);
+  const deviceColumnOn = () => { const a = deviceAppsOn(); return a.phone || a.messages || a.contacts; };
+  const deviceApp = new DeviceApp(document.body, deviceData, {
+    onClose: () => popOverlay(),
+    askText: (title, fields) => askText(title, fields),
+    choose: (title, options) => showOptions(title, options),
+    notify: (text) => notifier.push(text, "general"),
+    sound: (kind) => {
+      if (!settings.navSoundsEnabled) return;
+      if (kind === "move") audio.playMoveDown();
+      else if (kind === "confirm") audio.playConfirm();
+      else audio.playBack();
+    },
+    apps: deviceAppsOn,
+  });
+  const openDeviceApp = (app: DeviceAppId, showCall = false) => {
+    if (!deviceAppsOn()[app]) return;
+    const already = deviceApp.isOpen();
+    deviceApp.open(app);
+    if (showCall) deviceApp.showCall();
+    if (!already) pushOverlay((a) => deviceApp.handle(a as Parameters<DeviceApp["handle"]>[0]));
+  };
+  const closeDeviceApp = () => {
+    if (!deviceApp.isOpen()) return;
+    deviceApp.close();
+    popOverlay();
+  };
+  /** Experimental switched on or off, or one of its apps: the column and the data follow. */
+  const applyExperimental = async () => {
+    if (!deviceColumnOn()) {
+      closeDeviceApp();
+      deviceData.clear();
+    } else if (deviceApp.isOpen() && !deviceAppsOn()[deviceApp.current()!]) closeDeviceApp();
+    xmb.setCategories(visibleCategories());
+    if (deviceColumnOn()) {
+      const status = await window.axm.deviceStatus().catch(() => null);
+      if (status) deviceData.apply({ kind: "state", share: status.share, name: status.name });
+      // An app just switched on fills its row in the column without waiting to be opened.
+      const on = deviceAppsOn();
+      const share = status?.share;
+      if (share?.calls && on.phone && !deviceData.calls) void deviceData.request("calls");
+      if (share?.messages && on.messages && !deviceData.threads) void deviceData.request("threads");
+      if (share?.contacts && !deviceData.contacts) void deviceData.request("contacts");
+    }
+    xmb.refresh();
+  };
+  window.axm.onDeviceEvent((event) => {
+    if (!settings.experimental?.enabled) return;
+    deviceData.apply(event);
+    const apps = deviceAppsOn();
+    if (event.kind === "incomingSms" && apps.messages) {
+      const who = deviceData.nameFor(event.address, event.name);
+      notifier.push(`${who}: ${event.body.length > 80 ? event.body.slice(0, 79) + "…" : event.body}`, "general", DEVICE_APP_ICONS.messages);
+    } else if (event.kind === "callState" && event.state === "ringing" && apps.phone) {
+      notifier.push(`Incoming call · ${deviceData.nameFor(event.number, event.name)}`, "general", DEVICE_APP_ICONS.phone);
+      // Answer or decline from the menu, the way the phone would offer it - unless a
+      // keyboard or a popup is up, which keeps its input; the Device column's Call
+      // row (and the notification) lead back to it.
+      if (overlayStack.length === 0 || deviceApp.isOpen()) openDeviceApp("phone", true);
+    } else if (event.kind === "smsResult" && !event.ok) {
+      notifier.push(`Text not sent · ${event.error ?? "the phone refused it"}`, "general", DEVICE_APP_ICONS.messages);
+    }
+    xmb.refresh();
+  });
+
   /** The PS3-style centred choice screen (a title, a short list, a note along the bottom). */
   const pickFromScreen = (title: string, choices: ScreenChoice[]): Promise<ScreenChoice | null> =>
     new Promise((resolve) => {
@@ -1683,6 +1766,93 @@ async function main(): Promise<void> {
       { label: "Yes", run: async () => { await audio.fadeOutAmbient(500); void window.axm.powerAction(action); } },
       { label: "No" },
     ]);
+
+  /**
+   * Device (Settings › Experimental): the paired phone's Phone, Messages and
+   * Contacts. Each row opens its app full screen; a call in progress gets a row of
+   * its own at the top, so its screen is one press away after B put it away.
+   */
+  function deviceCategory(): Category {
+    const howTo = () =>
+      showInfo("Share your phone with A-X-M", undefined, null, [
+        { label: "1", value: "Pair the phone in Settings › Companion Devices" },
+        { label: "2", value: "In A-X-M Companion, open Device Sharing" },
+        { label: "3", value: "Switch on Phone, Messages and Contacts, and allow Android's permissions" },
+        { label: "Tablets", value: "A Wi-Fi tablet shares its contacts; calls and texts need a SIM" },
+        { label: "Privacy", value: "Nothing is kept on this PC - the lists are asked for when an app opens" },
+      ]);
+    return {
+      id: "device",
+      label: "Device",
+      iconUrl: "assets/icons/device.svg",
+      getItems: () => {
+        const apps = deviceAppsOn();
+        const share = deviceData.share;
+        const rows: MenuItem[] = [];
+        const call = deviceData.call;
+        if (apps.phone && call.state !== "idle") {
+          rows.push({
+            id: "device-call",
+            title: call.state === "ringing" ? "Incoming Call" : "Call in Progress",
+            subtitle: deviceData.nameFor(call.number, call.name),
+            iconUrl: DEVICE_APP_ICONS.phone,
+            badge: call.state === "ringing" ? "RINGING" : "ON CALL",
+            onConfirm: () => openDeviceApp("phone", true),
+          });
+        }
+        const why = (on: boolean | undefined, needsSim: boolean): string | null =>
+          !share ? "Needs a phone sharing from A-X-M Companion" : needsSim && !share.telephony ? `${deviceData.phoneName ?? "This device"} has no mobile service` : !on ? "Not shared - switch it on in A-X-M Companion" : null;
+        if (apps.phone) {
+          const missed = deviceData.missedCount();
+          rows.push({
+            id: "device-phone",
+            title: "Phone",
+            subtitle: why(share?.calls, true) ?? (missed ? `${missed} missed call${missed === 1 ? "" : "s"}` : `Call from ${deviceData.phoneName ?? "your phone"}`),
+            iconUrl: DEVICE_APP_ICONS.phone,
+            badge: missed ? String(missed) : undefined,
+            onConfirm: () => openDeviceApp("phone"),
+          });
+        }
+        if (apps.messages) {
+          const unread = deviceData.unreadCount();
+          rows.push({
+            id: "device-messages",
+            title: "Messages",
+            subtitle: why(share?.messages, true) ?? (unread ? `${unread} unread conversation${unread === 1 ? "" : "s"}` : "Read and send texts"),
+            iconUrl: DEVICE_APP_ICONS.messages,
+            badge: unread ? String(unread) : undefined,
+            onConfirm: () => openDeviceApp("messages"),
+          });
+        }
+        if (apps.contacts) {
+          rows.push({
+            id: "device-contacts",
+            title: "Contacts",
+            subtitle: why(share?.contacts, false) ?? (deviceData.contacts ? `${deviceData.contacts.length} contacts` : "Your phone's contacts"),
+            iconUrl: DEVICE_APP_ICONS.contacts,
+            onConfirm: () => openDeviceApp("contacts"),
+          });
+        }
+        rows.push({
+          id: "device-status",
+          title: share ? deviceData.phoneName ?? "Phone" : "No phone sharing",
+          subtitle: share
+            ? `Sharing ${[share.calls && "calls", share.messages && "messages", share.contacts && "contacts"].filter(Boolean).join(", ") || "nothing yet"}${share.formFactor === "tablet" ? " · tablet" : ""}`
+            : "How to share your phone's calls, texts and contacts",
+          iconUrl: "assets/icons/device.svg",
+          contextHint: "refresh",
+          onContext: () => {
+            if (share?.calls) void deviceData.request("calls");
+            if (share?.messages) void deviceData.request("threads");
+            if (share?.contacts) void deviceData.request("contacts");
+            return true;
+          },
+          onConfirm: howTo,
+        });
+        return rows;
+      },
+    };
+  }
 
   function usersCategory(): Category {
     return {
@@ -3319,7 +3489,7 @@ async function main(): Promise<void> {
 
   // ---- Settings, with the Theme sub-views ------------------------------------------
 
-  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | "companion" | "tv" | "tvlang" | { month: number };
+  type SettingsView = "root" | "theme" | "months" | "system" | "controller" | "about" | "display" | "audio" | "sys" | "network" | "datetime" | "power" | "chat" | "notify" | "dictionary" | "assistant" | "toybox" | "companion" | "tv" | "tvlang" | "experimental" | { month: number };
   /** Which group each root row files under; anything unlisted stays at the top level. */
   const SETTINGS_GROUPS: Record<string, "display" | "audio" | "sys" | "theme" | "tv"> = {
     windowMode: "display", renderResolution: "display", menuUpscaling: "display", targetHz: "display", backgroundQuality: "display",
@@ -3561,7 +3731,7 @@ async function main(): Promise<void> {
         const group = SETTINGS_GROUPS[item.id];
         settingLabels.push({ name: item.title, go: () => { goCategory("settings"); if (group) go(group); else go("root"); xmb.refresh(); } });
       }
-      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["toybox settings", "toybox"], ["tv settings", "tv"], ["theme settings", "theme"]] as const) {
+      for (const [name, v] of [["display settings", "display"], ["audio settings", "audio"], ["network settings", "network"], ["system settings", "sys"], ["assistant settings", "assistant"], ["toybox settings", "toybox"], ["tv settings", "tv"], ["theme settings", "theme"], ["experimental settings", "experimental"]] as const) {
         settingLabels.push({ name, go: () => { goCategory("settings"); if (v === "network") void netOpen(); else go(v as SettingsView); } });
       }
       const all = allRootItems();
@@ -3589,6 +3759,16 @@ async function main(): Promise<void> {
         { id: "group-tv", title: "TV Streaming", subtitle: `${settings.tvEnglishOnly ? "English only" : "All languages"} · adult content ${settings.tvAdultBlocked ? "behind a PIN" : "shown"} · subtitles ${settings.subtitles?.enabled ? settings.subtitles.language : "off"} · audio ${(settings.audioLanguage || "en").toUpperCase()}`, iconUrl: "assets/icons/tv-epg.webp", onConfirm: () => go("tv") },
         { id: "group-assistant", title: "Assistant", subtitle: settings.assistant.enabled ? 'Ghost is on · say "hey ghost"' : "Ghost, the voice assistant · off", iconUrl: "assets/icons/settings-assistant.png", onConfirm: () => go("assistant") },
         { id: "group-toybox", title: "Toybox", subtitle: "What Ghost does when a toy is scanned, readers, the companion app", iconUrl: "assets/icons/toybox.webp", onConfirm: () => go("toybox") },
+        {
+          id: "group-experimental",
+          title: "Experimental",
+          subtitle: settings.experimental?.enabled
+            ? `On · Device column with ${(["phone", "messages", "contacts"] as const).filter((k) => settings.experimental[k]).map((k) => ({ phone: "Phone", messages: "Messages", contacts: "Contacts" })[k]).join(", ") || "no apps"}`
+            : "Off · features still being built: your phone's calls, texts and contacts",
+          iconUrl: "assets/icons/device.svg",
+          badge: settings.experimental?.enabled ? "BETA" : undefined,
+          onConfirm: () => go("experimental"),
+        },
       ];
       const top = all.filter((i) => !SETTINGS_GROUPS[i.id]);
       // Theme first, then the groups, then whatever else is unfiled (About, Exit).
@@ -4436,6 +4616,69 @@ async function main(): Promise<void> {
       await applyAssistant();
       xmb.refresh();
     };
+    /** Settings › Experimental: the master switch, then each Device app on its own. */
+    const saveExperimental = async (patch: Partial<Settings["experimental"]>) => {
+      settings = await window.axm.setSettings({ experimental: { ...settings.experimental, ...patch } });
+      await applyExperimental();
+      publishCompanionSettings();
+    };
+    const experimentalItems = (): MenuItem[] => {
+      const x = settings.experimental;
+      const rows: MenuItem[] = [
+        {
+          id: "exp-enabled",
+          title: "Experimental Features",
+          subtitle: x.enabled ? "On · the Device column is between Users and Settings" : "Off · turn on to try features that are still being built",
+          iconUrl: "assets/icons/device.svg",
+          badge: x.enabled ? "ON" : undefined,
+          onConfirm: async () => {
+            await saveExperimental({ enabled: !x.enabled });
+            notifier.push(settings.experimental.enabled ? "Experimental features on · Device is next to Users" : "Experimental features off", "general");
+          },
+        },
+      ];
+      if (!x.enabled) return rows;
+      const app = (key: "phone" | "messages" | "contacts", title: string, on: string, off: string): MenuItem => ({
+        id: `exp-${key}`,
+        title,
+        subtitle: x[key] ? `On · ${on}` : `Off · ${off}`,
+        iconUrl: DEVICE_APP_ICONS[key],
+        onConfirm: () => saveExperimental({ [key]: !x[key] }),
+      });
+      rows.push(
+        app("phone", "Phone", "make and answer calls through your phone, with a keypad and your recent calls", "no Phone app in Device"),
+        app("messages", "Messages", "read your conversations and send texts through your phone", "no Messages app in Device"),
+        app("contacts", "Contacts", "browse and search your phone's contacts, call or text from a card", "no Contacts app in Device"),
+        {
+          id: "exp-phone-status",
+          title: "Phone Sharing",
+          subtitle: deviceData.share
+            ? `${deviceData.phoneName ?? "A phone"} is sharing ${[deviceData.share.calls && "calls", deviceData.share.messages && "messages", deviceData.share.contacts && "contacts"].filter(Boolean).join(", ") || "nothing yet"}`
+            : "No phone sharing · open A-X-M Companion › Device Sharing on the paired phone",
+          iconGlyph: "▤",
+          onConfirm: () => {
+            void refreshCompanion();
+            go("companion");
+          },
+        },
+        {
+          id: "exp-about",
+          title: "About Experimental Features",
+          subtitle: "What they do, and what they don't",
+          iconGlyph: "?",
+          onConfirm: () =>
+            showInfo("Experimental Features", undefined, null, [
+              { label: "Device", value: "Phone, Messages and Contacts from the phone paired as a companion, as apps inside the menu" },
+              { label: "Calls", value: "Placed and answered on the phone - the call's audio stays on the phone (or its headset)" },
+              { label: "Texts", value: "Sent by the phone, from its own number" },
+              { label: "Privacy", value: "Nothing is stored on this PC; lists are asked for when an app opens and forgotten when the phone leaves" },
+              { label: "Status", value: "Still being built - expect rough edges" },
+            ]),
+        }
+      );
+      return rows;
+    };
+
     const assistantItems = (): MenuItem[] => [
       {
         id: "as-enable",
@@ -5143,7 +5386,7 @@ async function main(): Promise<void> {
         if (view === "system" || view === "controller" || view === "datetime" || view === "power" || view === "chat" || view === "notify" || view === "dictionary") go("sys");
         else if (view === "network" && netView !== "root") netSub("root");
         else if (view === "tvlang") go("tv");
-        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox" || view === "companion" || view === "tv") go("root");
+        else if (view === "theme" || view === "about" || view === "display" || view === "audio" || view === "sys" || view === "network" || view === "assistant" || view === "toybox" || view === "companion" || view === "tv" || view === "experimental") go("root");
         else if (view === "months") go("theme");
         else go("months");
         return true;
@@ -5162,6 +5405,7 @@ async function main(): Promise<void> {
         if (view === "assistant") return "Settings › Assistant";
         if (view === "toybox") return "Settings › Toybox";
         if (view === "companion") return "Settings › Companion Devices";
+        if (view === "experimental") return "Settings › Experimental";
         if (view === "tv") return "Settings › TV Streaming";
         if (view === "tvlang") return "Settings › TV Streaming › Languages";
         if (view === "datetime") return "Settings › System › Date and Time";
@@ -5186,6 +5430,7 @@ async function main(): Promise<void> {
         if (view === "assistant") return assistantItems();
         if (view === "toybox") return toyboxSettingsItems();
         if (view === "companion") return companionRows();
+        if (view === "experimental") return experimentalItems();
         if (view === "tv") return tvSettingsItems();
         if (view === "tvlang") return tvLanguageItems();
         if (view === "datetime") return dateTimeItems();
@@ -5559,6 +5804,7 @@ async function main(): Promise<void> {
 
   const categories: Category[] = [
     usersCategory(),
+    deviceCategory(),
     settingsCategory(),
     mediaCategory("photo", "Photo", "assets/icons/photo.png", () => photoListing, (l) => (photoListing = l), (open) => driveRows("photo", open)),
     musicCategory(),
@@ -5622,7 +5868,9 @@ async function main(): Promise<void> {
     xmb.refresh();
   };
   void applyWallpaper();
-  const xmb = new Xmb(categories, audio);
+  /** Every column, less Device while Settings › Experimental leaves it off. */
+  const visibleCategories = () => categories.filter((c) => c.id !== "device" || deviceColumnOn());
+  const xmb = new Xmb(visibleCategories(), audio);
   xmb.setOnSelectionChange((item) => gameBackground.show(item?.backgroundUrl));
 
   // Menu resolution: the main process sets the page zoom so the layout is `target`
@@ -5750,6 +5998,8 @@ async function main(): Promise<void> {
   // Start on Game - it's a game hub first, whatever the XMB running order is.
   xmb.setActiveCategory("games");
   xmb.init();
+  // Settings › Experimental: shows the Device column and asks after the sharing phone.
+  void applyExperimental();
 
   // Now-playing bar, driven by the player's own state changes.
   const npEl = document.getElementById("now-playing")!;

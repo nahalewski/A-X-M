@@ -172,7 +172,19 @@ export class Xmb {
     return true;
   }
 
-  setActiveCategory(categoryId: string): void {
+  /**
+   * Swaps the column list - a column a setting shows or hides - keeping the focus
+   * on the column it was on, or its neighbour if that one went away.
+   */
+  setCategories(categories: Category[]): void {
+    const current = this.categories[this.activeCategory]?.id;
+    this.categories = categories;
+    const i = categories.findIndex((c) => c.id === current);
+    this.activeCategory = i >= 0 ? i : Math.max(0, Math.min(this.activeCategory, categories.length - 1));
+    this.render();
+  }
+
+    setActiveCategory(categoryId: string): void {
     const index = this.categories.findIndex((c) => c.id === categoryId);
     if (index >= 0) this.activeCategory = index;
   }

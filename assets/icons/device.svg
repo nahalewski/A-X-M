@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Device">
+  <!-- A handset seen face-on: flat white-on-transparent like the rest of the XMB set,
+       the screen and the speaker slot knocked out with evenodd. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="
+    M 92 28 H 164 C 178 28 188 38 188 52 V 204 C 188 218 178 228 164 228 H 92 C 78 228 68 218 68 204 V 52 C 68 38 78 28 92 28 Z
+    M 84 60 V 188 H 172 V 60 Z
+    M 112 42 H 144 C 147 42 149 44 149 46 C 149 48 147 50 144 50 H 112 C 109 50 107 48 107 46 C 107 44 109 42 112 42 Z
+    M 128 198 C 122 198 118 202 118 207 C 118 212 122 216 128 216 C 134 216 138 212 138 207 C 138 202 134 198 128 198 Z" />
+</svg>

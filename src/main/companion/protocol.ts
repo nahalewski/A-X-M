@@ -270,6 +270,79 @@ export type SavesRestoreMessage = Frame<"saves.restore", { cardId: string; save:
 /** What came of an apply / push / restore, in words, plus a preview when one was asked for. */
 export type SavesResultMessage = Frame<"saves.result", { cardId: string; save: string; ok: boolean; message: string; preview?: { name: string; changed: number; first: { offset: number; from: string; to: string }[] }[] }>;
 
+// --------------------------------------------------------------- phone ----
+
+/**
+ * Experimental: the phone's own Phone, Messages and Contacts, used from the menu's
+ * Device column. The phone is the one that owns the data and the SIM, so the
+ * direction flips here: the host asks, and the phone decides - it answers only
+ * while the user has switched sharing on in the phone app and granted Android's
+ * permissions, and it refuses anything else. Numbers and message text are the
+ * only free-form values, and they only ever go to the phone's own dialer and SMS.
+ */
+export interface PhoneShareState {
+  /** The user switched each on in the phone app, and Android granted it. */
+  calls: boolean;
+  messages: boolean;
+  contacts: boolean;
+  /** False on a Wi-Fi-only tablet: contacts work, calls and texts cannot. */
+  telephony: boolean;
+  /** "phone" or "tablet" - the phone app's own idea of what it is. */
+  formFactor: "phone" | "tablet";
+}
+export type PhoneStateMessage = Frame<"phone.state", PhoneShareState>;
+
+export interface PhoneContact {
+  id: string;
+  name: string;
+  numbers: { number: string; label: string }[];
+  starred: boolean;
+  /** A small JPEG as a data: URL, when the contact has a picture. */
+  photo?: string;
+}
+export interface PhoneThread {
+  id: string;
+  address: string;
+  name?: string;
+  snippet: string;
+  /** Epoch milliseconds. */
+  date: number;
+  unread: number;
+}
+export interface PhoneSms {
+  id: string;
+  body: string;
+  date: number;
+  outgoing: boolean;
+}
+export interface PhoneCall {
+  number: string;
+  name?: string;
+  date: number;
+  durationSeconds: number;
+  kind: "incoming" | "outgoing" | "missed" | "rejected";
+}
+
+/** Host asks for a list; the phone answers with the matching message below. */
+export type PhoneRequestMessage = Frame<"phone.request", { what: "contacts" | "threads" | "calls" | "messages"; threadId?: string }>;
+export type PhoneContactsMessage = Frame<"phone.contacts", { contacts: PhoneContact[] }>;
+export type PhoneThreadsMessage = Frame<"phone.threads", { threads: PhoneThread[] }>;
+export type PhoneMessagesMessage = Frame<"phone.messages", { threadId: string; address: string; messages: PhoneSms[] }>;
+export type PhoneCallsMessage = Frame<"phone.calls", { calls: PhoneCall[] }>;
+
+/** Place a call, answer the ringing one, or end the current one. */
+export type PhoneDialMessage = Frame<"phone.dial", { number: string }>;
+export type PhoneAnswerMessage = Frame<"phone.answer", { at: number }>;
+export type PhoneHangupMessage = Frame<"phone.hangup", { at: number }>;
+/** The phone's call, as it changes: ringing (with who), offhook (a call is up), idle. */
+export type PhoneCallStateMessage = Frame<"phone.callState", { state: "idle" | "ringing" | "offhook"; number?: string; name?: string }>;
+
+/** Send a text. The phone replies with phone.smsResult carrying the same ref. */
+export type PhoneSendSmsMessage = Frame<"phone.sendSms", { to: string; body: string; ref: string }>;
+export type PhoneSmsResultMessage = Frame<"phone.smsResult", { ref: string; ok: boolean; error?: string }>;
+/** A text arrived on the phone. */
+export type PhoneIncomingSmsMessage = Frame<"phone.incomingSms", { threadId: string; address: string; name?: string; body: string; date: number }>;
+
 /** Anything the host wants to say went wrong, in words fit to show a user. */
 export type ErrorMessage = Frame<"link.error", { message: string; fatal?: boolean }>;
 
@@ -307,7 +380,33 @@ export type CompanionMessage =
   | SavesApplyMessage
   | SavesRestoreMessage
   | SavesResultMessage
+  | PhoneStateMessage
+  | PhoneRequestMessage
+  | PhoneContactsMessage
+  | PhoneThreadsMessage
+  | PhoneMessagesMessage
+  | PhoneCallsMessage
+  | PhoneDialMessage
+  | PhoneAnswerMessage
+  | PhoneHangupMessage
+  | PhoneCallStateMessage
+  | PhoneSendSmsMessage
+  | PhoneSmsResultMessage
+  | PhoneIncomingSmsMessage
   | ErrorMessage;
+
+/** What the phone sends about its Phone, Messages and Contacts, forwarded to the menu. */
+export const PHONE_INBOUND_TYPES = [
+  "phone.state",
+  "phone.contacts",
+  "phone.threads",
+  "phone.messages",
+  "phone.calls",
+  "phone.callState",
+  "phone.smsResult",
+  "phone.incomingSms",
+] as const;
+export type PhoneInboundType = (typeof PHONE_INBOUND_TYPES)[number];
 
 export type CompanionMessageType = CompanionMessage["type"];
 

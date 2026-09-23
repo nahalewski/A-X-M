@@ -522,6 +522,8 @@ export interface Settings {
   overlayHotkey: string;
   fpsCounterEnabled: boolean;
   hardwareInfoEnabled: boolean;
+  /** Settings › Experimental: the Device column and each of its apps. */
+  experimental: { enabled: boolean; phone: boolean; messages: boolean; contacts: boolean };
 }
 
 /** Artwork that landed after the initial scan. Either field may be absent. */
@@ -705,6 +707,54 @@ export interface CompanionSession {
   paired: boolean;
   since: number;
 }
+
+/** What the paired phone shares with the Device column (Settings › Experimental). */
+export interface PhoneShareState {
+  calls: boolean;
+  messages: boolean;
+  contacts: boolean;
+  /** False on a Wi-Fi-only tablet: contacts only. */
+  telephony: boolean;
+  formFactor: "phone" | "tablet";
+}
+export interface PhoneContact {
+  id: string;
+  name: string;
+  numbers: { number: string; label: string }[];
+  starred: boolean;
+  photo?: string;
+}
+export interface PhoneThread {
+  id: string;
+  address: string;
+  name?: string;
+  snippet: string;
+  date: number;
+  unread: number;
+}
+export interface PhoneSms {
+  id: string;
+  body: string;
+  date: number;
+  outgoing: boolean;
+}
+export interface PhoneCall {
+  number: string;
+  name?: string;
+  date: number;
+  durationSeconds: number;
+  kind: "incoming" | "outgoing" | "missed" | "rejected";
+}
+export type PhoneCallState = "idle" | "ringing" | "offhook";
+export type DeviceEvent =
+  | { kind: "state"; share: PhoneShareState | null; name: string | null }
+  | { kind: "contacts"; contacts: PhoneContact[] }
+  | { kind: "threads"; threads: PhoneThread[] }
+  | { kind: "messages"; threadId: string; address: string; messages: PhoneSms[] }
+  | { kind: "calls"; calls: PhoneCall[] }
+  | { kind: "callState"; state: PhoneCallState; number?: string; name?: string }
+  | { kind: "smsResult"; ref: string; ok: boolean; error?: string }
+  | { kind: "incomingSms"; threadId: string; address: string; name?: string; body: string; date: number };
 
 export interface CompanionStatus {
   /** What the menu last told the phones is playing. */
@@ -975,6 +1025,14 @@ export interface AxmApi {
   companionSetEnabled(enabled: boolean): Promise<boolean>;
   companionPermissions(patch: Record<string, boolean>): Promise<Record<string, boolean>>;
   onCompanionInput(callback: (input: CompanionInput) => void): void;
+  /** Experimental Device column: the sharing phone, and asking it for things. */
+  deviceStatus(): Promise<{ share: PhoneShareState | null; name: string | null }>;
+  deviceRequest(what: "contacts" | "threads" | "calls" | "messages", threadId?: string): Promise<boolean>;
+  deviceDial(number: string): Promise<boolean>;
+  deviceCall(action: "answer" | "hangup"): Promise<boolean>;
+  /** The ref that the matching smsResult event carries, or null if no phone took it. */
+  deviceSendSms(to: string, body: string): Promise<string | null>;
+  onDeviceEvent(callback: (event: DeviceEvent) => void): void;
   onCompanionPairing(callback: (p: { code: string | null; deviceName: string }) => void): void;
   onCompanionDevices(callback: (p: { sessions: CompanionSession[] }) => void): void;
   onCompanionStatus(callback: (p: { message: string }) => void): void;

@@ -1814,3 +1814,127 @@ body:has(#options-popup:not(.hidden)) .toybox-card, body:has(#info-card:not(.hid
   .launch-splash img { animation: none; }
   .launch-splash { transition: none; }
 }
+
+/* ---- Device (Settings › Experimental): Phone, Messages, Contacts ------------------
+   Over the ribbon rather than on black, so it still reads as part of the XMB. Two
+   layouts: .dev-wide puts the list and its detail side by side (handheld, tablet in
+   landscape, TV); .dev-narrow shows one page at a time (a phone, anything portrait). */
+#device-app { position: fixed; inset: 0; z-index: 20; display: grid; grid-template-rows: auto auto 1fr auto; color: #fff; background: linear-gradient(180deg, rgba(4, 8, 20, 0.82), rgba(4, 8, 20, 0.94)); backdrop-filter: blur(10px); animation: toybox-in 0.3s ease-out; --dev-pad: clamp(16px, 4vw, 64px); --dev-fs: clamp(14px, 2vh, 22px); font-size: var(--dev-fs); }
+#device-app.hidden { display: none; }
+.dev-top { display: flex; align-items: center; gap: clamp(12px, 3vw, 48px); padding: 2.2vh var(--dev-pad) 1.4vh; }
+.dev-brand { display: flex; align-items: center; gap: 12px; font-size: 1.1em; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 600; }
+.dev-brand img { width: 1.7em; height: 1.7em; }
+.dev-apptabs { display: flex; gap: clamp(10px, 2vw, 32px); }
+.dev-apptab { display: flex; align-items: center; gap: 8px; color: rgba(255, 255, 255, 0.5); padding: 4px 0; border-bottom: 2px solid transparent; }
+.dev-apptab img { width: 1.2em; height: 1.2em; opacity: 0.6; }
+.dev-apptab.active { color: #fff; border-bottom-color: #fff; }
+.dev-apptab.active img { opacity: 1; }
+.dev-status { margin-left: auto; color: rgba(255, 255, 255, 0.7); font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev-clock { color: rgba(255, 255, 255, 0.85); }
+.dev-callbar { margin: 0 var(--dev-pad) 1vh; padding: 8px 16px; border-radius: 999px; background: rgba(60, 180, 90, 0.85); text-align: center; font-size: 0.9em; }
+.dev-body { min-height: 0; padding: 0 var(--dev-pad); display: flex; flex-direction: column; }
+.dev-footer { position: relative; z-index: 3; display: flex; justify-content: flex-end; gap: 24px; padding: 1.4vh var(--dev-pad) 2.2vh; color: rgba(255, 255, 255, 0.8); font-size: 0.85em; }
+.dev-dim, .dev-note { color: rgba(255, 255, 255, 0.5); }
+.dev-note { padding: 2vh 1em; }
+
+.dev-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: clamp(16px, 3vw, 48px); }
+.dev-split-messages, .dev-split-contacts { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr); }
+.dev-list-pane, .dev-conv-pane, .dev-detail-pane, .dev-keypad-pane { min-height: 0; display: flex; flex-direction: column; }
+.dev-narrow .dev-list-pane, .dev-narrow .dev-conv-pane, .dev-narrow .dev-detail-pane { flex: 1; }
+.dev-narrow .dev-tabs-only { flex: none; }
+.dev-pane-title { font-size: 0.8em; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255, 255, 255, 0.55); padding: 0 0 1vh 4px; }
+.dev-tabs { display: flex; gap: 6px; padding-bottom: 1.2vh; }
+.dev-tab { padding: 6px 16px; border-radius: 999px; color: rgba(255, 255, 255, 0.6); border: 1px solid transparent; }
+.dev-tab.active { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.dev-tab.dev-focus { border-color: #fff; box-shadow: 0 0 14px rgba(140, 190, 255, 0.55); }
+.dev-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; padding: 4px; }
+.dev-row { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 10px; border: 1px solid transparent; }
+.dev-row.dev-focus, .dev-action.dev-focus, .dev-compose.dev-focus { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.7); box-shadow: 0 0 18px rgba(140, 190, 255, 0.35); }
+.dev-row.dev-current { background: rgba(255, 255, 255, 0.06); }
+.dev-row-text { flex: 1; min-width: 0; }
+.dev-row-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dev-row-sub { font-size: 0.8em; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.dev-row-right { font-size: 0.78em; color: rgba(255, 255, 255, 0.55); display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.dev-unread .dev-row-title { font-weight: 700; }
+.dev-unread .dev-row-sub { color: #fff; }
+.dev-missed .dev-row-title { color: #ff8a80; }
+.dev-badge { min-width: 1.5em; padding: 1px 6px; border-radius: 999px; background: #3d8bfd; color: #fff; font-size: 0.9em; text-align: center; }
+.dev-star { color: #ffd54f; }
+.dev-letter { padding: 1.2vh 14px 0.4vh; font-size: 0.75em; color: rgba(140, 190, 255, 0.9); font-weight: 700; }
+.dev-callkind { display: inline-block; width: 0.8em; height: 0.8em; flex: none; }
+.dev-callkind::before { content: "\2199"; }
+.dev-callkind-outgoing::before { content: "\2197"; color: #7ed67e; }
+.dev-callkind-missed::before, .dev-callkind-rejected::before { color: #ff8a80; }
+.dev-callkind-incoming::before { color: #8cbfff; }
+
+.dev-avatar { --hue: 210; width: 2.6em; height: 2.6em; flex: none; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: hsl(var(--hue) 45% 38%); font-weight: 600; }
+.dev-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.dev-avatar-new { background: rgba(255, 255, 255, 0.12); font-size: 1.3em; }
+.dev-avatar-new svg { width: 55%; height: 55%; }
+.dev-avatar-big { width: 3.4em; height: 3.4em; font-size: 2em; margin: 0 auto 1.4vh; }
+
+/* Keypad */
+.dev-keypad-pane { align-items: center; justify-content: center; }
+.dev-dial { font-size: 2.2em; letter-spacing: 0.06em; min-height: 1.4em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-dial .dev-dim { font-size: 0.55em; letter-spacing: 0; }
+.dev-dial-match { color: rgba(140, 190, 255, 0.95); min-height: 1.4em; margin-bottom: 1.4vh; }
+.dev-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(8px, 1.6vh, 18px); width: min(100%, 22em); }
+.dev-key { aspect-ratio: 1.5; border-radius: 999px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.12); }
+.dev-key b { font-size: 1.5em; font-weight: 500; line-height: 1.1; }
+.dev-key small { font-size: 0.6em; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.55); }
+.dev-key.dev-focus { background: rgba(255, 255, 255, 0.25); border-color: #fff; box-shadow: 0 0 18px rgba(140, 190, 255, 0.6); }
+.dev-key-call { background: #2e9d4f; }
+.dev-key-call img { width: 1.6em; height: 1.6em; }
+.dev-key-call.dev-focus { background: #3cc464; }
+.dev-key-fn { font-size: 1.4em; background: transparent; }
+.dev-narrow .dev-keypad-pane { flex: 1; }
+.dev-narrow .dev-key { aspect-ratio: 1.25; }
+
+/* Messages */
+.dev-conv-pane { border-radius: 14px; background: rgba(255, 255, 255, 0.04); padding: 1.4vh 1.2em; }
+.dev-conv-empty, .dev-detail-pane.dev-conv-empty { align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.5); gap: 12px; }
+.dev-conv-empty img { width: 4em; height: 4em; opacity: 0.35; }
+.dev-conv-head { display: flex; align-items: center; gap: 14px; padding-bottom: 1.2vh; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.dev-bubbles { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 8px; padding: 1.4vh 2px; }
+.dev-day { align-self: center; font-size: 0.72em; color: rgba(255, 255, 255, 0.5); padding: 1vh 0 0.4vh; }
+.dev-bubble { max-width: 76%; padding: 8px 14px; border-radius: 18px; border: 1px solid transparent; }
+.dev-bubble.in { align-self: flex-start; background: rgba(255, 255, 255, 0.13); border-bottom-left-radius: 6px; }
+.dev-bubble.out { align-self: flex-end; background: #2f6fd6; border-bottom-right-radius: 6px; }
+.dev-bubble.failed { background: rgba(200, 60, 60, 0.7); }
+.dev-bubble.dev-focus { border-color: #fff; box-shadow: 0 0 14px rgba(140, 190, 255, 0.55); }
+.dev-bubble-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dev-bubble-meta { font-size: 0.68em; color: rgba(255, 255, 255, 0.65); margin-top: 2px; text-align: right; }
+.dev-compose { margin-top: 1vh; padding: 10px 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); border: 1px solid transparent; color: rgba(255, 255, 255, 0.75); display: flex; align-items: center; gap: 10px; }
+
+/* Contacts */
+.dev-detail-pane { align-items: center; padding-top: 3vh; overflow-y: auto; scrollbar-width: none; }
+.dev-actions { width: min(100%, 26em); margin-top: 2vh; display: flex; flex-direction: column; gap: 6px; }
+.dev-action { padding: 10px 16px; border-radius: 10px; border: 1px solid transparent; background: rgba(255, 255, 255, 0.05); }
+
+/* Call screen: over whichever app is open. */
+.dev-callscreen { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.6vh; background: radial-gradient(ellipse at 50% 35%, #1c4a40, #04090d 75%); animation: toybox-in 0.25s ease-out; }
+.dev-callscreen.ringing .dev-avatar-big { animation: dev-ring 1.2s ease-in-out infinite; }
+@keyframes dev-ring { 0%, 100% { box-shadow: 0 0 0 0 rgba(90, 220, 130, 0.55); } 50% { box-shadow: 0 0 0 22px rgba(90, 220, 130, 0); } }
+.dev-call-name { font-size: 1.8em; text-align: center; padding: 0 1em; }
+.dev-call-number, .dev-call-note { color: rgba(255, 255, 255, 0.65); font-size: 0.9em; }
+.dev-call-status { font-size: 1.05em; margin: 0.6vh 0 1vh; }
+.dev-callbtns { display: flex; gap: clamp(24px, 6vw, 80px); margin-top: 4vh; }
+.dev-callbtn { width: 5em; height: 5em; border-radius: 50%; display: grid; place-items: center; font-size: 0.85em; border: 2px solid transparent; }
+.dev-callbtn span { color: #fff; font-weight: 600; }
+.dev-callbtn-answer { background: #2e9d4f; }
+.dev-callbtn-decline, .dev-callbtn-hangup { background: #d23c3c; }
+.dev-callbtn.dev-focus { border-color: #fff; box-shadow: 0 0 22px rgba(255, 255, 255, 0.6); transform: scale(1.08); }
+
+/* Phone-sized and portrait screens. */
+.dev-narrow .dev-top { flex-wrap: wrap; row-gap: 1vh; }
+.dev-narrow .dev-apptabs { order: 3; width: 100%; justify-content: space-between; }
+.dev-narrow .dev-apptab { flex: 1; justify-content: center; }
+.dev-narrow .dev-status { display: none; }
+.dev-narrow .dev-footer { justify-content: center; text-align: center; }
+.dev-narrow .dev-bubble { max-width: 88%; }
+.dev-narrow .dev-conv-pane { padding: 1vh 0.6em; }
+
+.dev-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1vh; padding: 0 1em; }
+.dev-empty img { width: 5em; height: 5em; opacity: 0.5; margin-bottom: 1vh; }
+.dev-empty-title { font-size: 1.4em; }
+.dev-empty-line { color: rgba(255, 255, 255, 0.65); }

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Contacts">
+  <!-- An address card: a person's head and shoulders on the left, lines of detail on the right. -->
+  <path fill="#ffffff" fill-rule="evenodd" d="
+    M 48 44 H 208 C 222 44 232 54 232 68 V 188 C 232 202 222 212 208 212 H 48 C 34 212 24 202 24 188 V 68 C 24 54 34 44 48 44 Z
+    M 90 78 C 76 78 66 89 66 103 C 66 117 76 128 90 128 C 104 128 114 117 114 103 C 114 89 104 78 90 78 Z
+    M 90 138 C 66 138 50 152 48 176 H 132 C 130 152 114 138 90 138 Z
+    M 146 90 H 204 V 106 H 146 Z
+    M 146 122 H 204 V 138 H 146 Z
+    M 146 154 H 188 V 170 H 146 Z" />
+</svg>

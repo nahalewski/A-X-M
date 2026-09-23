@@ -34,6 +34,7 @@ import com.axm.companion.ui.MediaScreen
 import com.axm.companion.ui.PairingScreen
 import com.axm.companion.ui.RemoteScreen
 import com.axm.companion.ui.TouchpadScreen
+import com.axm.companion.ui.DeviceScreen
 
 /**
  * One activity, one view model, and a `when` over the link state.
@@ -70,6 +71,7 @@ class MainActivity : ComponentActivity() {
         // Coming back to the app is the moment to look again: the phone may have
         // changed network, or A-X-M may have started since.
         model.refresh()
+        model.recheckSharing()
     }
 
     override fun onPause() {
@@ -93,6 +95,17 @@ private fun Root(model: CompanionViewModel) {
     val localSaves by model.localSaves.collectAsStateWithLifecycle()
     val savePatches by model.client.savePatches.collectAsStateWithLifecycle()
     val saveResult by model.client.saveResult.collectAsStateWithLifecycle()
+    val sharing by model.phone.status.collectAsStateWithLifecycle()
+    val device: @Composable () -> Unit = {
+        DeviceScreen(
+            status = sharing,
+            connected = link is LinkState.Connected,
+            permissionsFor = model.phone::permissionsFor,
+            onSet = model::setSharing,
+            onPermissionsChanged = model::recheckSharing,
+            onBack = { model.show(Screen.HOME) },
+        )
+    }
     val visualizer = settings.firstOrNull { it.id == "visualizerStyle" }
     // A prompt on the A-X-M screen takes this screen too, so typing can start at once.
     var keyboardDismissed by remember { mutableStateOf<KeyboardPrompt?>(null) }
@@ -124,7 +137,8 @@ private fun Root(model: CompanionViewModel) {
     // Losing the link drops back to home rather than leaving a remote on screen
     // whose buttons would quietly go nowhere.
     if (link !is LinkState.Connected) {
-        if (screen == Screen.SAVES) {
+        if (screen == Screen.DEVICE) device()
+        else if (screen == Screen.SAVES) {
             SavesScreen(listing = null, local = localSaves, connected = false, result = saveResult, onFetch = model::fetchSave, onPush = model::pushSave, onCheats = model::openCheats, onUndo = model::undoLastEdit, onDelete = model::deleteLocal, onClearResult = model::clearResult, onBack = { model.show(Screen.HOME) })
         } else home()
         return
@@ -183,6 +197,7 @@ private fun Root(model: CompanionViewModel) {
             onPointer = { kind, dx, dy, button -> model.pointer(kind, dx, dy, button) },
             onBack = { model.show(Screen.HOME) },
         )
+        Screen.DEVICE -> device()
         // Built next, alongside the NFC reader and the Ghost avatar.
         Screen.TOYBOX, Screen.GHOST -> home()
     }

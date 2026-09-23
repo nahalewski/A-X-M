@@ -22,6 +22,9 @@ import {
   SavesFileMessage,
   SavesResultMessage,
   SavesPatchesMessage,
+  PHONE_INBOUND_TYPES,
+  PhoneInboundType,
+  PhoneShareState,
 } from "./protocol";
 
 /**
@@ -75,6 +78,8 @@ export interface CompanionHandlers {
   onSavesCheats?(cardId: string, save: string, device: TrustedDevice): Promise<SavesPatchesMessage["payload"]>;
   onSavesApply?(cardId: string, save: string, selections: { key: string; options: Record<string, string> }[], preview: boolean, device: TrustedDevice): Promise<SavesResultMessage["payload"]>;
   onSavesRestore?(cardId: string, save: string, device: TrustedDevice): Promise<SavesResultMessage["payload"]>;
+  /** Experimental: the phone's calls, texts and contacts, raw from the wire (main validates them). */
+  onPhone?(type: PhoneInboundType, payload: unknown, device: TrustedDevice): void;
   /** Connected, disconnected, or paired - for the menu's device list and notices. */
   onSessionsChanged?(sessions: CompanionSessionInfo[]): void;
   /** A code the user must be shown on the A-X-M screen. Null clears it. */
@@ -89,6 +94,8 @@ export interface CompanionSessionInfo {
   mode: CompanionMode;
   paired: boolean;
   since: number;
+  /** What the phone shares with the Device column, or null if it never said. */
+  phone: PhoneShareState | null;
 }
 
 interface Session {
@@ -105,6 +112,8 @@ interface Session {
   /** Rolling frame counter, reset each second, for the rate limit. */
   frames: number;
   frameWindow: number;
+  /** Last phone.state this device sent. */
+  phone: PhoneShareState | null;
 }
 
 export class CompanionServer {
@@ -166,6 +175,7 @@ export class CompanionServer {
         lastSeen: Date.now(),
         frames: 0,
         frameWindow: Date.now(),
+        phone: null,
       };
       this.sessions.add(session);
 
@@ -285,7 +295,36 @@ export class CompanionServer {
       mode: s.mode,
       paired: !!s.trusted,
       since: s.since,
+      phone: s.trusted ? s.phone : null,
     }));
+  }
+
+  /**
+   * The paired phone the Device column talks to: the most recently connected one
+   * that shares anything. One at a time, so a call never goes out on two phones.
+   */
+  private phoneSession(): Session | null {
+    let best: Session | null = null;
+    for (const s of this.sessions) {
+      if (!s.trusted || !s.phone) continue;
+      if (!s.phone.calls && !s.phone.messages && !s.phone.contacts) continue;
+      if (!best || s.since > best.since) best = s;
+    }
+    return best;
+  }
+
+  /** The sharing phone, for the menu: its name and what it shares, or null. */
+  phoneInfo(): { deviceId: string; name: string; share: PhoneShareState } | null {
+    const s = this.phoneSession();
+    return s && s.trusted && s.phone ? { deviceId: s.trusted.deviceId, name: s.trusted.name, share: s.phone } : null;
+  }
+
+  /** Sends one phone.* request to the sharing phone. False when there is none. */
+  sendToPhone(type: CompanionMessage["type"], payload: unknown): boolean {
+    const s = this.phoneSession();
+    if (!s) return false;
+    this.send(s, type, payload);
+    return true;
   }
 
   // ----------------------------------------------------------- inbound --
@@ -409,6 +448,22 @@ export class CompanionServer {
         return;
       }
       default:
+        if ((PHONE_INBOUND_TYPES as readonly string[]).includes(message.type)) {
+          const type = message.type as PhoneInboundType;
+          if (type === "phone.state") {
+            const p = message.payload as Partial<PhoneShareState>;
+            session.phone = {
+              calls: p.calls === true,
+              messages: p.messages === true,
+              contacts: p.contacts === true,
+              telephony: p.telephony === true,
+              formFactor: p.formFactor === "tablet" ? "tablet" : "phone",
+            };
+            this.publishSessions();
+          }
+          this.handlers.onPhone?.(type, message.payload, session.trusted!);
+          return;
+        }
         // Unknown but well-formed: ignored, so a newer phone talking about a
         // feature this build lacks degrades instead of being disconnected.
         return;

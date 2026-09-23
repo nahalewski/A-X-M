@@ -60,6 +60,22 @@ object Protocol {
     const val SAVES_RESTORE = "saves.restore"
     const val SAVES_RESULT = "saves.result"
 
+    // Experimental: the Device column in A-X-M - this phone's calls, texts and
+    // contacts. The host asks; the phone answers only for what the user shares.
+    const val PHONE_STATE = "phone.state"
+    const val PHONE_REQUEST = "phone.request"
+    const val PHONE_CONTACTS = "phone.contacts"
+    const val PHONE_THREADS = "phone.threads"
+    const val PHONE_MESSAGES = "phone.messages"
+    const val PHONE_CALLS = "phone.calls"
+    const val PHONE_DIAL = "phone.dial"
+    const val PHONE_ANSWER = "phone.answer"
+    const val PHONE_HANGUP = "phone.hangup"
+    const val PHONE_CALL_STATE = "phone.callState"
+    const val PHONE_SEND_SMS = "phone.sendSms"
+    const val PHONE_SMS_RESULT = "phone.smsResult"
+    const val PHONE_INCOMING_SMS = "phone.incomingSms"
+
     fun frame(type: String, payload: JSONObject): String =
         JSONObject()
             .put("protocol", VERSION)

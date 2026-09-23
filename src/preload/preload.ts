@@ -74,6 +74,14 @@ const api = {
   companionSetEnabled: (enabled: boolean) => ipcRenderer.invoke("axm:companionSetEnabled", enabled),
   companionMedia: (state: unknown) => ipcRenderer.send("axm:companionMedia", state),
   companionPermissions: (patch: Record<string, boolean>) => ipcRenderer.invoke("axm:companionPermissions", patch),
+  deviceStatus: () => ipcRenderer.invoke("axm:deviceStatus"),
+  deviceRequest: (what: string, threadId?: string) => ipcRenderer.invoke("axm:deviceRequest", what, threadId),
+  deviceDial: (number: string) => ipcRenderer.invoke("axm:deviceDial", number),
+  deviceCall: (action: "answer" | "hangup") => ipcRenderer.invoke("axm:deviceCall", action),
+  deviceSendSms: (to: string, body: string) => ipcRenderer.invoke("axm:deviceSendSms", to, body),
+  onDeviceEvent: (callback: (event: unknown) => void) => {
+    ipcRenderer.on("axm:deviceEvent", (_e, event) => callback(event));
+  },
   onCompanionInput: (callback: (input: unknown) => void) => {
     ipcRenderer.on("axm:companionInput", (_e, input) => callback(input));
   },

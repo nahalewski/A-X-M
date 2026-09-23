@@ -12,9 +12,23 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.NFC" />
 
+    <!-- Device Sharing (experimental, off until the user switches each on and
+         Android grants it): this phone's calls, texts and contacts, for the Device
+         column in A-X-M. Each is asked for at runtime from the Device Sharing screen. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+
     <!-- The app is useful without a reader, so NFC is optional rather than a
          hardware requirement that would hide it from devices lacking one. -->
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
+    <!-- Likewise telephony: a Wi-Fi tablet still shares its contacts. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
         android:allowBackup="false"

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Phone">
+  <!-- A telephone receiver, earpiece top left, mouthpiece bottom right. -->
+  <path fill="#ffffff" d="
+    M 70 36 C 78 32 88 34 93 42 L 116 80 C 120 88 118 98 111 103 L 95 115
+    C 104 140 118 156 142 166 L 155 150 C 160 143 170 141 178 145 L 216 166
+    C 224 171 226 181 222 189 L 210 212 C 204 223 191 228 179 225
+    C 108 208 50 150 32 80 C 29 68 34 55 45 49 Z" />
+</svg>

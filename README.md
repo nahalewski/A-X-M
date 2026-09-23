@@ -195,6 +195,21 @@ changing a game's artwork.
   edit. The Settings page mirrors the menu's own settings; the Music Library page picks
   songs; a text prompt on the TV is typed on the phone's keyboard.
 
+### Device (experimental)
+- *Settings › Experimental* turns on a **Device** column between Users and Settings: the
+  paired phone's **Phone**, **Messages** and **Contacts** as apps inside the menu - no
+  outside app opens. Each can be switched off on its own in the same place.
+- **Phone**: a keypad, your recent calls and starred contacts; calls are placed, answered and
+  ended from the menu, with an incoming-call screen that comes up by itself. **Messages**:
+  your conversations and a reply box on the on-screen keyboard (or the phone's own).
+  **Contacts**: an A-Z list with search and letter jumps, and a card to call or text from.
+- Two layouts, picked from the screen's shape: list and detail side by side on a handheld,
+  a TV or a tablet in landscape; one page at a time on a phone or anything portrait.
+- The phone decides what it shares: *A-X-M Companion › Device Sharing* has a switch for
+  each, and asks Android's permissions when one is turned on. Calls and texts go through
+  the phone (its number, its SIM, its speaker or headset); a Wi-Fi tablet shares contacts
+  only. Nothing is stored on the PC - the lists are asked for when an app opens.
+
 ### Ghost
 - The voice assistant. Say "hey ghost", then *launch Batman*, *play playlist chill*, *go to
   network settings*, *copy the Blu-ray to storage*, *open my shelf*, *next track*, *quit

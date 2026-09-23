@@ -67,6 +67,7 @@ import * as xtream from "./xtream";
 import { apiConfigSource, apiFolder, ensureApiExample } from "./apiKeys";
 import { logoStatus, refreshLogos } from "./networkLogos";
 import { DeviceRegistry } from "./companion/registry";
+import { deviceCallControl, deviceDial, deviceRequest, deviceSendSms, toDeviceEvent } from "./devicePhone";
 import { ToyCollectionEntry, ToyFigure, ToyboxStats } from "./toybox/types";
 
 // requestAnimationFrame already follows the display's native refresh rate, 120Hz on
@@ -160,7 +161,17 @@ const companion = new CompanionServer(
     // The code is shown on this screen, so whoever pairs has to be able to see it.
     onPairingCode: (code, deviceName) =>
       mainWindow?.webContents.send("axm:companionPairing", { code, deviceName }),
-    onSessionsChanged: (sessions) => mainWindow?.webContents.send("axm:companionDevices", { sessions }),
+    // Experimental Device column: checked and reshaped in devicePhone before the menu sees it.
+    onPhone: (type, payload) => {
+      const event = toDeviceEvent(type, payload, companion);
+      if (event) mainWindow?.webContents.send("axm:deviceEvent", event);
+    },
+    onSessionsChanged: (sessions) => {
+      mainWindow?.webContents.send("axm:companionDevices", { sessions });
+      // A phone leaving (or arriving) changes what the Device column can do.
+      const info = companion.phoneInfo();
+      mainWindow?.webContents.send("axm:deviceEvent", { kind: "state", share: info?.share ?? null, name: info?.name ?? null });
+    },
     onStatus: (message) => mainWindow?.webContents.send("axm:companionStatus", { message }),
   }
 );
@@ -1152,6 +1163,14 @@ ipcMain.handle("axm:companionStatus", () => ({
   })),
 }));
 
+ipcMain.handle("axm:deviceStatus", () => {
+  const info = companion.phoneInfo();
+  return { share: info?.share ?? null, name: info?.name ?? null };
+});
+ipcMain.handle("axm:deviceRequest", (_e, what: "contacts" | "threads" | "calls" | "messages", threadId?: string) => deviceRequest(companion, what, threadId));
+ipcMain.handle("axm:deviceDial", (_e, number: string) => deviceDial(companion, number));
+ipcMain.handle("axm:deviceCall", (_e, action: "answer" | "hangup") => deviceCallControl(companion, action === "answer" ? "answer" : "hangup"));
+ipcMain.handle("axm:deviceSendSms", (_e, to: string, body: string) => deviceSendSms(companion, to, body));
 ipcMain.handle("axm:companionForget", (_e, deviceId: string) => companionRegistry.revoke(deviceId));
 
 // What is playing, for the phone's media screen. The renderer is the authority.
